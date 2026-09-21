@@ -26,6 +26,9 @@ struct ODHubViewer: ParsableCommand {
     @Option(help: "Window sizing: fit, point-accurate, pixel-accurate or physical-size.")
     var scale: ScaleMode = .pointAccurate
 
+    @Flag(name: .long, inversion: .prefixedNo, help: "Draw the device bezel, its rounded corners and any cutout.")
+    var bezel = true
+
     func validate() throws {
         guard !udids.isEmpty else {
             throw ValidationError("Pass at least one simulator UDID.")
@@ -99,6 +102,7 @@ struct ODHubViewer: ParsableCommand {
         }
 
         let session = try adapter.openDisplay(device.udid)
+        session.setBezelEnabled(bezel)
         let input: (any InputSession)?
         do {
             input = try adapter.openInput(device.udid)
@@ -112,13 +116,15 @@ struct ODHubViewer: ParsableCommand {
             session: session,
             input: input,
             scaleMode: scale,
+            bezelEnabled: bezel,
             showFPS: fps
         )
         if case .largerThanScreen(let size) = controller.applyScaleMode(scale) {
             print("\(device.name): \(scale.displayName) needs \(Int(size.width))x\(Int(size.height)) points, which is larger than this display.")
         }
+        let shape = session.supportsBezel ? (bezel ? "  [bezel]" : "  [no bezel]") : "  [bezel unavailable]"
         let density = session.pixelsPerInch.map { " \(Int($0)) ppi" } ?? ""
-        print("\(device.name)  \(Int(session.pixelSize.width))x\(Int(session.pixelSize.height)) at \(session.pointScale)x\(density)  [\(scale.displayName)]")
+        print("\(device.name)  \(Int(session.pixelSize.width))x\(Int(session.pixelSize.height)) at \(session.pointScale)x\(density)  [\(scale.displayName)]\(shape)")
     }
 }
 

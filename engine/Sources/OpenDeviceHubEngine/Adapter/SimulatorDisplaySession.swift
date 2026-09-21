@@ -15,9 +15,28 @@ final class SimulatorDisplaySession: DisplaySession, @unchecked Sendable {
     private let continuation: AsyncStream<DisplayFrame>.Continuation
     private let lock = NSLock()
     private var surface: IOSurfaceRef?
+    private var maskedSurface: IOSurfaceRef?
+    private var bezelEnabled: Bool
     private var isClosed = false
 
-    init(descriptor: AnyObject, pointScale: CGFloat) throws {
+    var supportsBezel: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return maskedSurface != nil
+    }
+
+    func setBezelEnabled(_ enabled: Bool) {
+        lock.lock()
+        let changed = bezelEnabled != enabled && maskedSurface != nil
+        if changed { bezelEnabled = enabled }
+        lock.unlock()
+        // The device only redraws when something on screen changes, so without an immediate frame
+        // the window would keep showing the old shape until the next damage callback.
+        if changed { emitCurrentFrame() }
+    }
+
+    init(descriptor: AnyObject, pointScale: CGFloat, bezelEnabled: Bool) throws {
+        self.bezelEnabled = bezelEnabled
         let registerDamage = NSSelectorFromString("registerCallbackWithUUID:damageRectanglesCallback:")
         let registerSurfaces = NSSelectorFromString("registerCallbackWithUUID:ioSurfacesChangeCallback:")
         guard descriptor.responds(to: registerDamage), descriptor.responds(to: registerSurfaces) else {
@@ -41,11 +60,13 @@ final class SimulatorDisplaySession: DisplaySession, @unchecked Sendable {
         continuation = escapingContinuation
 
         surface = Self.surface(from: surfaceRenderable.framebufferSurface)
+        maskedSurface = Self.surface(from: surfaceRenderable.maskedFramebufferSurface)
 
-        surfaceRenderable.registerCallback(with: token) { [weak self] changed in
+        surfaceRenderable.registerCallback(with: token) { [weak self] _ in
             guard let self else { return }
             lock.lock()
-            self.surface = Self.surface(from: changed) ?? Self.surface(from: self.surfaceRenderable.framebufferSurface)
+            self.surface = Self.surface(from: self.surfaceRenderable.framebufferSurface)
+            self.maskedSurface = Self.surface(from: self.surfaceRenderable.maskedFramebufferSurface)
             lock.unlock()
             emitCurrentFrame()
         }
@@ -72,7 +93,7 @@ final class SimulatorDisplaySession: DisplaySession, @unchecked Sendable {
 
     private func emitCurrentFrame() {
         lock.lock()
-        let current = surface
+        let current = (bezelEnabled ? maskedSurface : nil) ?? surface
         let closed = isClosed
         lock.unlock()
 

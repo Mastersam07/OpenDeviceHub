@@ -102,6 +102,11 @@ public protocol DisplaySession: AnyObject, Sendable {
     var pointScale: CGFloat { get }
     /// The device screen's physical pixel density, which physical size scaling needs.
     var pixelsPerInch: CGFloat? { get }
+    /// Whether the device offers a bezel, its own screen shape with rounded corners and any cutout.
+    var supportsBezel: Bool { get }
+    /// Shows the device's bezel, or the raw rectangular framebuffer. Does nothing when the device
+    /// does not offer one.
+    func setBezelEnabled(_ enabled: Bool)
     func close()
 }
 

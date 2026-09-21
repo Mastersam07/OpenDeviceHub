@@ -66,6 +66,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// An `IOSurface`, declared as `id` so Swift does not try to bridge it. Nil until the device has
 /// something to show.
 @property (nonatomic, readonly, nullable) id framebufferSurface;
+/// The same frame with the device's bezel applied, rounded corners and any cutout.
+/// CoreSimulator keeps this as a second live surface, so a bezel costs nothing to draw.
+@property (nonatomic, readonly, nullable) id maskedFramebufferSurface;
 - (void)registerCallbackWithUUID:(NSUUID *)uuid ioSurfacesChangeCallback:(void (^)(id))block;
 - (void)unregisterIOSurfacesChangeCallbackWithUUID:(NSUUID *)uuid;
 @end
