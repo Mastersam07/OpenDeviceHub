@@ -56,10 +56,9 @@ public final class DeviceWindowManager {
         controller.window?.close()
     }
 
-    public func applyScaleMode(_ mode: ScaleMode) {
-        for controller in controllers.values {
-            controller.applyScaleMode(mode)
-        }
+    @discardableResult
+    public func applyScaleMode(_ mode: ScaleMode) -> [String: ScaleApplication] {
+        controllers.mapValues { $0.applyScaleMode(mode) }
     }
 
     public func closeAll() {

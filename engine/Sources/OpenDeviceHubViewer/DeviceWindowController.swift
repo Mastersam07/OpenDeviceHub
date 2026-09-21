@@ -40,7 +40,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             pixelSize: session.pixelSize,
             pointScale: session.pointScale
         )
-        let window = NSWindow(
+        let window = DeviceWindow(
             contentRect: CGRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
@@ -79,9 +79,10 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     /// Resizes the window so the device screen is shown at the requested scale. Fit leaves the
     /// window alone, since it is the mode that lets any size work.
-    public func applyScaleMode(_ mode: ScaleMode) {
+    @discardableResult
+    public func applyScaleMode(_ mode: ScaleMode) -> ScaleApplication {
         scaleMode = mode
-        guard let window else { return }
+        guard let window else { return .unavailable }
         let device = DeviceMetrics(
             pixelSize: session.pixelSize,
             pointScale: session.pointScale,
@@ -91,8 +92,19 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             for: mode,
             device: device,
             screen: ScaleMode.screenMetrics(for: window.screen ?? NSScreen.main)
-        ) else { return }
+        ) else {
+            return mode == .fit ? .noFixedSize : .unavailable
+        }
         window.setContentSize(size)
+
+        let visible = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? .zero
+        let titleBar = window.frame.height - window.contentLayoutRect.height
+        let fits = DeviceGeometry.fitsOnScreen(
+            contentSize: size,
+            visibleSize: visible,
+            titleBarHeight: titleBar
+        )
+        return fits ? .applied(size) : .largerThanScreen(size)
     }
 
     public var currentScaleMode: ScaleMode { scaleMode }

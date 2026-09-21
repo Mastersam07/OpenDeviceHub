@@ -121,3 +121,31 @@ final class ScaleModeGeometryTests: XCTestCase {
         }
     }
 }
+
+final class FitsOnScreenTests: XCTestCase {
+    /// The built in display of the machine this was developed on, minus the menu bar.
+    private let laptop = CGSize(width: 1512, height: 957)
+
+    func testPointAccurateFitsOnALaptopScreen() {
+        let size = DeviceGeometry.contentSize(for: .pointAccurate, device: iPhone17Pro, screen: retinaMac)!
+        XCTAssertTrue(DeviceGeometry.fitsOnScreen(contentSize: size, visibleSize: laptop, titleBarHeight: 32))
+    }
+
+    func testPixelAccurateDoesNotFitOnALaptopScreen() {
+        let size = DeviceGeometry.contentSize(for: .pixelAccurate, device: iPhone17Pro, screen: retinaMac)!
+        XCTAssertEqual(size, CGSize(width: 603, height: 1311))
+        XCTAssertFalse(DeviceGeometry.fitsOnScreen(contentSize: size, visibleSize: laptop, titleBarHeight: 32))
+    }
+
+    func testTheTitleBarCountsTowardsTheHeight() {
+        let size = CGSize(width: 100, height: 950)
+        XCTAssertTrue(DeviceGeometry.fitsOnScreen(contentSize: size, visibleSize: laptop, titleBarHeight: 0))
+        XCTAssertFalse(DeviceGeometry.fitsOnScreen(contentSize: size, visibleSize: laptop, titleBarHeight: 32))
+    }
+
+    func testAnExactFitCounts() {
+        XCTAssertTrue(DeviceGeometry.fitsOnScreen(
+            contentSize: CGSize(width: 1512, height: 925), visibleSize: laptop, titleBarHeight: 32
+        ))
+    }
+}

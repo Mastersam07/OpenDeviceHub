@@ -23,7 +23,27 @@ public struct ScreenMetrics: Sendable, Hashable {
     }
 }
 
+public enum ScaleApplication: Sendable, Equatable {
+    case applied(CGSize)
+    /// Applied, but the window is bigger than the screen can show at once.
+    case largerThanScreen(CGSize)
+    /// Fit imposes no size, so the window keeps whatever shape it has.
+    case noFixedSize
+    /// Physical size needs both the device's and the display's pixel density.
+    case unavailable
+}
+
 public enum DeviceGeometry {
+    /// Whether a window of this content size can be shown whole on a screen with this visible area.
+    public static func fitsOnScreen(
+        contentSize: CGSize,
+        visibleSize: CGSize,
+        titleBarHeight: CGFloat
+    ) -> Bool {
+        contentSize.width <= visibleSize.width
+            && contentSize.height + titleBarHeight <= visibleSize.height
+    }
+
     /// The size in macOS points that shows the device's screen at its own point size. The scale is
     /// guarded because a device type with no reported scale would otherwise divide by zero.
     public static func pointSize(pixelSize: CGSize, pointScale: CGFloat) -> CGSize {
