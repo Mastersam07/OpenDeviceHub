@@ -85,7 +85,13 @@ public final class Xcode26Adapter: SimulatorAdapter, @unchecked Sendable {
             let displayState = unsafeBitCast(portState, to: (any ODHSimDisplayDescriptorState).self)
             guard displayState.displayClass == 0 else { continue }
 
-            return try SimulatorDisplaySession(descriptor: descriptor, pointScale: scale)
+            // The bezel is on by default, matching what the simulator itself shows. The caller
+            // turns it off through the session.
+            return try SimulatorDisplaySession(
+                descriptor: descriptor,
+                pointScale: scale,
+                bezelEnabled: true
+            )
         }
 
         throw EngineError.capabilityUnavailable(name: "main display port")

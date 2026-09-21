@@ -16,6 +16,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private let input: (any InputSession)?
     private var isStopped = false
     private var scaleMode: ScaleMode
+    private var bezelEnabled: Bool
 
     public init(
         udid: String,
@@ -23,10 +24,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         session: any DisplaySession,
         input: (any InputSession)?,
         scaleMode: ScaleMode,
+        bezelEnabled: Bool,
         fpsLabel: String?
     ) throws {
         self.udid = udid
         self.scaleMode = scaleMode
+        self.bezelEnabled = bezelEnabled
         guard let device = MTLCreateSystemDefaultDevice() else {
             throw ViewerError.metalUnavailable("no system default device")
         }
@@ -108,6 +111,17 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     }
 
     public var currentScaleMode: ScaleMode { scaleMode }
+
+    public var supportsBezel: Bool { session.supportsBezel }
+
+    public var isBezelEnabled: Bool { bezelEnabled }
+
+    /// Shows or hides the device's bezel. The window keeps its size either way, since the bezel
+    /// only changes what is drawn inside the same framebuffer.
+    public func setBezelEnabled(_ enabled: Bool) {
+        bezelEnabled = enabled
+        session.setBezelEnabled(enabled)
+    }
 
     public func windowWillClose(_ notification: Notification) {
         stop()

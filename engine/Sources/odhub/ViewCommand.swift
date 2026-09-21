@@ -20,6 +20,9 @@ struct View: AsyncParsableCommand {
     @Option(help: "Window sizing: fit, point-accurate, pixel-accurate or physical-size.")
     var scale: String?
 
+    @Flag(name: .long, inversion: .prefixedNo, help: "Draw the device bezel, its rounded corners and any cutout.")
+    var bezel = true
+
     @Flag(help: "Return as soon as the window opens instead of waiting for it to close.")
     var detach = false
 
@@ -42,6 +45,7 @@ struct View: AsyncParsableCommand {
         if boot { arguments.append("--boot") }
         if fps { arguments.append("--fps") }
         if let scale { arguments.append(contentsOf: ["--scale", scale]) }
+        if !bezel { arguments.append("--no-bezel") }
 
         let process = Process()
         process.executableURL = viewer
