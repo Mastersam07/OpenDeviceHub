@@ -5,7 +5,10 @@ import AppKit
 /// than the display: a 1206x2622 phone wants 1311 points of height on a two times Mac, which no
 /// laptop screen has.
 final class DeviceWindow: NSWindow {
+    /// Full screen needs AppKit's own sizing, so the override steps aside for the transition.
+    var constrainsToScreen = false
+
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
-        frameRect
+        constrainsToScreen ? super.constrainFrameRect(frameRect, to: screen) : frameRect
     }
 }

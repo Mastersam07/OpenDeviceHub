@@ -15,8 +15,14 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     private let input: (any InputSession)?
     private var isStopped = false
+    private var keepOnTop = false
+    /// Set once the window has been placed. Sizing and centring during construction move the
+    /// window, and saving those would make every device look like it had a remembered position.
+    private var tracksFrameChanges = false
+    private var deviceAspectRatio: CGSize = .zero
     private var scaleMode: ScaleMode
     private var bezelEnabled: Bool
+    private let frameStore: WindowFrameStore
 
     public init(
         udid: String,
@@ -25,8 +31,11 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         input: (any InputSession)?,
         scaleMode: ScaleMode,
         bezelEnabled: Bool,
+        keepOnTop: Bool,
+        frameStore: WindowFrameStore,
         fpsLabel: String?
     ) throws {
+        self.frameStore = frameStore
         self.udid = udid
         self.scaleMode = scaleMode
         self.bezelEnabled = bezelEnabled
@@ -52,10 +61,23 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         window.title = title
         window.contentView = screenView
         window.contentAspectRatio = contentSize
+        self.deviceAspectRatio = contentSize
         window.center()
+        window.collectionBehavior.insert(.fullScreenPrimary)
         super.init(window: window)
         window.delegate = self
         applyScaleMode(scaleMode)
+        setKeepOnTop(keepOnTop)
+
+        // A remembered frame wins over the default placement, but not over an explicit scale mode,
+        // which has already sized the window by this point.
+        if let remembered = frameStore.frame(for: udid) {
+            if scaleMode == .fit {
+                window.setFrame(remembered, display: false)
+            } else {
+                window.setFrameOrigin(remembered.origin)
+            }
+        }
 
         if let fpsLabel {
             installFPSCounter(label: fpsLabel)
@@ -123,7 +145,54 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         session.setBezelEnabled(enabled)
     }
 
+    /// Keeps the device above other applications, the way the classic Simulator could.
+    public func setKeepOnTop(_ enabled: Bool) {
+        keepOnTop = enabled
+        window?.level = enabled ? .floating : .normal
+    }
+
+    public var isKeptOnTop: Bool { keepOnTop }
+
+    public func toggleFullScreen() {
+        window?.toggleFullScreen(nil)
+    }
+
+    /// Starts persisting the window's frame. Called once the owner has finished placing it.
+    public func beginTrackingFrameChanges() {
+        tracksFrameChanges = true
+    }
+
+    public func rememberFrame() {
+        guard tracksFrameChanges,
+              let window,
+              !window.styleMask.contains(.fullScreen) else { return }
+        frameStore.save(window.frame, for: udid)
+    }
+
+    /// A locked aspect ratio cannot survive a full screen transition: AppKit collapses the window
+    /// to the title bar trying to satisfy both. Clearing it through `contentResizeIncrements` is
+    /// the documented way, since the two are mutually exclusive.
+    public func windowWillEnterFullScreen(_ notification: Notification) {
+        (window as? DeviceWindow)?.constrainsToScreen = true
+        window?.contentResizeIncrements = NSSize(width: 1, height: 1)
+    }
+
+    public func windowDidExitFullScreen(_ notification: Notification) {
+        (window as? DeviceWindow)?.constrainsToScreen = false
+        guard deviceAspectRatio != .zero else { return }
+        window?.contentAspectRatio = deviceAspectRatio
+    }
+
+    public func windowDidMove(_ notification: Notification) {
+        rememberFrame()
+    }
+
+    public func windowDidResize(_ notification: Notification) {
+        rememberFrame()
+    }
+
     public func windowWillClose(_ notification: Notification) {
+        rememberFrame()
         stop()
         onClose?(udid)
     }

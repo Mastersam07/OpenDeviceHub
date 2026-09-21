@@ -6,9 +6,12 @@ import OpenDeviceHubEngine
 @MainActor
 public final class DeviceWindowManager {
     private var controllers: [String: DeviceWindowController] = [:]
-    private var lastWindowOrigin: NSPoint?
+    private let frameStore: WindowFrameStore
+    private let placementGap: CGFloat = 12
 
-    public init() {}
+    public init(frameStore: WindowFrameStore = WindowFrameStore()) {
+        self.frameStore = frameStore
+    }
 
     public var openCount: Int { controllers.count }
 
@@ -23,6 +26,7 @@ public final class DeviceWindowManager {
         input: (any InputSession)?,
         scaleMode: ScaleMode,
         bezelEnabled: Bool,
+        keepOnTop: Bool,
         showFPS: Bool
     ) throws -> DeviceWindowController {
         if let existing = controllers[device.udid] {
@@ -37,6 +41,8 @@ public final class DeviceWindowManager {
             input: input,
             scaleMode: scaleMode,
             bezelEnabled: bezelEnabled,
+            keepOnTop: keepOnTop,
+            frameStore: frameStore,
             fpsLabel: showFPS ? device.name : nil
         )
         controller.onClose = { [weak self] udid in
@@ -44,10 +50,21 @@ public final class DeviceWindowManager {
         }
         controllers[device.udid] = controller
 
+        // Only place the window when nothing was remembered for this device, so a window the user
+        // moved stays where they put it.
         if let window = controller.window {
-            lastWindowOrigin = window.cascadeTopLeft(from: lastWindowOrigin ?? .zero)
+            if frameStore.frame(for: device.udid) == nil {
+                let visible = (window.screen ?? NSScreen.main)?.visibleFrame ?? .zero
+                window.setFrameOrigin(WindowPlacement.nextOrigin(
+                    for: window.frame.size,
+                    placed: placedFrames(excluding: device.udid),
+                    in: visible,
+                    gap: placementGap
+                ))
+            }
             window.makeKeyAndOrderFront(nil)
         }
+        controller.beginTrackingFrameChanges()
         return controller
     }
 
@@ -61,6 +78,18 @@ public final class DeviceWindowManager {
     @discardableResult
     public func applyScaleMode(_ mode: ScaleMode) -> [String: ScaleApplication] {
         controllers.mapValues { $0.applyScaleMode(mode) }
+    }
+
+    private func placedFrames(excluding udid: String) -> [CGRect] {
+        controllers
+            .filter { $0.key != udid }
+            .compactMap { $0.value.window?.frame }
+    }
+
+    public func setKeepOnTop(_ enabled: Bool) {
+        for controller in controllers.values {
+            controller.setKeepOnTop(enabled)
+        }
     }
 
     public func setBezelEnabled(_ enabled: Bool) {
