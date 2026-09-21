@@ -13,6 +13,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private let screenView: DeviceScreenView
     private let chromeView: DeviceChromeView
     private var chrome: DeviceChrome?
+    private var toolbar: DeviceToolbar?
     private var frameTask: Task<Void, Never>?
 
     private let input: (any InputSession)?
@@ -277,6 +278,24 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     }
 
     public var currentOrientation: DeviceOrientation { orientation }
+
+    /// Whether the device has a real Home button, which decides between pressing it and swiping up
+    /// from the bottom edge.
+    public var hasHomeButton: Bool {
+        chrome?.buttons.contains { $0.name == "home" } ?? false
+    }
+
+    /// Puts the buttons above this device. Each window drives its own device, so the actions are
+    /// supplied per window rather than shared with the menu bar.
+    public func setToolbarActions(_ actions: DeviceToolbarActions) {
+        guard let window else { return }
+        let toolbar = DeviceToolbar(actions: actions)
+        toolbar.install(on: window)
+        self.toolbar = toolbar
+        // A unified toolbar makes the title bar taller, which would otherwise come out of the
+        // device's own height, so the window is sized again now that it is there.
+        applyScaleMode(scaleMode)
+    }
 
     /// Offers a finished recording for dragging out of the window.
     public func setDraggableFile(_ file: URL?) {

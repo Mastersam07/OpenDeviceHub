@@ -117,9 +117,16 @@ public final class DeviceWindowManager {
 
     /// Writes a PNG of every open device into `directory`, returning the files written.
     @discardableResult
-    public func saveScreenshots(into directory: URL, date: Date = Date()) -> [URL] {
+    /// Writes a PNG per open device, or for just one when a udid is given, which is what the
+    /// button above a single window needs.
+    public func saveScreenshots(
+        into directory: URL,
+        date: Date = Date(),
+        only udid: String? = nil
+    ) -> [URL] {
         var written: [URL] = []
-        for controller in controllers.values {
+        let chosen = udid.map { controllers[$0].map { [$0] } ?? [] } ?? Array(controllers.values)
+        for controller in chosen {
             guard let data = controller.screenshotPNG() else { continue }
             let url = directory.appending(path: ScreenshotWriter.fileName(
                 deviceName: controller.deviceTitle,

@@ -2,7 +2,8 @@ import AppKit
 import OpenDeviceHubEngine
 
 /// Draws the device's body around the screen and puts its buttons where the chrome says they go.
-/// With no chrome the screen simply fills the view, which is how a device with no artwork behaves.
+/// With no chrome the screen is shown on its own. Either way the device keeps its shape and is
+/// centred, so full screen leaves a black margin rather than stretching anything.
 public final class DeviceChromeView: NSView {
     public var onButton: ((HardwareButton, ButtonPhase) -> Void)?
 
@@ -75,8 +76,24 @@ public final class DeviceChromeView: NSView {
 
     /// The screen's area inside this view, which is everything when there is no body.
     public var screenRect: CGRect {
-        guard let chrome, hasChrome, screenSize.width > 0 else { return bounds }
+        guard screenSize.width > 0, screenSize.height > 0 else { return bounds }
+        guard let chrome, hasChrome else {
+            // No body to fit, so the screen itself is what gets centred.
+            return CoordinateMapper.fittedRect(
+                viewSize: bounds.size,
+                pixelSize: orientation.displayedSize(portraitNative: screenSize)
+            )
+        }
         return ChromeGeometry.screenRect(
+            viewSize: bounds.size, screen: screenSize, chrome: chrome, orientation: orientation
+        )
+    }
+
+    /// Everything the device occupies, which is the body when there is one and the bare screen
+    /// otherwise. Anything outside it is margin.
+    private var occupiedRect: CGRect {
+        guard let chrome, hasChrome, screenSize.width > 0 else { return screenRect }
+        return ChromeGeometry.deviceRect(
             viewSize: bounds.size, screen: screenSize, chrome: chrome, orientation: orientation
         )
     }
@@ -99,6 +116,10 @@ public final class DeviceChromeView: NSView {
     }
 
     public override func draw(_ dirtyRect: NSRect) {
+        // A window the size of the device has no margin, so this paints nothing until full screen
+        // or a resize leaves room around it.
+        fillMargin(around: occupiedRect)
+
         guard let chrome, hasChrome, screenSize.width > 0 else { return }
         guard let context = NSGraphicsContext.current else { return }
 
@@ -128,6 +149,13 @@ public final class DeviceChromeView: NSView {
         }
 
         drawButtons(chrome, onTop: true)
+    }
+
+    private func fillMargin(around rect: CGRect) {
+        NSColor.black.setFill()
+        for margin in ChromeGeometry.margins(around: rect, in: bounds) {
+            margin.fill()
+        }
     }
 
     private func drawButtons(_ chrome: DeviceChrome, onTop: Bool) {

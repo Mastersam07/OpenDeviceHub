@@ -334,6 +334,52 @@ final class ChromeGeometryTests: XCTestCase {
         XCTAssertEqual(rect.midX, content.width / 2, accuracy: 0.5)
     }
 
+    func testADeviceFillingTheViewLeavesNoMargin() {
+        let bounds = CGRect(x: 0, y: 0, width: 456, height: 910)
+        XCTAssertTrue(ChromeGeometry.margins(around: bounds, in: bounds).isEmpty)
+    }
+
+    /// Full screen makes the view far larger than the device, and the bands left over are painted
+    /// rather than left showing whatever is behind.
+    func testACentredDeviceLeavesFourBands() {
+        let bounds = CGRect(x: 0, y: 0, width: 1512, height: 950)
+        let device = CGRect(x: 528, y: 20, width: 456, height: 910)
+        let margins = ChromeGeometry.margins(around: device, in: bounds)
+        XCTAssertEqual(margins.count, 4)
+        for band in margins {
+            XCTAssertFalse(band.intersects(device.insetBy(dx: 0.5, dy: 0.5)))
+        }
+        let covered = margins.reduce(device.width * device.height) { $0 + $1.width * $1.height }
+        XCTAssertEqual(covered, bounds.width * bounds.height, accuracy: 0.5)
+    }
+
+    func testAWideViewLeavesOnlySideBands() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 910)
+        let device = CGRect(x: 272, y: 0, width: 456, height: 910)
+        let margins = ChromeGeometry.margins(around: device, in: bounds)
+        XCTAssertEqual(margins.count, 2)
+        XCTAssertEqual(margins.map(\.width), [272, 272])
+    }
+
+    func testAnEmptyDeviceLeavesTheWholeViewAsMargin() {
+        let bounds = CGRect(x: 0, y: 0, width: 100, height: 100)
+        XCTAssertTrue(ChromeGeometry.margins(around: .zero, in: bounds).isEmpty)
+    }
+
+    func testTheDeviceIsCentredWhenTheViewIsLarger() throws {
+        let chrome = try makeChrome()
+        let rect = ChromeGeometry.deviceRect(
+            viewSize: CGSize(width: 1512, height: 950),
+            screen: screen,
+            chrome: chrome,
+            orientation: .portrait
+        )
+        XCTAssertEqual(rect.midX, 756, accuracy: 0.5)
+        XCTAssertEqual(rect.midY, 475, accuracy: 0.5)
+        // Fitted, so it keeps its shape rather than stretching to the view.
+        XCTAssertEqual(rect.width / rect.height, 456.0 / 910.0, accuracy: 0.001)
+    }
+
     func testAClickOnTheScreenFindsNoButton() throws {
         let chrome = try makeChrome()
         let content = ChromeGeometry.contentSize(screen: screen, chrome: chrome)

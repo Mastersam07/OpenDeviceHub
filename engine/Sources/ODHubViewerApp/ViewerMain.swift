@@ -186,6 +186,8 @@ struct ODHubViewer: ParsableCommand {
                 }
             ), capabilities: adapter.capabilities)
 
+            installToolbars(manager: manager, adapter: adapter)
+
             application.activate(ignoringOtherApps: true)
             let delegate = ViewerAppDelegate { manager.closeAll() }
             // NSApplication holds its delegate weakly, and nothing else refers to these objects
@@ -273,4 +275,64 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         onTerminate()
     }
+}
+
+/// The buttons above each device. Unlike the menu bar these act on one device, the one whose
+/// window they sit on.
+@MainActor
+private func installToolbars(manager: DeviceWindowManager, adapter: any SimulatorAdapter) {
+    for udid in manager.openUDIDs {
+        guard let controller = manager.controller(for: udid) else { continue }
+        controller.setToolbarActions(DeviceToolbarActions(
+            goHome: { [weak controller] in
+                guard let controller else { return }
+                Task {
+                    do {
+                        let session = try adapter.openInput(udid)
+                        defer { session.close() }
+                        if controller.hasHomeButton {
+                            try await session.button(.home, phase: .down)
+                            try await Task.sleep(for: .milliseconds(15))
+                            try await session.button(.home, phase: .up)
+                        } else {
+                            // A Face ID device has no Home button, so it goes home the way a hand
+                            // would, by swiping up from the bottom edge.
+                            try await swipeHome(session)
+                        }
+                    } catch {
+                        print("home failed: \(error.localizedDescription)")
+                    }
+                }
+            },
+            saveScreenshot: {
+                let directory = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+                    ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                for url in manager.saveScreenshots(into: directory, only: udid) {
+                    print("saved \(url.path(percentEncoded: false))")
+                }
+            },
+            rotate: { [weak controller] in
+                guard let controller else { return }
+                let next = controller.currentOrientation.rotatedRight
+                do {
+                    try adapter.setOrientation(next, udid: udid)
+                    controller.setOrientation(next)
+                } catch {
+                    print("rotate failed: \(error.localizedDescription)")
+                }
+            }
+        ))
+    }
+}
+
+private func swipeHome(_ session: any InputSession) async throws {
+    let path = HomeGesture.swipePath()
+    try await session.touch(TouchEvent(phase: .began, points: [path[0]], edge: .bottom))
+    for point in path.dropFirst() {
+        try await Task.sleep(for: .milliseconds(10))
+        try await session.touch(TouchEvent(phase: .moved, points: [point], edge: .bottom))
+    }
+    try await session.touch(
+        TouchEvent(phase: .ended, points: [path[path.count - 1]], edge: .bottom)
+    )
 }
