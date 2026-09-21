@@ -1,0 +1,122 @@
+import CoreGraphics
+import Foundation
+import IOSurface
+
+public enum DeviceState: String, Sendable, Codable {
+    case shutdown
+    case booting
+    case booted
+    case shuttingDown
+    case unknown
+}
+
+public struct DeviceInfo: Sendable, Hashable, Codable {
+    public let udid: String
+    public let name: String
+    public let deviceTypeIdentifier: String
+    public let runtimeIdentifier: String
+    public let runtimeName: String
+    public let state: DeviceState
+    public let isAvailable: Bool
+
+    public init(
+        udid: String,
+        name: String,
+        deviceTypeIdentifier: String,
+        runtimeIdentifier: String,
+        runtimeName: String,
+        state: DeviceState,
+        isAvailable: Bool
+    ) {
+        self.udid = udid
+        self.name = name
+        self.deviceTypeIdentifier = deviceTypeIdentifier
+        self.runtimeIdentifier = runtimeIdentifier
+        self.runtimeName = runtimeName
+        self.state = state
+        self.isAvailable = isAvailable
+    }
+}
+
+public struct DisplayFrame: @unchecked Sendable {
+    public let surface: IOSurfaceRef
+    public let timestamp: UInt64
+
+    public init(surface: IOSurfaceRef, timestamp: UInt64) {
+        self.surface = surface
+        self.timestamp = timestamp
+    }
+}
+
+public struct TouchEvent: Sendable, Hashable {
+    public enum Phase: Sendable, Hashable {
+        case began
+        case moved
+        case ended
+        case cancelled
+    }
+
+    public let phase: Phase
+    /// One or two points, normalized 0...1 in the device's portrait native coordinate space.
+    public let points: [CGPoint]
+
+    public init(phase: Phase, points: [CGPoint]) {
+        self.phase = phase
+        self.points = points
+    }
+}
+
+public struct KeyEvent: Sendable, Hashable {
+    public enum Phase: Sendable, Hashable {
+        case down
+        case up
+    }
+
+    public let phase: Phase
+    /// HID usage from the keyboard usage page, not a macOS virtual keycode.
+    public let usage: UInt32
+
+    public init(phase: Phase, usage: UInt32) {
+        self.phase = phase
+        self.usage = usage
+    }
+}
+
+public enum HardwareButton: Sendable, Hashable {
+    case home
+    case lock
+    case volumeUp
+    case volumeDown
+    case siri
+    case actionButton
+}
+
+public enum ButtonPhase: Sendable, Hashable {
+    case down
+    case up
+}
+
+public protocol DisplaySession: AnyObject, Sendable {
+    var frames: AsyncStream<DisplayFrame> { get }
+    var pixelSize: CGSize { get }
+    var pointScale: CGFloat { get }
+    func close()
+}
+
+public protocol InputSession: AnyObject, Sendable {
+    func touch(_ event: TouchEvent) async throws
+    func key(_ event: KeyEvent) async throws
+    func button(_ button: HardwareButton, phase: ButtonPhase) async throws
+    func close()
+}
+
+public protocol SimulatorAdapter: Sendable {
+    var xcode: XcodeInstall { get }
+    var capabilities: Capabilities { get }
+    func devices() throws -> [DeviceInfo]
+    func deviceStateChanges() -> AsyncStream<DeviceInfo>
+    func boot(_ udid: String) async throws
+    func shutdown(_ udid: String) async throws
+    func openDisplay(_ udid: String) throws -> DisplaySession
+    func openInput(_ udid: String) throws -> InputSession
+}
