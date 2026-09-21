@@ -3,22 +3,27 @@ import MetalKit
 import OpenDeviceHubEngine
 
 @MainActor
-public final class DeviceWindowController: NSWindowController {
+public final class DeviceWindowController: NSWindowController, NSWindowDelegate {
+    public let udid: String
+    /// Called when the window closes, so the owner can drop its reference.
+    public var onClose: ((String) -> Void)?
+
     private let session: any DisplaySession
     private let renderer: FrameRenderer
     private let screenView: DeviceScreenView
     private var frameTask: Task<Void, Never>?
 
-    public var onClick: ((CGPoint) -> Void)?
-
     private let input: (any InputSession)?
+    private var isStopped = false
 
     public init(
+        udid: String,
         title: String,
         session: any DisplaySession,
         input: (any InputSession)?,
-        reportFPS: Bool
+        fpsLabel: String?
     ) throws {
+        self.udid = udid
         guard let device = MTLCreateSystemDefaultDevice() else {
             throw ViewerError.metalUnavailable("no system default device")
         }
@@ -43,9 +48,10 @@ public final class DeviceWindowController: NSWindowController {
         window.contentAspectRatio = contentSize
         window.center()
         super.init(window: window)
+        window.delegate = self
 
-        if reportFPS {
-            installFPSCounter()
+        if let fpsLabel {
+            installFPSCounter(label: fpsLabel)
         }
         if input != nil {
             installClickToTap()
@@ -59,10 +65,17 @@ public final class DeviceWindowController: NSWindowController {
     }
 
     public func stop() {
+        guard !isStopped else { return }
+        isStopped = true
         frameTask?.cancel()
         frameTask = nil
         input?.close()
         session.close()
+    }
+
+    public func windowWillClose(_ notification: Notification) {
+        stop()
+        onClose?(udid)
     }
 
     private func installClickToTap() {
@@ -97,16 +110,21 @@ public final class DeviceWindowController: NSWindowController {
         }
     }
 
-    private func installFPSCounter() {
-        let counter = FPSCounter()
+    private func installFPSCounter(label: String) {
+        let counter = FPSCounter(label: label)
         renderer.onFrameDrawn = { counter.record() }
     }
 }
 
 private final class FPSCounter: @unchecked Sendable {
+    private let label: String
     private let lock = NSLock()
     private var count = 0
     private var windowStart = Date()
+
+    init(label: String) {
+        self.label = label
+    }
 
     func record() {
         lock.lock()
@@ -120,6 +138,6 @@ private final class FPSCounter: @unchecked Sendable {
         count = 0
         windowStart = Date()
         lock.unlock()
-        print(String(format: "%.1f fps", fps))
+        print(String(format: "%@  %.1f fps", label, fps))
     }
 }

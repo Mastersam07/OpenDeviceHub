@@ -5,11 +5,11 @@ import OpenDeviceHubEngine
 struct View: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "view",
-        abstract: "Open a window showing a simulator's screen."
+        abstract: "Open a window showing each simulator's screen."
     )
 
-    @Argument(help: "The UDID of the simulator to show.")
-    var udid: String
+    @Argument(help: "The UDIDs of the simulators to show, one window each.")
+    var udids: [String]
 
     @Flag(help: "Boot the simulator first if it is not already booted.")
     var boot = false
@@ -20,6 +20,12 @@ struct View: AsyncParsableCommand {
     @Flag(help: "Return as soon as the window opens instead of waiting for it to close.")
     var detach = false
 
+    func validate() throws {
+        guard !udids.isEmpty else {
+            throw ValidationError("Pass at least one simulator UDID.")
+        }
+    }
+
     func run() async throws {
         guard let running = ExecutableLocator.runningExecutableURL() else {
             throw ViewLaunchError.couldNotLocateSelf
@@ -29,7 +35,7 @@ struct View: AsyncParsableCommand {
             throw ViewLaunchError.viewerMissing(path: viewer.path(percentEncoded: false))
         }
 
-        var arguments = [udid]
+        var arguments = udids
         if boot { arguments.append("--boot") }
         if fps { arguments.append("--fps") }
 
