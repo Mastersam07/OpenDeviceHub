@@ -50,20 +50,36 @@ dump_framework() {
     otool -ov "${binary}" 2>/dev/null || echo "(otool produced no output)"
   } > "${out}"
 
-  if command -v class-dump >/dev/null 2>&1; then
+  # These binaries can be universal, so the architecture is always named explicitly. Without it
+  # ipsw prompts for a choice and produces nothing when run from a script.
+  local arch
+  arch="$(uname -m)"
+  [ "${arch}" = "arm64" ] && arch="arm64e"
+
+  if command -v ipsw >/dev/null 2>&1; then
+    if ipsw class-dump --arch "${arch}" "${binary}" \
+      > "${out_dir}/${name}-${xcode_build}-class-dump.h" 2>/dev/null; then
+      echo "${name}: wrote ${out} and ${name}-${xcode_build}-class-dump.h"
+    else
+      echo "${name}: wrote ${out} (ipsw class-dump failed for ${arch})"
+    fi
+  elif command -v class-dump >/dev/null 2>&1; then
     class-dump "${binary}" > "${out_dir}/${name}-${xcode_build}-class-dump.h" 2>/dev/null || true
     echo "${name}: wrote ${out} and ${name}-${xcode_build}-class-dump.h"
-  elif command -v ipsw >/dev/null 2>&1; then
-    ipsw class-dump "${binary}" > "${out_dir}/${name}-${xcode_build}-class-dump.h" 2>/dev/null || true
-    echo "${name}: wrote ${out} and ${name}-${xcode_build}-class-dump.h"
   else
-    echo "${name}: wrote ${out} (install class-dump or ipsw for readable headers)"
+    echo "${name}: wrote ${out} (install ipsw for readable headers)"
   fi
 }
 
 dump_framework "CoreSimulator" \
   "/Library/Developer/PrivateFrameworks/CoreSimulator.framework/CoreSimulator" \
   "${developer_dir}/Library/PrivateFrameworks/CoreSimulator.framework/CoreSimulator"
+
+# The display and legacy HID descriptor protocols live here, not in CoreSimulator itself. It is
+# loaded transitively when CoreSimulator is dlopened.
+dump_framework "CoreSimDeviceIO" \
+  "/Library/Developer/PrivateFrameworks/CoreSimulator.framework/Frameworks/CoreSimDeviceIO.framework/CoreSimDeviceIO" \
+  "${developer_dir}/Library/PrivateFrameworks/CoreSimulator.framework/Frameworks/CoreSimDeviceIO.framework/CoreSimDeviceIO"
 
 dump_framework "SimulatorKit" \
   "${app_root}/Contents/SharedFrameworks/SimulatorKit.framework/SimulatorKit" \
