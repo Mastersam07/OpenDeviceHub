@@ -10,19 +10,25 @@ public enum ViewerMenu {
         public var toggleKeepOnTop: () -> Void
         public var pasteToDevice: () -> Void
         public var setAppearance: (SimctlService.Appearance) -> Void
+        public var saveScreenshot: () -> Void
+        public var copyScreenshot: () -> Void
 
         public init(
             setScaleMode: @escaping (ScaleMode) -> Void,
             toggleBezel: @escaping () -> Void,
             toggleKeepOnTop: @escaping () -> Void,
             pasteToDevice: @escaping () -> Void,
-            setAppearance: @escaping (SimctlService.Appearance) -> Void
+            setAppearance: @escaping (SimctlService.Appearance) -> Void,
+            saveScreenshot: @escaping () -> Void,
+            copyScreenshot: @escaping () -> Void
         ) {
             self.setScaleMode = setScaleMode
             self.toggleBezel = toggleBezel
             self.toggleKeepOnTop = toggleKeepOnTop
             self.pasteToDevice = pasteToDevice
             self.setAppearance = setAppearance
+            self.saveScreenshot = saveScreenshot
+            self.copyScreenshot = copyScreenshot
         }
     }
 
@@ -38,6 +44,7 @@ public enum ViewerMenu {
 
         let editItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(target.item("Copy Screenshot", #selector(MenuTarget.copyScreenshot), "c", []))
         editMenu.addItem(target.item("Paste to Device", #selector(MenuTarget.paste), "v", []))
         editItem.submenu = editMenu
         bar.addItem(editItem)
@@ -63,6 +70,8 @@ public enum ViewerMenu {
 
         let deviceItem = NSMenuItem()
         let deviceMenu = NSMenu(title: "Device")
+        deviceMenu.addItem(target.item("Save Screenshot", #selector(MenuTarget.saveScreenshot), "s", []))
+        deviceMenu.addItem(.separator())
         let appearance = target.item("Toggle Appearance", #selector(MenuTarget.appearance), "a", [.command, .shift])
         deviceMenu.addItem(appearance)
         deviceItem.submenu = deviceMenu
@@ -99,6 +108,8 @@ public final class MenuTarget: NSObject {
 
     @objc func bezel() { actions.toggleBezel() }
     @objc func keepOnTop() { actions.toggleKeepOnTop() }
+    @objc func saveScreenshot() { actions.saveScreenshot() }
+    @objc func copyScreenshot() { actions.copyScreenshot() }
     @objc func paste() { actions.pasteToDevice() }
 
     @objc func appearance() {

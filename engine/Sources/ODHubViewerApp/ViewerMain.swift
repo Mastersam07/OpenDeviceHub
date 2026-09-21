@@ -93,6 +93,16 @@ struct ODHubViewer: ParsableCommand {
                     for udid in manager.openUDIDs {
                         try? simctl.setAppearance(appearance, udid: udid)
                     }
+                },
+                saveScreenshot: {
+                    let directory = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+                        ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                    for url in manager.saveScreenshots(into: directory) {
+                        print("saved \(url.path(percentEncoded: false))")
+                    }
+                },
+                copyScreenshot: {
+                    print(manager.copyScreenshotToClipboard() ? "screenshot copied" : "nothing to copy")
                 }
             ))
 

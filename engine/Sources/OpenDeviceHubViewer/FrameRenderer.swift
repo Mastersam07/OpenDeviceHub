@@ -56,13 +56,23 @@ public final class FrameRenderer: NSObject, MTKViewDelegate {
         super.init()
     }
 
+    /// The surface behind the most recent frame, for screenshots.
+    public var currentSurface: IOSurfaceRef? {
+        lock.lock()
+        defer { lock.unlock() }
+        return lastSurface
+    }
+
     public func accept(_ frame: DisplayFrame) {
         lock.lock()
         defer { lock.unlock() }
 
         // The simulator usually keeps one surface and redraws into it, so the texture is rebuilt
-        // only when the surface itself is replaced.
-        if let lastSurface, CFEqual(lastSurface, frame.surface) { return }
+        // only when the surface itself is replaced. The surface is recorded either way, since a
+        // screenshot needs the current one even when the texture is unchanged.
+        let previous = lastSurface
+        lastSurface = frame.surface
+        if let previous, CFEqual(previous, frame.surface) { return }
 
         let width = IOSurfaceGetWidth(frame.surface)
         let height = IOSurfaceGetHeight(frame.surface)
@@ -76,7 +86,6 @@ public final class FrameRenderer: NSObject, MTKViewDelegate {
         descriptor.storageMode = .shared
 
         texture = device.makeTexture(descriptor: descriptor, iosurface: frame.surface, plane: 0)
-        lastSurface = frame.surface
     }
 
     public func draw(in view: MTKView) {
