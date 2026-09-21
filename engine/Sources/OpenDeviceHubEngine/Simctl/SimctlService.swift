@@ -242,3 +242,50 @@ extension SimctlService {
             .appending(path: "data")
     }
 }
+
+extension SimctlService {
+    /// Darwin notifications the guest's UIKit listens for. Both names were read out of the
+    /// runtime's UIKitCore rather than guessed, and both were confirmed by their visible effect on
+    /// Xcode 26.5: shake raised an Undo dialog, slow motion left an app mid transition a second
+    /// after launch.
+    public enum GuestNotification: String, Sendable, CaseIterable {
+        case shake = "com.apple.UIKit.SimulatorShake"
+        case slowMotionAnimation = "com.apple.UIKit.SimulatorSlowMotionAnimationState"
+    }
+
+    static func postNotificationArguments(udid: String, name: GuestNotification) -> [String] {
+        ["simctl", "spawn", udid, "notifyutil", "-p", name.rawValue]
+    }
+
+    static func setNotificationStateArguments(
+        udid: String,
+        name: GuestNotification,
+        state: Int
+    ) -> [String] {
+        ["simctl", "spawn", udid, "notifyutil", "-s", name.rawValue, String(state)]
+    }
+
+    public func shake(udid: String) throws {
+        try runSimctl(Self.postNotificationArguments(udid: udid, name: .shake))
+    }
+
+    /// Slow motion is a notify state, so the value is set first and the notification then tells
+    /// UIKit to read it.
+    public func setSlowAnimations(_ enabled: Bool, udid: String) throws {
+        try runSimctl(Self.setNotificationStateArguments(
+            udid: udid, name: .slowMotionAnimation, state: enabled ? 1 : 0
+        ))
+        try runSimctl(Self.postNotificationArguments(udid: udid, name: .slowMotionAnimation))
+    }
+
+    private func runSimctl(_ arguments: [String]) throws {
+        let result = try ProcessRunner.run("/usr/bin/xcrun", arguments)
+        guard result.status == 0 else {
+            throw EngineError.simctl(
+                args: Array(arguments.dropFirst()),
+                code: result.status,
+                stderr: result.standardError
+            )
+        }
+    }
+}

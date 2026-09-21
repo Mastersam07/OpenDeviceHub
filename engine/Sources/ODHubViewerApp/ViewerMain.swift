@@ -55,6 +55,7 @@ struct ODHubViewer: ParsableCommand {
             let application = NSApplication.shared
             application.setActivationPolicy(.regular)
 
+            var slowAnimations = false
             let store = WindowFrameStore()
             if resetWindowPosition {
                 udids.forEach(store.forget)
@@ -136,7 +137,24 @@ struct ODHubViewer: ParsableCommand {
                     for udid in manager.openUDIDs {
                         NSWorkspace.shared.open(SimctlService.deviceDataDirectory(udid: udid))
                     }
-                }
+                },
+                shake: {
+                    let simctl = SimctlService()
+                    for udid in manager.openUDIDs {
+                        do { try simctl.shake(udid: udid) } catch {
+                            print("shake failed: \(error.localizedDescription)")
+                        }
+                    }
+                },
+                toggleSlowAnimations: {
+                    slowAnimations.toggle()
+                    let simctl = SimctlService()
+                    for udid in manager.openUDIDs {
+                        try? simctl.setSlowAnimations(slowAnimations, udid: udid)
+                    }
+                    print("slow animations \(slowAnimations ? "on" : "off")")
+                },
+                toggleLatencyOverlay: { manager.toggleLatencyOverlay() }
             ), capabilities: adapter.capabilities)
 
             application.activate(ignoringOtherApps: true)

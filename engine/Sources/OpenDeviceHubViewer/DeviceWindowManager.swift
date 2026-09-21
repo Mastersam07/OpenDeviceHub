@@ -148,7 +148,14 @@ public final class DeviceWindowManager {
     @discardableResult
     public func toggleRecording(into directory: URL, date: Date = Date()) -> [URL] {
         guard recorders.isEmpty else {
-            let finished = recorders.values.map { $0.stop() }
+            var finished: [URL] = []
+            for (udid, recorder) in recorders {
+                let file = recorder.stop()
+                finished.append(file)
+                // The window now holds the file, so Command dragging from the screen hands it off
+                // to Finder or anywhere else that takes a file.
+                controllers[udid]?.setDraggableFile(file)
+            }
             recorders.removeAll()
             for controller in controllers.values {
                 controller.setRecordingIndicatorVisible(false)
@@ -175,6 +182,17 @@ public final class DeviceWindowManager {
         for controller in controllers.values {
             controller.setRecordingIndicatorVisible(false)
         }
+    }
+
+    public func setLatencyOverlayVisible(_ visible: Bool) {
+        for controller in controllers.values {
+            controller.setLatencyOverlayVisible(visible)
+        }
+    }
+
+    public func toggleLatencyOverlay() {
+        let visible = controllers.values.first?.isLatencyOverlayVisible ?? false
+        setLatencyOverlayVisible(!visible)
     }
 
     public func closeAll() {

@@ -4,7 +4,7 @@ import OpenDeviceHubEngine
 
 /// Draws only when a frame arrives, so the measured rate is the simulator's output rate rather
 /// than a fixed animation timer.
-public final class DeviceScreenView: MTKView {
+public final class DeviceScreenView: MTKView, NSDraggingSource {
     public enum ContactPhase: Sendable {
         case began
         case moved
@@ -61,8 +61,41 @@ public final class DeviceScreenView: MTKView {
     /// Reports files and URLs dropped on the device.
     public var onDrop: (([URL], String?) -> Bool)?
 
+    /// The most recent recording, which can be dragged out of the window once it exists.
+    public var draggableFile: URL? {
+        didSet { window?.invalidateCursorRects(for: self) }
+    }
+
+    /// A drag starting on the device is a touch, unless there is a finished recording to hand off
+    /// and the drag begins with Command held, which is how the file leaves the window.
+    public override func mouseDragged(with event: NSEvent) {
+        if let file = draggableFile, event.modifierFlags.contains(.command) {
+            beginDraggingOut(file, with: event)
+            return
+        }
+        onContact?(convert(event.locationInWindow, from: nil), .moved, style(for: event))
+    }
+
+    private func beginDraggingOut(_ file: URL, with event: NSEvent) {
+        let item = NSDraggingItem(pasteboardWriter: file as NSURL)
+        let thumbnail = NSWorkspace.shared.icon(forFile: file.path(percentEncoded: false))
+        let origin = convert(event.locationInWindow, from: nil)
+        item.setDraggingFrame(
+            CGRect(x: origin.x - 32, y: origin.y - 32, width: 64, height: 64),
+            contents: thumbnail
+        )
+        beginDraggingSession(with: [item], event: event, source: self)
+    }
+
     private func registerForDrops() {
         registerForDraggedTypes([.fileURL, .URL, .string])
+    }
+
+    public func draggingSession(
+        _ session: NSDraggingSession,
+        sourceOperationMaskFor context: NSDraggingContext
+    ) -> NSDragOperation {
+        context == .outsideApplication ? .copy : []
     }
 
     public override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
@@ -106,10 +139,6 @@ public final class DeviceScreenView: MTKView {
 
     public override func mouseDown(with event: NSEvent) {
         onContact?(convert(event.locationInWindow, from: nil), .began, style(for: event))
-    }
-
-    public override func mouseDragged(with event: NSEvent) {
-        onContact?(convert(event.locationInWindow, from: nil), .moved, style(for: event))
     }
 
     public override func mouseUp(with event: NSEvent) {
