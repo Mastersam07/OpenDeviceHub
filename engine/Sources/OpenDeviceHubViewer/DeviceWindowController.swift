@@ -15,15 +15,18 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     private let input: (any InputSession)?
     private var isStopped = false
+    private var scaleMode: ScaleMode
 
     public init(
         udid: String,
         title: String,
         session: any DisplaySession,
         input: (any InputSession)?,
+        scaleMode: ScaleMode,
         fpsLabel: String?
     ) throws {
         self.udid = udid
+        self.scaleMode = scaleMode
         guard let device = MTLCreateSystemDefaultDevice() else {
             throw ViewerError.metalUnavailable("no system default device")
         }
@@ -49,6 +52,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         window.center()
         super.init(window: window)
         window.delegate = self
+        applyScaleMode(scaleMode)
 
         if let fpsLabel {
             installFPSCounter(label: fpsLabel)
@@ -72,6 +76,26 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         input?.close()
         session.close()
     }
+
+    /// Resizes the window so the device screen is shown at the requested scale. Fit leaves the
+    /// window alone, since it is the mode that lets any size work.
+    public func applyScaleMode(_ mode: ScaleMode) {
+        scaleMode = mode
+        guard let window else { return }
+        let device = DeviceMetrics(
+            pixelSize: session.pixelSize,
+            pointScale: session.pointScale,
+            pixelsPerInch: session.pixelsPerInch
+        )
+        guard let size = DeviceGeometry.contentSize(
+            for: mode,
+            device: device,
+            screen: ScaleMode.screenMetrics(for: window.screen ?? NSScreen.main)
+        ) else { return }
+        window.setContentSize(size)
+    }
+
+    public var currentScaleMode: ScaleMode { scaleMode }
 
     public func windowWillClose(_ notification: Notification) {
         stop()

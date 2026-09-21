@@ -17,6 +17,9 @@ struct View: AsyncParsableCommand {
     @Flag(help: "Print the delivered frame rate once a second.")
     var fps = false
 
+    @Option(help: "Window sizing: fit, point-accurate, pixel-accurate or physical-size.")
+    var scale: String?
+
     @Flag(help: "Return as soon as the window opens instead of waiting for it to close.")
     var detach = false
 
@@ -38,6 +41,7 @@ struct View: AsyncParsableCommand {
         var arguments = udids
         if boot { arguments.append("--boot") }
         if fps { arguments.append("--fps") }
+        if let scale { arguments.append(contentsOf: ["--scale", scale]) }
 
         let process = Process()
         process.executableURL = viewer

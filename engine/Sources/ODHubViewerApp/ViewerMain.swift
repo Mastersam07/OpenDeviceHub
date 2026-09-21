@@ -23,6 +23,9 @@ struct ODHubViewer: ParsableCommand {
     @Flag(help: "Print the delivered frame rate once a second.")
     var fps = false
 
+    @Option(help: "Window sizing: fit, point-accurate, pixel-accurate or physical-size.")
+    var scale: ScaleMode = .pointAccurate
+
     func validate() throws {
         guard !udids.isEmpty else {
             throw ValidationError("Pass at least one simulator UDID.")
@@ -104,8 +107,15 @@ struct ODHubViewer: ParsableCommand {
             print("\(device.name): clicking will not send taps, \(error.localizedDescription)")
         }
 
-        try manager.open(device: device, session: session, input: input, showFPS: fps)
-        print("\(device.name)  \(Int(session.pixelSize.width))x\(Int(session.pixelSize.height)) at \(session.pointScale)x")
+        try manager.open(
+            device: device,
+            session: session,
+            input: input,
+            scaleMode: scale,
+            showFPS: fps
+        )
+        let density = session.pixelsPerInch.map { " \(Int($0)) ppi" } ?? ""
+        print("\(device.name)  \(Int(session.pixelSize.width))x\(Int(session.pixelSize.height)) at \(session.pointScale)x\(density)  [\(scale.displayName)]")
     }
 }
 

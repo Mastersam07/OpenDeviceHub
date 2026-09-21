@@ -21,7 +21,10 @@ let package = Package(
         ),
         .target(
             name: "OpenDeviceHubViewer",
-            dependencies: ["OpenDeviceHubEngine"]
+            dependencies: [
+                "OpenDeviceHubEngine",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ]
         ),
         .executableTarget(
             name: "odhub",

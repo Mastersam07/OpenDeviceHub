@@ -100,6 +100,8 @@ public protocol DisplaySession: AnyObject, Sendable {
     var frames: AsyncStream<DisplayFrame> { get }
     var pixelSize: CGSize { get }
     var pointScale: CGFloat { get }
+    /// The device screen's physical pixel density, which physical size scaling needs.
+    var pixelsPerInch: CGFloat? { get }
     func close()
 }
 
