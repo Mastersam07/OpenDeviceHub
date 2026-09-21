@@ -43,7 +43,8 @@ public final class DeviceWindowManager {
             bezelEnabled: bezelEnabled,
             keepOnTop: keepOnTop,
             frameStore: frameStore,
-            fpsLabel: showFPS ? device.name : nil
+            fpsLabel: showFPS ? device.name : nil,
+            chrome: ChromeLocator.chrome(forDeviceType: device.deviceTypeIdentifier)
         )
         controller.onClose = { [weak self] udid in
             self?.controllers.removeValue(forKey: udid)
