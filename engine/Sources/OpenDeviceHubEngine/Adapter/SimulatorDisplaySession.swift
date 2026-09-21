@@ -7,6 +7,7 @@ final class SimulatorDisplaySession: DisplaySession, @unchecked Sendable {
     let frames: AsyncStream<DisplayFrame>
     let pixelSize: CGSize
     let pointScale: CGFloat
+    let pixelsPerInch: CGFloat?
 
     private let renderable: any ODHSimDisplayRenderable
     private let surfaceRenderable: any ODHSimDisplayIOSurfaceRenderable
@@ -30,6 +31,10 @@ final class SimulatorDisplaySession: DisplaySession, @unchecked Sendable {
         surfaceRenderable = unsafeBitCast(descriptor, to: (any ODHSimDisplayIOSurfaceRenderable).self)
         pixelSize = renderable.displaySize
         self.pointScale = pointScale
+        // Named "pitch" but it reports pixels per inch: 460 on an iPhone 17 Pro and 326 on an
+        // iPad mini, which reproduce both devices' advertised diagonals. Verified on 17F42.
+        let pitch = renderable.displayPitch
+        pixelsPerInch = pitch > 0 ? CGFloat(pitch) : nil
 
         var escapingContinuation: AsyncStream<DisplayFrame>.Continuation!
         frames = AsyncStream(bufferingPolicy: .bufferingNewest(1)) { escapingContinuation = $0 }

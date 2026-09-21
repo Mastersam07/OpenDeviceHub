@@ -21,6 +21,7 @@ public final class DeviceWindowManager {
         device: DeviceInfo,
         session: any DisplaySession,
         input: (any InputSession)?,
+        scaleMode: ScaleMode,
         showFPS: Bool
     ) throws -> DeviceWindowController {
         if let existing = controllers[device.udid] {
@@ -33,6 +34,7 @@ public final class DeviceWindowManager {
             title: "\(device.name) (\(device.runtimeName))",
             session: session,
             input: input,
+            scaleMode: scaleMode,
             fpsLabel: showFPS ? device.name : nil
         )
         controller.onClose = { [weak self] udid in
@@ -52,6 +54,11 @@ public final class DeviceWindowManager {
         controller.onClose = nil
         controller.stop()
         controller.window?.close()
+    }
+
+    @discardableResult
+    public func applyScaleMode(_ mode: ScaleMode) -> [String: ScaleApplication] {
+        controllers.mapValues { $0.applyScaleMode(mode) }
     }
 
     public func closeAll() {

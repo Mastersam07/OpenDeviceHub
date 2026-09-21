@@ -38,3 +38,114 @@ final class ScaleModeTests: XCTestCase {
         }
     }
 }
+
+private let iPhone17Pro = DeviceMetrics(
+    pixelSize: CGSize(width: 1206, height: 2622),
+    pointScale: 3,
+    pixelsPerInch: 460
+)
+private let iPadMini = DeviceMetrics(
+    pixelSize: CGSize(width: 1488, height: 2266),
+    pointScale: 2,
+    pixelsPerInch: 326
+)
+/// A retina Mac: two physical pixels per point at 254 pixels per inch.
+private let retinaMac = ScreenMetrics(backingScaleFactor: 2, pixelsPerInch: 254)
+
+final class ScaleModeGeometryTests: XCTestCase {
+    func testFitHasNoFixedSize() {
+        XCTAssertNil(DeviceGeometry.contentSize(for: .fit, device: iPhone17Pro, screen: retinaMac))
+    }
+
+    func testPointAccurateMatchesTheDevicesOwnPoints() {
+        let size = DeviceGeometry.contentSize(for: .pointAccurate, device: iPhone17Pro, screen: retinaMac)
+        XCTAssertEqual(size, CGSize(width: 402, height: 874))
+    }
+
+    func testPixelAccurateMapsOneDevicePixelToOneScreenPixel() {
+        let size = DeviceGeometry.contentSize(for: .pixelAccurate, device: iPhone17Pro, screen: retinaMac)
+        XCTAssertEqual(size, CGSize(width: 603, height: 1311))
+    }
+
+    func testPixelAccurateOnANonRetinaScreenUsesTheFullPixelCount() {
+        let plainMac = ScreenMetrics(backingScaleFactor: 1, pixelsPerInch: 109)
+        let size = DeviceGeometry.contentSize(for: .pixelAccurate, device: iPhone17Pro, screen: plainMac)
+        XCTAssertEqual(size, CGSize(width: 1206, height: 2622))
+    }
+
+    func testPhysicalSizeReproducesTheDevicesRealWidth() throws {
+        let size = try XCTUnwrap(
+            DeviceGeometry.contentSize(for: .physicalSize, device: iPhone17Pro, screen: retinaMac)
+        )
+        // 1206 px at 460 ppi is 2.6217 inches, and the Mac shows 127 points per inch.
+        XCTAssertEqual(size.width, 2.6217 * 127, accuracy: 0.05)
+        XCTAssertEqual(size.height, 2622.0 / 460 * 127, accuracy: 0.05)
+    }
+
+    func testPhysicalSizeKeepsTwoDevicesInProportionToEachOther() throws {
+        let phone = try XCTUnwrap(
+            DeviceGeometry.contentSize(for: .physicalSize, device: iPhone17Pro, screen: retinaMac)
+        )
+        let pad = try XCTUnwrap(
+            DeviceGeometry.contentSize(for: .physicalSize, device: iPadMini, screen: retinaMac)
+        )
+        // The iPad mini is physically wider than the iPhone, even though the iPhone has the taller
+        // pixel count.
+        XCTAssertGreaterThan(pad.width, phone.width)
+        XCTAssertEqual(pad.width / phone.width, (1488.0 / 326) / (1206.0 / 460), accuracy: 0.001)
+    }
+
+    func testPhysicalSizeIsUnavailableWithoutBothDensities() {
+        let unknownDevice = DeviceMetrics(
+            pixelSize: CGSize(width: 1206, height: 2622), pointScale: 3, pixelsPerInch: nil
+        )
+        let unknownScreen = ScreenMetrics(backingScaleFactor: 2, pixelsPerInch: nil)
+        XCTAssertNil(DeviceGeometry.contentSize(for: .physicalSize, device: unknownDevice, screen: retinaMac))
+        XCTAssertNil(DeviceGeometry.contentSize(for: .physicalSize, device: iPhone17Pro, screen: unknownScreen))
+    }
+
+    func testEveryModeRejectsADeviceWithNoPixels() {
+        let empty = DeviceMetrics(pixelSize: .zero, pointScale: 3, pixelsPerInch: 460)
+        for mode in ScaleMode.allCases {
+            XCTAssertNil(DeviceGeometry.contentSize(for: mode, device: empty, screen: retinaMac), "\(mode)")
+        }
+    }
+
+    func testEveryModePreservesTheDevicesAspectRatio() throws {
+        let expected = 1206.0 / 2622.0
+        for mode in ScaleMode.allCases where mode != .fit {
+            let size = try XCTUnwrap(
+                DeviceGeometry.contentSize(for: mode, device: iPhone17Pro, screen: retinaMac), "\(mode)"
+            )
+            XCTAssertEqual(size.width / size.height, expected, accuracy: 0.0001, "\(mode)")
+        }
+    }
+}
+
+final class FitsOnScreenTests: XCTestCase {
+    /// The built in display of the machine this was developed on, minus the menu bar.
+    private let laptop = CGSize(width: 1512, height: 957)
+
+    func testPointAccurateFitsOnALaptopScreen() {
+        let size = DeviceGeometry.contentSize(for: .pointAccurate, device: iPhone17Pro, screen: retinaMac)!
+        XCTAssertTrue(DeviceGeometry.fitsOnScreen(contentSize: size, visibleSize: laptop, titleBarHeight: 32))
+    }
+
+    func testPixelAccurateDoesNotFitOnALaptopScreen() {
+        let size = DeviceGeometry.contentSize(for: .pixelAccurate, device: iPhone17Pro, screen: retinaMac)!
+        XCTAssertEqual(size, CGSize(width: 603, height: 1311))
+        XCTAssertFalse(DeviceGeometry.fitsOnScreen(contentSize: size, visibleSize: laptop, titleBarHeight: 32))
+    }
+
+    func testTheTitleBarCountsTowardsTheHeight() {
+        let size = CGSize(width: 100, height: 950)
+        XCTAssertTrue(DeviceGeometry.fitsOnScreen(contentSize: size, visibleSize: laptop, titleBarHeight: 0))
+        XCTAssertFalse(DeviceGeometry.fitsOnScreen(contentSize: size, visibleSize: laptop, titleBarHeight: 32))
+    }
+
+    func testAnExactFitCounts() {
+        XCTAssertTrue(DeviceGeometry.fitsOnScreen(
+            contentSize: CGSize(width: 1512, height: 925), visibleSize: laptop, titleBarHeight: 32
+        ))
+    }
+}

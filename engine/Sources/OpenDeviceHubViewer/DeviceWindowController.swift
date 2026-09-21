@@ -15,15 +15,18 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     private let input: (any InputSession)?
     private var isStopped = false
+    private var scaleMode: ScaleMode
 
     public init(
         udid: String,
         title: String,
         session: any DisplaySession,
         input: (any InputSession)?,
+        scaleMode: ScaleMode,
         fpsLabel: String?
     ) throws {
         self.udid = udid
+        self.scaleMode = scaleMode
         guard let device = MTLCreateSystemDefaultDevice() else {
             throw ViewerError.metalUnavailable("no system default device")
         }
@@ -37,7 +40,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             pixelSize: session.pixelSize,
             pointScale: session.pointScale
         )
-        let window = NSWindow(
+        let window = DeviceWindow(
             contentRect: CGRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
@@ -49,6 +52,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         window.center()
         super.init(window: window)
         window.delegate = self
+        applyScaleMode(scaleMode)
 
         if let fpsLabel {
             installFPSCounter(label: fpsLabel)
@@ -72,6 +76,38 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         input?.close()
         session.close()
     }
+
+    /// Resizes the window so the device screen is shown at the requested scale. Fit leaves the
+    /// window alone, since it is the mode that lets any size work.
+    @discardableResult
+    public func applyScaleMode(_ mode: ScaleMode) -> ScaleApplication {
+        scaleMode = mode
+        guard let window else { return .unavailable }
+        let device = DeviceMetrics(
+            pixelSize: session.pixelSize,
+            pointScale: session.pointScale,
+            pixelsPerInch: session.pixelsPerInch
+        )
+        guard let size = DeviceGeometry.contentSize(
+            for: mode,
+            device: device,
+            screen: ScaleMode.screenMetrics(for: window.screen ?? NSScreen.main)
+        ) else {
+            return mode == .fit ? .noFixedSize : .unavailable
+        }
+        window.setContentSize(size)
+
+        let visible = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? .zero
+        let titleBar = window.frame.height - window.contentLayoutRect.height
+        let fits = DeviceGeometry.fitsOnScreen(
+            contentSize: size,
+            visibleSize: visible,
+            titleBarHeight: titleBar
+        )
+        return fits ? .applied(size) : .largerThanScreen(size)
+    }
+
+    public var currentScaleMode: ScaleMode { scaleMode }
 
     public func windowWillClose(_ notification: Notification) {
         stop()
