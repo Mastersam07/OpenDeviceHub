@@ -18,6 +18,11 @@ enum IndigoHID {
 
     /// Contact down and contact up, passed to the builder as its event type.
     /// Verified on Xcode 26.5 (17F42).
+    ///
+    /// There is no separate "moved" type. The builder accepts only 1, 2, 3 and 4, and 3 and 4
+    /// produce byte identical messages to 1 and 2: same `eventMask` 0x3, same range and touch
+    /// flags. A drag is therefore a contact down message repeated at each new position, which was
+    /// confirmed by scrolling a list.
     static let eventTypeContactDown: UInt = 1
     static let eventTypeContactUp: UInt = 2
 

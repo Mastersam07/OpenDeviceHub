@@ -91,10 +91,13 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
         }
         let eventType: UInt
         switch event.phase {
-        case .began: eventType = IndigoHID.eventTypeContactDown
+        // A moving contact is still a contact down, just at a new position.
+        case .began, .moved: eventType = IndigoHID.eventTypeContactDown
         case .ended: eventType = IndigoHID.eventTypeContactUp
-        case .moved, .cancelled:
-            throw EngineError.capabilityUnavailable(name: "touch phase \(event.phase)")
+        case .cancelled:
+            // Nothing in the Indigo surface corresponds to a cancelled contact, and lifting the
+            // finger instead would be a different gesture, so this stays unsupported.
+            throw EngineError.capabilityUnavailable(name: "touch phase cancelled")
         }
 
         try ensureOpen()

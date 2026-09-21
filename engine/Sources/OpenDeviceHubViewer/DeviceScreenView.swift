@@ -6,6 +6,7 @@ import MetalKit
 public final class DeviceScreenView: MTKView {
     public enum ContactPhase: Sendable {
         case began
+        case moved
         case ended
     }
 
@@ -34,6 +35,10 @@ public final class DeviceScreenView: MTKView {
 
     public override func mouseDown(with event: NSEvent) {
         onContact?(convert(event.locationInWindow, from: nil), .began)
+    }
+
+    public override func mouseDragged(with event: NSEvent) {
+        onContact?(convert(event.locationInWindow, from: nil), .moved)
     }
 
     public override func mouseUp(with event: NSEvent) {
