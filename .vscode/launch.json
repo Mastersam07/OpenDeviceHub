@@ -19,6 +19,26 @@
             "target": "odhub",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release odhub (engine)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:OpenDeviceHub}/engine",
+            "name": "Debug odhub-viewer (engine)",
+            "target": "odhub-viewer",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug odhub-viewer (engine)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:OpenDeviceHub}/engine",
+            "name": "Release odhub-viewer (engine)",
+            "target": "odhub-viewer",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release odhub-viewer (engine)"
         }
     ]
 }
