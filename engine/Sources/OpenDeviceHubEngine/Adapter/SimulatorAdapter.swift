@@ -56,13 +56,26 @@ public struct TouchEvent: Sendable, Hashable {
         case cancelled
     }
 
+    /// Which screen edge a contact started at. The guest recognises its system gestures, the home
+    /// indicator swipe and the notification pull, from this rather than from the coordinates, so a
+    /// swipe that merely begins near the edge does not trigger them.
+    public enum Edge: Sendable, Hashable {
+        case none
+        case top
+        case left
+        case bottom
+        case right
+    }
+
     public let phase: Phase
     /// One or two points, normalized 0...1 in the device's portrait native coordinate space.
     public let points: [CGPoint]
+    public let edge: Edge
 
-    public init(phase: Phase, points: [CGPoint]) {
+    public init(phase: Phase, points: [CGPoint], edge: Edge = .none) {
         self.phase = phase
         self.points = points
+        self.edge = edge
     }
 }
 
@@ -113,6 +126,7 @@ public protocol DisplaySession: AnyObject, Sendable {
 public protocol InputSession: AnyObject, Sendable {
     func touch(_ event: TouchEvent) async throws
     func key(_ event: KeyEvent) async throws
+    func button(_ button: HardwareButton, phase: ButtonPhase) async throws
     func close()
 }
 
@@ -123,6 +137,9 @@ public protocol SimulatorAdapter: Sendable {
     func openDisplay(_ udid: String) throws -> any DisplaySession
     func openInput(_ udid: String) throws -> any InputSession
     func simulateMemoryWarning(_ udid: String) throws
+    /// Turns the device itself, which makes the guest re-lay out. The viewer still has to turn its
+    /// own view to match, since the framebuffer stays portrait native.
+    func setOrientation(_ orientation: DeviceOrientation, udid: String) throws
 }
 
 extension DeviceState {

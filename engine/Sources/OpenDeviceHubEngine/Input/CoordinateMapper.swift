@@ -39,7 +39,7 @@ public enum CoordinateMapper {
 
     /// Turns a point in what the viewer shows back into the portrait native space the device's
     /// digitizer expects. Both spaces have their origin at the top left.
-    static func portraitNativePoint(
+    public static func portraitNativePoint(
         from shown: CGPoint,
         orientation: DeviceOrientation
     ) -> CGPoint {

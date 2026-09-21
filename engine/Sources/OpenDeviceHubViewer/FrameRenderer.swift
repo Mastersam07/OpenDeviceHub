@@ -13,12 +13,18 @@ struct VertexOut {
     float2 uv;
 };
 
-vertex VertexOut odhVertex(uint id [[vertex_id]]) {
+vertex VertexOut odhVertex(uint id [[vertex_id]], constant uint &quarterTurns [[buffer(0)]]) {
     const float2 corners[4] = { float2(-1, -1), float2(1, -1), float2(-1, 1), float2(1, 1) };
     const float2 uvs[4] = { float2(0, 1), float2(1, 1), float2(0, 0), float2(1, 0) };
     VertexOut out;
     out.position = float4(corners[id], 0, 1);
-    out.uv = uvs[id];
+    // The framebuffer stays portrait native whichever way the device is turned, so the image is
+    // rotated here by reading the texture through turned coordinates.
+    float2 uv = uvs[id];
+    for (uint turn = 0; turn < quarterTurns; turn++) {
+        uv = float2(uv.y, 1.0 - uv.x);
+    }
+    out.uv = uv;
     return out;
 }
 
@@ -38,6 +44,7 @@ public final class FrameRenderer: NSObject, MTKViewDelegate {
     private let pipeline: MTLRenderPipelineState
     private let lock = NSLock()
     private var texture: MTLTexture?
+    private var quarterTurns: UInt32 = 0
     private var lastSurface: IOSurfaceRef?
 
     public init(device: MTLDevice, pixelFormat: MTLPixelFormat) throws {
@@ -61,6 +68,13 @@ public final class FrameRenderer: NSObject, MTKViewDelegate {
         lock.lock()
         defer { lock.unlock() }
         return lastSurface
+    }
+
+    /// How far to turn the portrait native image so it matches the device's orientation.
+    public func setOrientation(_ orientation: DeviceOrientation) {
+        lock.lock()
+        defer { lock.unlock() }
+        quarterTurns = UInt32(orientation.degrees / 90)
     }
 
     public func accept(_ frame: DisplayFrame) {
@@ -91,6 +105,7 @@ public final class FrameRenderer: NSObject, MTKViewDelegate {
     public func draw(in view: MTKView) {
         lock.lock()
         let current = texture
+        var turns = quarterTurns
         lock.unlock()
 
         guard let current,
@@ -102,10 +117,12 @@ public final class FrameRenderer: NSObject, MTKViewDelegate {
         // Letterbox rather than stretch. The window normally locks the device's aspect ratio, but
         // it does not in full screen or in Fit, and input already assumes a letterboxed image, so
         // stretching here would put clicks and pixels out of step.
-        let fitted = CoordinateMapper.fittedRect(
-            viewSize: view.drawableSize,
-            pixelSize: CGSize(width: current.width, height: current.height)
-        )
+        // A quarter turn swaps which way round the image is, so the fit is computed against the
+        // size actually being drawn.
+        let drawnSize = turns % 2 == 0
+            ? CGSize(width: current.width, height: current.height)
+            : CGSize(width: current.height, height: current.width)
+        let fitted = CoordinateMapper.fittedRect(viewSize: view.drawableSize, pixelSize: drawnSize)
         if fitted.width > 0, fitted.height > 0 {
             encoder.setViewport(MTLViewport(
                 originX: Double(fitted.minX),
@@ -117,6 +134,7 @@ public final class FrameRenderer: NSObject, MTKViewDelegate {
             ))
         }
         encoder.setRenderPipelineState(pipeline)
+        encoder.setVertexBytes(&turns, length: MemoryLayout<UInt32>.size, index: 0)
         encoder.setFragmentTexture(current, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()

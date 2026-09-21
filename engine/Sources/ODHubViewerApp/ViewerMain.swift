@@ -154,7 +154,36 @@ struct ODHubViewer: ParsableCommand {
                     }
                     print("slow animations \(slowAnimations ? "on" : "off")")
                 },
-                toggleLatencyOverlay: { manager.toggleLatencyOverlay() }
+                toggleLatencyOverlay: { manager.toggleLatencyOverlay() },
+                pressButton: { button in
+                    for udid in manager.openUDIDs {
+                        Task {
+                            do {
+                                let session = try adapter.openInput(udid)
+                                defer { session.close() }
+                                try await session.button(button, phase: .down)
+                                try await Task.sleep(for: .milliseconds(15))
+                                try await session.button(button, phase: .up)
+                            } catch {
+                                print("\(button) failed: \(error.localizedDescription)")
+                            }
+                        }
+                    }
+                },
+                rotate: { left in
+                    for udid in manager.openUDIDs {
+                        guard let controller = manager.controller(for: udid) else { continue }
+                        let next = left
+                            ? controller.currentOrientation.rotatedLeft
+                            : controller.currentOrientation.rotatedRight
+                        do {
+                            try adapter.setOrientation(next, udid: udid)
+                            controller.setOrientation(next)
+                        } catch {
+                            print("rotate failed: \(error.localizedDescription)")
+                        }
+                    }
+                }
             ), capabilities: adapter.capabilities)
 
             application.activate(ignoringOtherApps: true)

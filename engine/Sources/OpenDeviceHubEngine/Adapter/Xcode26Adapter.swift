@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import OpenDeviceHubPrivate
 
@@ -127,6 +128,31 @@ public final class Xcode26Adapter: SimulatorAdapter, @unchecked Sendable {
         device.simulateMemoryWarning()
     }
 
+    public func setOrientation(_ orientation: DeviceOrientation, udid: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let device = try rawDevice(udid)
+        guard DeviceState.from(state: device.state, stateString: device.stateString) == .booted else {
+            throw EngineError.deviceNotBooted(udid: udid)
+        }
+        guard (device as AnyObject).responds(to: NSSelectorFromString("lookup:error:")) else {
+            throw EngineError.symbolNotFound(
+                name: "-[SimDevice lookup:error:]",
+                framework: PrivateFramework.coreSimulator.rawValue
+            )
+        }
+
+        let port = device.lookup(WorkspaceOrientation.portName, error: nil)
+        guard port != 0 else {
+            throw EngineError.capabilityUnavailable(
+                name: "\(WorkspaceOrientation.portName), the guest may still be starting"
+            )
+        }
+        defer { mach_port_deallocate(mach_task_self_, port) }
+        try WorkspaceOrientation.send(orientation, to: port)
+    }
+
     private func rawDevice(_ udid: String) throws -> any ODHSimDevice {
         let deviceSet: any ODHSimDeviceSet
         do {
@@ -197,6 +223,12 @@ public final class Xcode26Adapter: SimulatorAdapter, @unchecked Sendable {
         // Shake and slow animations are Darwin notifications the guest's UIKit listens for, not
         // private selectors, so they are available whenever simctl can reach the device.
         capabilities.formUnion([.shake, .slowAnimations])
+        // Rotation goes through the guest's workspace port, which only exists once the device has
+        // booted, so the flag says the route is implemented rather than that it will succeed now.
+        if let device = NSClassFromString("SimDevice"),
+           class_getInstanceMethod(device, NSSelectorFromString("lookup:error:")) != nil {
+            capabilities.insert(.rotation)
+        }
         return capabilities
     }
 }

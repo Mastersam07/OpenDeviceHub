@@ -39,6 +39,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly, nullable) id io;
 /// Delivers a low memory warning to the guest. Verified present on Xcode 26.5 (17F42).
 - (void)simulateMemoryWarning;
+/// Returns a mach port for a service in the device's own namespace, or 0. Used to reach the
+/// guest's workspace port, which is what carries orientation.
+- (unsigned int)lookup:(NSString *)service error:(NSError **)error;
 @end
 
 @protocol ODHSimDeviceSet <NSObject>

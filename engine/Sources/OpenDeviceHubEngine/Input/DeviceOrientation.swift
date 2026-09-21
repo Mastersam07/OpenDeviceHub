@@ -41,3 +41,15 @@ public enum DeviceOrientation: String, Sendable, Hashable, CaseIterable, Codable
         rotatedLeft.rotatedLeft.rotatedLeft
     }
 }
+
+extension DeviceOrientation {
+    /// The value the guest's workspace port expects. Verified on Xcode 26.5 (17F42).
+    var gsEventValue: UInt32 {
+        switch self {
+        case .portrait: 1
+        case .portraitUpsideDown: 2
+        case .landscapeRight: 3
+        case .landscapeLeft: 4
+        }
+    }
+}
