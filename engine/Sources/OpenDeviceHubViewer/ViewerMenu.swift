@@ -12,6 +12,7 @@ public enum ViewerMenu {
         public var setAppearance: (SimctlService.Appearance) -> Void
         public var saveScreenshot: () -> Void
         public var copyScreenshot: () -> Void
+        public var toggleRecording: () -> Void
 
         public init(
             setScaleMode: @escaping (ScaleMode) -> Void,
@@ -20,7 +21,8 @@ public enum ViewerMenu {
             pasteToDevice: @escaping () -> Void,
             setAppearance: @escaping (SimctlService.Appearance) -> Void,
             saveScreenshot: @escaping () -> Void,
-            copyScreenshot: @escaping () -> Void
+            copyScreenshot: @escaping () -> Void,
+            toggleRecording: @escaping () -> Void
         ) {
             self.setScaleMode = setScaleMode
             self.toggleBezel = toggleBezel
@@ -29,6 +31,7 @@ public enum ViewerMenu {
             self.setAppearance = setAppearance
             self.saveScreenshot = saveScreenshot
             self.copyScreenshot = copyScreenshot
+            self.toggleRecording = toggleRecording
         }
     }
 
@@ -71,6 +74,7 @@ public enum ViewerMenu {
         let deviceItem = NSMenuItem()
         let deviceMenu = NSMenu(title: "Device")
         deviceMenu.addItem(target.item("Save Screenshot", #selector(MenuTarget.saveScreenshot), "s", []))
+        deviceMenu.addItem(target.item("Record Screen", #selector(MenuTarget.record), "r", []))
         deviceMenu.addItem(.separator())
         let appearance = target.item("Toggle Appearance", #selector(MenuTarget.appearance), "a", [.command, .shift])
         deviceMenu.addItem(appearance)
@@ -109,6 +113,7 @@ public final class MenuTarget: NSObject {
     @objc func bezel() { actions.toggleBezel() }
     @objc func keepOnTop() { actions.toggleKeepOnTop() }
     @objc func saveScreenshot() { actions.saveScreenshot() }
+    @objc func record() { actions.toggleRecording() }
     @objc func copyScreenshot() { actions.copyScreenshot() }
     @objc func paste() { actions.pasteToDevice() }
 

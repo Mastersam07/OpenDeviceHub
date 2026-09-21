@@ -140,7 +140,45 @@ public final class DeviceWindowManager {
         return NSPasteboard.general.writeObjects([image])
     }
 
+    private var recorders: [String: ScreenRecorder] = [:]
+
+    public var isRecording: Bool { !recorders.isEmpty }
+
+    /// Starts or stops recording every open device. Returns the files finished by a stop.
+    @discardableResult
+    public func toggleRecording(into directory: URL, date: Date = Date()) -> [URL] {
+        guard recorders.isEmpty else {
+            let finished = recorders.values.map { $0.stop() }
+            recorders.removeAll()
+            for controller in controllers.values {
+                controller.setRecordingIndicatorVisible(false)
+            }
+            return finished
+        }
+
+        for (udid, controller) in controllers {
+            let name = ScreenshotWriter.fileName(deviceName: controller.deviceTitle, date: date)
+                .replacingOccurrences(of: ".png", with: ".mov")
+            guard let recorder = try? ScreenRecorder(udid: udid, url: directory.appending(path: name)) else {
+                continue
+            }
+            recorders[udid] = recorder
+            controller.setRecordingIndicatorVisible(true)
+        }
+        return []
+    }
+
+    public func stopRecording() {
+        guard !recorders.isEmpty else { return }
+        for recorder in recorders.values { recorder.stop() }
+        recorders.removeAll()
+        for controller in controllers.values {
+            controller.setRecordingIndicatorVisible(false)
+        }
+    }
+
     public func closeAll() {
+        stopRecording()
         for udid in controllers.keys {
             close(udid)
         }

@@ -103,6 +103,19 @@ struct ODHubViewer: ParsableCommand {
                 },
                 copyScreenshot: {
                     print(manager.copyScreenshotToClipboard() ? "screenshot copied" : "nothing to copy")
+                },
+                toggleRecording: {
+                    let directory = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+                        ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                    let finished = manager.toggleRecording(into: directory)
+                    if finished.isEmpty {
+                        print("recording started")
+                    } else {
+                        for url in finished { print("recorded \(url.path(percentEncoded: false))") }
+                        // Showing the file is the closest thing to dragging it out of the window,
+                        // which needs a drag source and is not built yet.
+                        NSWorkspace.shared.activateFileViewerSelecting(finished)
+                    }
                 }
             ))
 
