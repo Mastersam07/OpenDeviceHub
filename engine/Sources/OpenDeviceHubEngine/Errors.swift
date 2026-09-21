@@ -8,6 +8,7 @@ public enum EngineError: Error, Sendable, Hashable {
     case symbolNotFound(name: String, framework: String)
     case capabilityUnavailable(name: String)
     case deviceNotFound(udid: String)
+    case deviceNotBooted(udid: String)
     case privateCall(symbol: String, message: String)
     case simctl(args: [String], code: Int32, stderr: String)
 }
@@ -29,6 +30,8 @@ extension EngineError: LocalizedError {
             return "\(name) is not available on this Xcode build."
         case .deviceNotFound(let udid):
             return "No simulator with UDID \(udid)."
+        case .deviceNotBooted(let udid):
+            return "Simulator \(udid) is not booted."
         case .privateCall(let symbol, let message):
             return "\(symbol) failed: \(message)"
         case .simctl(let args, let code, let stderr):

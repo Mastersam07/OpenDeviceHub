@@ -1,3 +1,4 @@
+import IOSurface
 import XCTest
 import OpenDeviceHubEngine
 
@@ -40,6 +41,48 @@ final class DeviceListParityTests: XCTestCase {
             XCTAssertEqual(actual.deviceTypeIdentifier, expected.deviceTypeIdentifier, expected.udid)
             XCTAssertEqual(actual.state, expected.state, expected.udid)
             XCTAssertEqual(actual.isAvailable, expected.isAvailable, expected.udid)
+        }
+    }
+
+    func testDisplaySessionDeliversFramesFromABootedDevice() throws {
+        try IntegrationGate.requireEnabled()
+
+        let adapter = try makeAdapter()
+        guard let booted = try adapter.devices().first(where: { $0.state == .booted }) else {
+            throw XCTSkip("no booted simulator, boot one to run this test")
+        }
+
+        let session = try adapter.openDisplay(booted.udid)
+        defer { session.close() }
+
+        XCTAssertGreaterThan(session.pixelSize.width, 0)
+        XCTAssertGreaterThan(session.pixelSize.height, 0)
+        XCTAssertGreaterThanOrEqual(session.pointScale, 1)
+
+        let received = XCTestExpectation(description: "a frame arrives")
+        let task = Task {
+            for await frame in session.frames {
+                XCTAssertEqual(IOSurfaceGetWidth(frame.surface), Int(session.pixelSize.width))
+                XCTAssertEqual(IOSurfaceGetHeight(frame.surface), Int(session.pixelSize.height))
+                received.fulfill()
+                return
+            }
+        }
+        defer { task.cancel() }
+        XCTAssertEqual(XCTWaiter().wait(for: [received], timeout: 10), .completed)
+    }
+
+    func testOpenDisplayRefusesAShutdownDevice() throws {
+        try IntegrationGate.requireEnabled()
+
+        let adapter = try makeAdapter()
+        guard let shutdown = try adapter.devices().first(where: { $0.state == .shutdown }) else {
+            throw XCTSkip("every simulator is booted")
+        }
+        XCTAssertThrowsError(try adapter.openDisplay(shutdown.udid)) { error in
+            guard case EngineError.deviceNotBooted = error else {
+                return XCTFail("wrong error: \(error)")
+            }
         }
     }
 
