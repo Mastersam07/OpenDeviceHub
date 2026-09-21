@@ -3,7 +3,7 @@ import CoreGraphics
 import Foundation
 import OpenDeviceHubEngine
 
-struct Tap: ParsableCommand {
+struct Tap: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "tap",
         abstract: "Send a single tap to a booted simulator at a normalized coordinate."
@@ -30,18 +30,15 @@ struct Tap: ParsableCommand {
         }
     }
 
-    func run() throws {
+    func run() async throws {
         let adapter = try AdapterFactory.make(for: XcodeLocator.locate())
         let session = try adapter.openInput(udid)
         defer { session.close() }
 
         let point = CGPoint(x: x, y: y)
-        let hold = holdMilliseconds
-        try AsyncBridge.run {
-            try await session.touch(TouchEvent(phase: .began, points: [point]))
-            try await Task.sleep(for: .milliseconds(hold))
-            try await session.touch(TouchEvent(phase: .ended, points: [point]))
-        }
+        try await session.touch(TouchEvent(phase: .began, points: [point]))
+        try await Task.sleep(for: .milliseconds(holdMilliseconds))
+        try await session.touch(TouchEvent(phase: .ended, points: [point]))
         print("tapped \(x), \(y)")
     }
 }
