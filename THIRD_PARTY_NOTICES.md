@@ -22,6 +22,10 @@ https://github.com/kmagiera/Siniulator
 The same message layout was cross checked against Siniulator's
 `Sources/SimulatorBridge/SimulatorBridge.m`, which arrived at the same envelope independently.
 
+The device toolbar in `engine/Sources/OpenDeviceHubViewer/DeviceToolbar.swift` follows
+Siniulator's `SimulatorToolbar`: the shortcut in each tooltip, Option on the rotate button turning
+the device the other way, and the screenshot button becoming a stop button while a recording runs.
+
 ## Dependencies
 
 ### swift-argument-parser

@@ -1,3 +1,9 @@
+//
+//  The tooltips carrying shortcuts, Option on rotate and the screenshot button doubling as a
+//  stop button are adapted from Siniulator (Krzysztof Magiera, MIT). See
+//  THIRD_PARTY_NOTICES.md.
+//
+
 import AppKit
 
 /// What the buttons above a device window do. Each window drives its own device, unlike the menu
