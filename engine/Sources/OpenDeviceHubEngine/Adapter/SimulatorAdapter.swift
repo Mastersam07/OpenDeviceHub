@@ -105,8 +105,6 @@ public protocol DisplaySession: AnyObject, Sendable {
 
 public protocol InputSession: AnyObject, Sendable {
     func touch(_ event: TouchEvent) async throws
-    func key(_ event: KeyEvent) async throws
-    func button(_ button: HardwareButton, phase: ButtonPhase) async throws
     func close()
 }
 
@@ -115,6 +113,7 @@ public protocol SimulatorAdapter: Sendable {
     var capabilities: Capabilities { get }
     func devices() throws -> [DeviceInfo]
     func openDisplay(_ udid: String) throws -> any DisplaySession
+    func openInput(_ udid: String) throws -> any InputSession
 }
 
 extension DeviceState {
