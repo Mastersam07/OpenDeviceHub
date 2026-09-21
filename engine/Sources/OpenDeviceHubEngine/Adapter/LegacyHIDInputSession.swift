@@ -12,6 +12,7 @@ import OpenDeviceHubPrivate
 final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
     private let client: any ODHSimDeviceLegacyHIDClient
     private let buildMouseMessage: IndigoHID.MouseMessageBuilder
+    private let buildKeyboardMessage: IndigoHID.KeyboardMessageBuilder
     private let queue = DispatchQueue(label: "\(Brand.identifierPrefix).hid")
     private let lock = NSLock()
     private var isClosed = false
@@ -24,6 +25,14 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
             )
         }
         buildMouseMessage = unsafeBitCast(symbol, to: IndigoHID.MouseMessageBuilder.self)
+
+        guard let keyboardSymbol = simulatorKit.symbol(named: IndigoHID.keyboardBuilderSymbol) else {
+            throw EngineError.symbolNotFound(
+                name: IndigoHID.keyboardBuilderSymbol,
+                framework: PrivateFramework.simulatorKit.rawValue
+            )
+        }
+        buildKeyboardMessage = unsafeBitCast(keyboardSymbol, to: IndigoHID.KeyboardMessageBuilder.self)
 
         guard let clientClass = NSClassFromString("SimulatorKit.SimDeviceLegacyHIDClient") else {
             throw EngineError.symbolNotFound(
@@ -107,6 +116,17 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
         let message = event.points.count == 1
             ? try makeSingleTouchMessage(point: event.points[0], eventType: eventType)
             : try makeTwoTouchMessage(first: event.points[0], second: event.points[1], eventType: eventType)
+        try await send(message)
+    }
+
+    func key(_ event: KeyEvent) async throws {
+        try ensureOpen()
+        guard let message = buildKeyboardMessage(Int32(event.usage), event.phase == .down ? 1 : 0) else {
+            throw EngineError.privateCall(
+                symbol: IndigoHID.keyboardBuilderSymbol,
+                message: "returned nil for usage \(event.usage)"
+            )
+        }
         try await send(message)
     }
 

@@ -112,6 +112,7 @@ public protocol DisplaySession: AnyObject, Sendable {
 
 public protocol InputSession: AnyObject, Sendable {
     func touch(_ event: TouchEvent) async throws
+    func key(_ event: KeyEvent) async throws
     func close()
 }
 

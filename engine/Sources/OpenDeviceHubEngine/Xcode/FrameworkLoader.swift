@@ -71,7 +71,8 @@ extension LoadedFramework {
         symbol(named: name) != nil
     }
 
-    func symbol(named name: String) -> UnsafeMutableRawPointer? {
+    /// Public so a test can cross check a table against a function the simulator exports.
+    public func symbol(named name: String) -> UnsafeMutableRawPointer? {
         dlsym(handle, name)
     }
 }

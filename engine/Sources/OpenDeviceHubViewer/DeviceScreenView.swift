@@ -1,5 +1,6 @@
 import AppKit
 import MetalKit
+import OpenDeviceHubEngine
 
 /// Draws only when a frame arrives, so the measured rate is the simulator's output rate rather
 /// than a fixed animation timer.
@@ -22,6 +23,8 @@ public final class DeviceScreenView: MTKView {
     public var onContact: ((CGPoint, ContactPhase, ContactStyle) -> Void)?
     /// Reports a trackpad pinch or rotate, as a spread in view points and an angle in radians.
     public var onGesture: ((ContactPhase, CGFloat, CGFloat) -> Void)?
+    /// Reports a hardware key, already translated to a USB HID usage.
+    public var onKey: ((UInt32, Bool) -> Void)?
 
     private var gestureSpread: CGFloat = 0
     private var gestureAngle: CGFloat = 0
@@ -50,6 +53,24 @@ public final class DeviceScreenView: MTKView {
     /// the classic Simulator behaves. Without this AppKit swallows the activating click.
     public override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
+    }
+
+    public override var acceptsFirstResponder: Bool { true }
+
+    public override func keyDown(with event: NSEvent) {
+        guard let usage = KeyboardMap.usage(forVirtualKeyCode: event.keyCode) else {
+            super.keyDown(with: event)
+            return
+        }
+        onKey?(usage, true)
+    }
+
+    public override func keyUp(with event: NSEvent) {
+        guard let usage = KeyboardMap.usage(forVirtualKeyCode: event.keyCode) else {
+            super.keyUp(with: event)
+            return
+        }
+        onKey?(usage, false)
     }
 
     public override func mouseDown(with event: NSEvent) {

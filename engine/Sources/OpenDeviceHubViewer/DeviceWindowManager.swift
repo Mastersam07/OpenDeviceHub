@@ -63,6 +63,7 @@ public final class DeviceWindowManager {
                 ))
             }
             window.makeKeyAndOrderFront(nil)
+            window.makeFirstResponder(window.contentView)
         }
         controller.beginTrackingFrameChanges()
         return controller

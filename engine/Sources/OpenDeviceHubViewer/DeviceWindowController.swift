@@ -231,6 +231,11 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             Task { try? await input.touch(event) }
         }
 
+        screenView.onKey = { [weak self] usage, isDown in
+            guard let self, let input else { return }
+            Task { try? await input.key(KeyEvent(phase: isDown ? .down : .up, usage: usage)) }
+        }
+
         screenView.onGesture = { [weak self] phase, spread, angle in
             guard let self, let input else { return }
             let size = screenView.bounds.size
