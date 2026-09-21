@@ -73,6 +73,14 @@ enum IndigoHID {
     /// Verified on Xcode 26.5 (17F42).
     static let mouseBuilderSymbol = "IndigoHIDMessageForMouseNSEvent"
 
+    /// `IndigoHIDMessageForKeyboardArbitrary(usage, isDown)` returns a complete 192 byte message
+    /// that is sent unchanged, no envelope needed. Verified on Xcode 26.5 (17F42), where
+    /// `IndigoHIDStringForKeyUsageCode` names 0x04 "A", 0x28 the return arrow and 0x2c "space",
+    /// confirming these are standard USB HID keyboard usages.
+    static let keyboardBuilderSymbol = "IndigoHIDMessageForKeyboardArbitrary"
+
+    typealias KeyboardMessageBuilder = @convention(c) (Int32, Int32) -> UnsafeMutableRawPointer?
+
     typealias MouseMessageBuilder = @convention(c) (
         UnsafeMutablePointer<CGPoint>?,
         UnsafeMutablePointer<CGPoint>?,

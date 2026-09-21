@@ -44,32 +44,36 @@ final class InputSessionTests: XCTestCase {
         try await session.touch(TouchEvent(phase: .ended, points: [point]))
     }
 
-    func testRejectsPhasesThatAreNotImplementedYet() async throws {
+    func testRejectsOnlyTheCancelledPhase() async throws {
         try IntegrationGate.requireEnabled()
         let session = try makeAdapter().openInput(try bootedDevice().udid)
         defer { session.close() }
 
-        for phase in [TouchEvent.Phase.moved, .cancelled] {
-            do {
-                try await session.touch(TouchEvent(phase: phase, points: [CGPoint(x: 0.5, y: 0.5)]))
-                XCTFail("\(phase) should not be accepted yet")
-            } catch EngineError.capabilityUnavailable {
-                continue
-            }
+        // Moved is supported now, so only cancelled is refused. Nothing in the Indigo surface
+        // corresponds to a cancelled contact.
+        try await session.touch(TouchEvent(phase: .moved, points: [CGPoint(x: 0.5, y: 0.01)]))
+        do {
+            try await session.touch(TouchEvent(phase: .cancelled, points: [CGPoint(x: 0.5, y: 0.5)]))
+            XCTFail("cancelled should not be accepted")
+        } catch EngineError.capabilityUnavailable {
         }
     }
 
-    func testRejectsMultipleContacts() async throws {
+    func testAcceptsTwoContactsAndRefusesThree() async throws {
         try IntegrationGate.requireEnabled()
         let session = try makeAdapter().openInput(try bootedDevice().udid)
         defer { session.close() }
+
+        let pair = [CGPoint(x: 0.4, y: 0.02), CGPoint(x: 0.6, y: 0.02)]
+        try await session.touch(TouchEvent(phase: .began, points: pair))
+        try await session.touch(TouchEvent(phase: .ended, points: pair))
 
         do {
             try await session.touch(TouchEvent(
                 phase: .began,
-                points: [CGPoint(x: 0.3, y: 0.3), CGPoint(x: 0.7, y: 0.7)]
+                points: pair + [CGPoint(x: 0.5, y: 0.5)]
             ))
-            XCTFail("two contacts should not be accepted yet")
+            XCTFail("three contacts should not be accepted")
         } catch EngineError.capabilityUnavailable {
         }
     }
@@ -84,5 +88,36 @@ final class InputSessionTests: XCTestCase {
             XCTFail("a closed session should not send")
         } catch EngineError.capabilityUnavailable {
         }
+    }
+}
+
+extension InputSessionTests {
+    /// Cross checks the table against the simulator's own naming, so a wrong usage shows up as a
+    /// mismatch rather than as text that silently types the wrong character.
+    func testUsagesMatchTheSimulatorsOwnKeyNames() throws {
+        try IntegrationGate.requireEnabled()
+
+        let install = try XcodeLocator.locate()
+        let simulatorKit = try FrameworkLoader.load(.simulatorKit, from: install)
+        guard let symbol = simulatorKit.symbol(named: "IndigoHIDStringForKeyUsageCode") else {
+            throw XCTSkip("IndigoHIDStringForKeyUsageCode is not exported on this Xcode")
+        }
+        typealias NameFunction = @convention(c) (Int32) -> Unmanaged<CFString>?
+        let name = unsafeBitCast(symbol, to: NameFunction.self)
+
+        let expected: [UInt32: String] = [0x04: "A", 0x05: "B", 0x1D: "Z", 0x2C: "space"]
+        for (usage, text) in expected {
+            let reported = name(Int32(usage))?.takeUnretainedValue() as String?
+            XCTAssertEqual(reported, text, "usage \(usage)")
+        }
+    }
+
+    func testSendingAKeyDoesNotError() async throws {
+        try IntegrationGate.requireEnabled()
+        let session = try makeAdapter().openInput(try bootedDevice().udid)
+        defer { session.close() }
+        // Escape is harmless wherever the device happens to be.
+        try await session.key(KeyEvent(phase: .down, usage: 0x29))
+        try await session.key(KeyEvent(phase: .up, usage: 0x29))
     }
 }
