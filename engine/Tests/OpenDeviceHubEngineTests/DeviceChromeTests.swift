@@ -86,6 +86,33 @@ final class DeviceChromeParsingTests: XCTestCase {
         XCTAssertEqual(power.title, "Sleep/Wake")
     }
 
+    /// Side buttons sit under the body so only the part standing proud shows, while the Home
+    /// button is drawn over it.
+    func testTheSideButtonsAreUnderTheBodyAndHomeIsOverIt() throws {
+        let chrome = try makeChrome()
+        for name in ["action", "volume-up", "power"] {
+            let button = try XCTUnwrap(chrome.buttons.first { $0.name == name })
+            XCTAssertFalse(button.onTop, "\(name) belongs under the body")
+        }
+    }
+
+    func testTheRolloverOffsetIsKeptSeparately() throws {
+        let chrome = try makeChrome()
+        let volume = try XCTUnwrap(chrome.buttons.first { $0.name == "volume-up" })
+        XCTAssertEqual(volume.offset.x, 8)
+        XCTAssertEqual(volume.rolloverOffset.x, 3)
+    }
+
+    func testAButtonWithNoRolloverKeepsItsNormalOffset() throws {
+        let json = """
+        {"identifier":"x","images":{},"inputs":[
+          {"name":"b","type":"button","image":"B","anchor":"left","offsets":{"normal":{"x":5,"y":6}}}
+        ]}
+        """
+        let chrome = try DeviceChrome.parse(json: Data(json.utf8), bundle: URL(fileURLWithPath: "/tmp/x"))
+        XCTAssertEqual(chrome.buttons.first?.rolloverOffset, CGPoint(x: 5, y: 6))
+    }
+
     func testAButtonWithNoImageDownFallsBackToItsNormalArtwork() throws {
         let json = """
         {"identifier":"x","images":{},"inputs":[
@@ -237,6 +264,33 @@ final class ChromeGeometryTests: XCTestCase {
         XCTAssertEqual(rect.maxY, 90)
         XCTAssertEqual(rect.midX, content.width / 2, accuracy: 0.5)
         XCTAssertTrue(rect.minY > 0, "must sit inside the bottom bezel, not below the window")
+    }
+
+    /// Hovering slides a side button further out of the body, which is what makes it look like it
+    /// rises under the pointer.
+    func testHoveringMovesASideButtonFurtherOut() throws {
+        let chrome = try makeChrome()
+        let content = ChromeGeometry.contentSize(screen: screen, chrome: chrome)
+        let volume = try XCTUnwrap(chrome.buttons.first { $0.name == "volume-up" })
+        let size = CGSize(width: 16, height: 64)
+        let resting = ChromeGeometry.buttonRect(volume, imageSize: size, content: content, chrome: chrome)
+        let raised = ChromeGeometry.buttonRect(
+            volume, imageSize: size, content: content, chrome: chrome, hovered: true
+        )
+        XCTAssertLessThan(raised.minX, resting.minX, "a left button moves towards the window edge")
+        XCTAssertEqual(raised.minY, resting.minY, "and does not move along the body")
+    }
+
+    func testHoveringMovesARightButtonOutwardsToo() throws {
+        let chrome = try makeChrome()
+        let content = ChromeGeometry.contentSize(screen: screen, chrome: chrome)
+        let power = try XCTUnwrap(chrome.buttons.first { $0.name == "power" })
+        let size = CGSize(width: 16, height: 101)
+        let resting = ChromeGeometry.buttonRect(power, imageSize: size, content: content, chrome: chrome)
+        let raised = ChromeGeometry.buttonRect(
+            power, imageSize: size, content: content, chrome: chrome, hovered: true
+        )
+        XCTAssertGreaterThan(raised.minX, resting.minX)
     }
 
     func testAClickOnTheScreenFindsNoButton() throws {

@@ -20,6 +20,12 @@ public struct ChromeButton: Sendable, Hashable {
     /// Distance from the anchored window edge, in points. The x of a right anchored button is
     /// negative, measured back from the right edge.
     public let offset: CGPoint
+    /// Where the button moves to under the pointer. Apple slides it further out of the body, which
+    /// is what makes a side button look like it rises.
+    public let rolloverOffset: CGPoint
+    /// Side buttons are drawn under the body so only the part standing proud of it shows. The Home
+    /// button is drawn over it instead.
+    public let onTop: Bool
 
     public init(
         name: String,
@@ -29,7 +35,9 @@ public struct ChromeButton: Sendable, Hashable {
         image: String,
         imageDown: String,
         anchor: Anchor,
-        offset: CGPoint
+        offset: CGPoint,
+        rolloverOffset: CGPoint,
+        onTop: Bool
     ) {
         self.name = name
         self.title = title
@@ -39,6 +47,8 @@ public struct ChromeButton: Sendable, Hashable {
         self.imageDown = imageDown
         self.anchor = anchor
         self.offset = offset
+        self.rolloverOffset = rolloverOffset
+        self.onTop = onTop
     }
 }
 
@@ -186,7 +196,9 @@ extension DeviceChrome {
               let anchor = ChromeButton.Anchor(rawValue: input["anchor"] as? String ?? "") else {
             return nil
         }
-        let offsets = (input["offsets"] as? [String: Any])?["normal"] as? [String: Any] ?? [:]
+        let allOffsets = input["offsets"] as? [String: Any]
+        let offsets = allOffsets?["normal"] as? [String: Any] ?? [:]
+        let rollover = allOffsets?["rollover"] as? [String: Any] ?? offsets
         return ChromeButton(
             name: name,
             title: input["accessibilityTitle"] as? String ?? name,
@@ -195,7 +207,9 @@ extension DeviceChrome {
             image: image,
             imageDown: input["imageDown"] as? String ?? image,
             anchor: anchor,
-            offset: CGPoint(x: number(offsets["x"]), y: number(offsets["y"]))
+            offset: CGPoint(x: number(offsets["x"]), y: number(offsets["y"])),
+            rolloverOffset: CGPoint(x: number(rollover["x"]), y: number(rollover["y"])),
+            onTop: input["onTop"] as? Bool ?? false
         )
     }
 

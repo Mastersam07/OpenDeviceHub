@@ -42,21 +42,23 @@ public enum ChromeGeometry {
         _ button: ChromeButton,
         imageSize: CGSize,
         content: CGSize,
-        chrome: DeviceChrome
+        chrome: DeviceChrome,
+        hovered: Bool = false
     ) -> CGRect {
         let body = bodyRect(content: content, chrome: chrome)
+        let offset = hovered ? button.rolloverOffset : button.offset
 
         // A side button measures y down from the top of the body. A bottom anchored one, such as
         // the Home button, carries a negative y measured up from the bottom instead.
         let y: CGFloat = switch button.anchor {
-        case .left, .right, .top: body.maxY - button.offset.y - imageSize.height
-        case .bottom: body.minY - button.offset.y - imageSize.height
+        case .left, .right, .top: body.maxY - offset.y - imageSize.height
+        case .bottom: body.minY - offset.y - imageSize.height
         }
 
         let x: CGFloat = switch button.anchor {
-        case .left: button.offset.x
-        case .right: content.width - imageSize.width + button.offset.x
-        case .top, .bottom: body.midX - imageSize.width / 2 + button.offset.x
+        case .left: offset.x
+        case .right: content.width - imageSize.width + offset.x
+        case .top, .bottom: body.midX - imageSize.width / 2 + offset.x
         }
 
         return CGRect(x: x, y: y, width: imageSize.width, height: imageSize.height)

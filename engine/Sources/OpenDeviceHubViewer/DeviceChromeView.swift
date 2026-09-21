@@ -12,6 +12,8 @@ public final class DeviceChromeView: NSView {
     private var slices: [String: NSImage] = [:]
     private var buttonImages: [String: NSImage] = [:]
     private var pressed: ChromeButton?
+    private var hovered: ChromeButton?
+    private var tracking: NSTrackingArea?
 
     public init(screenView: NSView) {
         self.screenView = screenView
@@ -70,6 +72,11 @@ public final class DeviceChromeView: NSView {
     public override func draw(_ dirtyRect: NSRect) {
         guard let chrome, hasChrome else { return }
         let body = ChromeGeometry.bodyRect(content: bounds.size, chrome: chrome)
+
+        // A side button sits under the body, so only the sliver standing proud of it shows. Drawing
+        // it over the body instead leaves a slab stuck to the surface.
+        drawButtons(chrome, onTop: false)
+
         if let composite {
             composite.draw(in: body, from: .zero, operation: .sourceOver, fraction: 1)
         } else if let parts = chrome.slices {
@@ -84,14 +91,19 @@ public final class DeviceChromeView: NSView {
             )
         }
 
-        for button in chrome.buttons {
+        drawButtons(chrome, onTop: true)
+    }
+
+    private func drawButtons(_ chrome: DeviceChrome, onTop: Bool) {
+        for button in chrome.buttons where button.onTop == onTop {
             let name = pressed == button ? button.imageDown : button.image
             guard let image = buttonImages[name] ?? buttonImages[button.image] else { continue }
             let rect = ChromeGeometry.buttonRect(
                 button,
                 imageSize: buttonImages[button.image]?.size ?? image.size,
                 content: bounds.size,
-                chrome: chrome
+                chrome: chrome,
+                hovered: hovered == button || pressed == button
             )
             image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
         }
@@ -106,6 +118,32 @@ public final class DeviceChromeView: NSView {
         return ChromeGeometry.button(
             at: point, sizes: imageSizes, content: bounds.size, chrome: chrome
         )
+    }
+
+    public override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    public override func mouseMoved(with event: NSEvent) {
+        setHovered(button(at: convert(event.locationInWindow, from: nil)))
+    }
+
+    public override func mouseExited(with event: NSEvent) {
+        setHovered(nil)
+    }
+
+    private func setHovered(_ button: ChromeButton?) {
+        guard hovered != button else { return }
+        hovered = button
+        needsDisplay = true
     }
 
     /// A press on a body button should work even when the window was not already focused, which is

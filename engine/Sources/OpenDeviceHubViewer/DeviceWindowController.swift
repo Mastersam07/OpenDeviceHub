@@ -75,6 +75,8 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         window.title = title
         baseTitle = title
         window.contentView = chromeView
+        // Without this the body's buttons never see the pointer, so they cannot rise under it.
+        window.acceptsMouseMovedEvents = true
         window.contentAspectRatio = contentSize
         self.deviceAspectRatio = contentSize
         window.center()
