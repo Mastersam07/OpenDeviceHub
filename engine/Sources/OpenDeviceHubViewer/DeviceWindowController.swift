@@ -20,6 +20,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     /// window, and saving those would make every device look like it had a remembered position.
     private var tracksFrameChanges = false
     private var deviceAspectRatio: CGSize = .zero
+    private var parallelOffset = CGSize(width: 0.12, height: 0)
     private var scaleMode: ScaleMode
     private var bezelEnabled: Bool
     private let frameStore: WindowFrameStore
@@ -199,9 +200,11 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     private func installClickToTap() {
         let pixelSize = session.pixelSize
-        screenView.onContact = { [weak self] point, phase in
+        let screenView = screenView
+
+        screenView.onContact = { [weak self] point, phase, style in
             guard let self, let input else { return }
-            guard let normalized = CoordinateMapper.normalize(
+            guard let primary = CoordinateMapper.normalize(
                 viewPoint: point,
                 viewSize: screenView.bounds.size,
                 pixelSize: pixelSize
@@ -212,8 +215,39 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             case .moved: .moved
             case .ended: .ended
             }
-            let event = TouchEvent(phase: touchPhase, points: [normalized])
+
+            var points = [primary]
+            switch style {
+            case .single:
+                break
+            case .mirrored:
+                points.append(TwoFingerGesture.mirrored(primary, about: CGPoint(x: 0.5, y: 0.5)))
+            case .parallel:
+                if phase == .began { self.parallelOffset = CGSize(width: 0.12, height: 0) }
+                points.append(TwoFingerGesture.offsetPartner(primary, by: self.parallelOffset))
+            }
+
+            let event = TouchEvent(phase: touchPhase, points: points)
             Task { try? await input.touch(event) }
+        }
+
+        screenView.onGesture = { [weak self] phase, spread, angle in
+            guard let self, let input else { return }
+            let size = screenView.bounds.size
+            guard size.width > 0, size.height > 0 else { return }
+
+            let normalizedSpread = spread / min(size.width, size.height)
+            let contacts = TwoFingerGesture.contacts(
+                centre: CGPoint(x: 0.5, y: 0.5),
+                spread: normalizedSpread,
+                angle: angle
+            )
+            let touchPhase: TouchEvent.Phase = switch phase {
+            case .began: .began
+            case .moved: .moved
+            case .ended: .ended
+            }
+            Task { try? await input.touch(TouchEvent(phase: touchPhase, points: contacts)) }
         }
     }
 

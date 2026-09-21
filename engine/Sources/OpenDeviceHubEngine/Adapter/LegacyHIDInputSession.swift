@@ -86,8 +86,10 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
     }
 
     func touch(_ event: TouchEvent) async throws {
-        guard event.points.count == 1, let point = event.points.first else {
-            throw EngineError.capabilityUnavailable(name: "multi touch")
+        guard (1...2).contains(event.points.count) else {
+            throw EngineError.capabilityUnavailable(
+                name: "\(event.points.count) contacts, one or two are supported"
+            )
         }
         let eventType: UInt
         switch event.phase {
@@ -102,8 +104,39 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
 
         try ensureOpen()
 
-        let message = try makeSingleTouchMessage(point: point, eventType: eventType)
+        let message = event.points.count == 1
+            ? try makeSingleTouchMessage(point: event.points[0], eventType: eventType)
+            : try makeTwoTouchMessage(first: event.points[0], second: event.points[1], eventType: eventType)
         try await send(message)
+    }
+
+    /// Two contacts use the builder's own multi-touch message unchanged. That envelope is exactly
+    /// what the single touch path has to undo, so here it is what we want.
+    private func makeTwoTouchMessage(
+        first: CGPoint,
+        second: CGPoint,
+        eventType: UInt
+    ) throws -> UnsafeMutableRawPointer {
+        var a = CGPoint(x: first.x, y: first.y)
+        var b = CGPoint(x: second.x, y: second.y)
+        guard let message = buildMouseMessage(
+            &a, &b, IndigoHID.touchTarget, eventType, IndigoHID.unitScreenSize, IndigoHID.edgeNone
+        ) else {
+            throw EngineError.privateCall(symbol: IndigoHID.mouseBuilderSymbol, message: "returned nil")
+        }
+        // The duplicate of the first finger is written too, because the guest reads that payload
+        // rather than the first one for the leading contact.
+        for (offsets, point) in [
+            (IndigoHID.Message.firstContactRatioOffsets, first),
+            (IndigoHID.Message.duplicatedFirstContactRatioOffsets, first),
+            (IndigoHID.Message.secondContactRatioOffsets, second),
+        ] {
+            var x = Double(point.x)
+            var y = Double(point.y)
+            memcpy(message.advanced(by: offsets.x), &x, 8)
+            memcpy(message.advanced(by: offsets.y), &y, 8)
+        }
+        return message
     }
 
     func close() {

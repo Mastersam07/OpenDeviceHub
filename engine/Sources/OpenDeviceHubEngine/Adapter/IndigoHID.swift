@@ -60,6 +60,13 @@ enum IndigoHID {
         static let secondPayloadOffset = 0xb0
         static let secondContactMarkerOffsets = (first: 0xc0, second: 0xc4)
         static let secondContactMarkers: (first: UInt32, second: UInt32) = (1, 2)
+        /// The builder's own multi-touch message, which two finger gestures send unchanged. It is
+        /// 512 bytes with an event type byte of 3 and an inner size of 160, and carries three
+        /// payloads: the first finger, a duplicate of it at 0xc0, and the second finger at 0x160.
+        /// Found by writing distinct ratios and scanning for them, on Xcode 26.5 (17F42).
+        static let firstContactRatioOffsets = (x: 0x3c, y: 0x44)
+        static let duplicatedFirstContactRatioOffsets = (x: 0xdc, y: 0xe4)
+        static let secondContactRatioOffsets = (x: 0x17c, y: 0x184)
     }
 
     /// `IndigoHIDMessageForMouseNSEvent`, resolved from SimulatorKit with `dlsym`.
