@@ -123,3 +123,37 @@ extension SimctlService {
         return result.standardOutput
     }
 }
+
+extension SimctlService {
+    public enum Appearance: String, Sendable, CaseIterable {
+        case light
+        case dark
+    }
+
+    static func appearanceArguments(udid: String, appearance: Appearance) -> [String] {
+        ["simctl", "ui", udid, "appearance", appearance.rawValue]
+    }
+
+    static func readAppearanceArguments(udid: String) -> [String] {
+        ["simctl", "ui", udid, "appearance"]
+    }
+
+    public func setAppearance(_ appearance: Appearance, udid: String) throws {
+        let arguments = Self.appearanceArguments(udid: udid, appearance: appearance)
+        let result = try ProcessRunner.run("/usr/bin/xcrun", arguments)
+        guard result.status == 0 else {
+            throw EngineError.simctl(
+                args: Array(arguments.dropFirst()),
+                code: result.status,
+                stderr: result.standardError
+            )
+        }
+    }
+
+    public func appearance(udid: String) throws -> Appearance? {
+        let arguments = Self.readAppearanceArguments(udid: udid)
+        let result = try ProcessRunner.run("/usr/bin/xcrun", arguments)
+        guard result.status == 0 else { return nil }
+        return Appearance(rawValue: result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+}
