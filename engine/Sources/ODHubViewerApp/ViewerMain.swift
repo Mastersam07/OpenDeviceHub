@@ -29,6 +29,12 @@ struct ODHubViewer: ParsableCommand {
     @Flag(name: .long, inversion: .prefixedNo, help: "Draw the device bezel, its rounded corners and any cutout.")
     var bezel = true
 
+    @Flag(help: "Keep the device windows above other applications.")
+    var keepOnTop = false
+
+    @Flag(help: "Forget the remembered window position for each device given.")
+    var resetWindowPosition = false
+
     func validate() throws {
         guard !udids.isEmpty else {
             throw ValidationError("Pass at least one simulator UDID.")
@@ -49,7 +55,11 @@ struct ODHubViewer: ParsableCommand {
             let application = NSApplication.shared
             application.setActivationPolicy(.regular)
 
-            let manager = DeviceWindowManager()
+            let store = WindowFrameStore()
+            if resetWindowPosition {
+                udids.forEach(store.forget)
+            }
+            let manager = DeviceWindowManager(frameStore: store)
             var failures: [String] = []
 
             for udid in udids {
@@ -117,6 +127,7 @@ struct ODHubViewer: ParsableCommand {
             input: input,
             scaleMode: scale,
             bezelEnabled: bezel,
+            keepOnTop: keepOnTop,
             showFPS: fps
         )
         if case .largerThanScreen(let size) = controller.applyScaleMode(scale) {

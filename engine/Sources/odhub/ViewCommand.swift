@@ -23,6 +23,12 @@ struct View: AsyncParsableCommand {
     @Flag(name: .long, inversion: .prefixedNo, help: "Draw the device bezel, its rounded corners and any cutout.")
     var bezel = true
 
+    @Flag(help: "Keep the device windows above other applications.")
+    var keepOnTop = false
+
+    @Flag(help: "Forget the remembered window position for each device given.")
+    var resetWindowPosition = false
+
     @Flag(help: "Return as soon as the window opens instead of waiting for it to close.")
     var detach = false
 
@@ -46,6 +52,8 @@ struct View: AsyncParsableCommand {
         if fps { arguments.append("--fps") }
         if let scale { arguments.append(contentsOf: ["--scale", scale]) }
         if !bezel { arguments.append("--no-bezel") }
+        if keepOnTop { arguments.append("--keep-on-top") }
+        if resetWindowPosition { arguments.append("--reset-window-position") }
 
         let process = Process()
         process.executableURL = viewer

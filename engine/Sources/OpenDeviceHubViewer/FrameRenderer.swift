@@ -90,6 +90,23 @@ public final class FrameRenderer: NSObject, MTKViewDelegate {
               let buffer = commandQueue.makeCommandBuffer(),
               let encoder = buffer.makeRenderCommandEncoder(descriptor: passDescriptor) else { return }
 
+        // Letterbox rather than stretch. The window normally locks the device's aspect ratio, but
+        // it does not in full screen or in Fit, and input already assumes a letterboxed image, so
+        // stretching here would put clicks and pixels out of step.
+        let fitted = CoordinateMapper.fittedRect(
+            viewSize: view.drawableSize,
+            pixelSize: CGSize(width: current.width, height: current.height)
+        )
+        if fitted.width > 0, fitted.height > 0 {
+            encoder.setViewport(MTLViewport(
+                originX: Double(fitted.minX),
+                originY: Double(fitted.minY),
+                width: Double(fitted.width),
+                height: Double(fitted.height),
+                znear: 0,
+                zfar: 1
+            ))
+        }
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentTexture(current, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
