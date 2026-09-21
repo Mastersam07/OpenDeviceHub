@@ -119,6 +119,17 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
         try await send(message)
     }
 
+    func key(_ event: KeyEvent) async throws {
+        try ensureOpen()
+        guard let message = buildKeyboardMessage(Int32(event.usage), event.phase == .down ? 1 : 0) else {
+            throw EngineError.privateCall(
+                symbol: IndigoHID.keyboardBuilderSymbol,
+                message: "returned nil for usage \(event.usage)"
+            )
+        }
+        try await send(message)
+    }
+
     /// Two contacts use the builder's own multi-touch message unchanged. That envelope is exactly
     /// what the single touch path has to undo, so here it is what we want.
     private func makeTwoTouchMessage(
@@ -146,17 +157,6 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
             memcpy(message.advanced(by: offsets.y), &y, 8)
         }
         return message
-    }
-
-    func key(_ event: KeyEvent) async throws {
-        try ensureOpen()
-        guard let message = buildKeyboardMessage(Int32(event.usage), event.phase == .down ? 1 : 0) else {
-            throw EngineError.privateCall(
-                symbol: IndigoHID.keyboardBuilderSymbol,
-                message: "returned nil for usage \(event.usage)"
-            )
-        }
-        try await send(message)
     }
 
     func close() {
