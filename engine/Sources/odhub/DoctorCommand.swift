@@ -40,18 +40,19 @@ struct Doctor: ParsableCommand {
         return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
     }
 
-    private func report(_ results: [ClassProbeResult]) {
+    private func report(_ results: [SymbolProbeResult]) {
         let width = results.map(\.requested.count).max() ?? 0
         for result in results {
             guard let resolved = result.resolved else {
-                print("  missing \(result.requested)")
+                let name = result.requested.padding(toLength: width, withPad: " ", startingAt: 0)
+                print("  missing \(name)  \(result.kind.rawValue)")
                 continue
             }
+            let name = result.requested.padding(toLength: width, withPad: " ", startingAt: 0)
             if resolved == result.requested {
-                print("  ok      \(result.requested)")
+                print("  ok      \(name)  \(result.kind.rawValue)")
             } else {
-                let name = result.requested.padding(toLength: width, withPad: " ", startingAt: 0)
-                print("  ok      \(name) (as \(resolved))")
+                print("  ok      \(name)  \(result.kind.rawValue) (as \(resolved))")
             }
         }
     }

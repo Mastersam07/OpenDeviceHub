@@ -43,6 +43,44 @@ final class FrameworkCandidatePathTests: XCTestCase {
     }
 }
 
+final class CoreSimDeviceIOPathTests: XCTestCase {
+    func testProbesTheSystemWideSubFrameworkFirst() {
+        let paths = PrivateFramework.coreSimDeviceIO.candidatePaths(for: makeInstall())
+        XCTAssertEqual(paths, [
+            "/Library/Developer/PrivateFrameworks/CoreSimulator.framework/Frameworks/CoreSimDeviceIO.framework/CoreSimDeviceIO",
+            "/Applications/Xcode.app/Contents/Developer/Library/PrivateFrameworks/CoreSimulator.framework/Frameworks/CoreSimDeviceIO.framework/CoreSimDeviceIO",
+        ])
+    }
+
+    func testIsCoveredByAllCases() {
+        XCTAssertTrue(PrivateFramework.allCases.contains(.coreSimDeviceIO))
+    }
+}
+
+final class PrivateSymbolInventoryTests: XCTestCase {
+    func testEveryFrameworkDeclaresSymbolsToProbe() {
+        for framework in PrivateFramework.allCases {
+            XCTAssertFalse(PrivateSymbolProbe.symbols(for: framework).isEmpty, "\(framework)")
+        }
+    }
+
+    func testCoreSimDeviceIOProbesTheDisplayProtocols() {
+        let names = PrivateSymbolProbe.symbols(for: .coreSimDeviceIO)
+            .filter { $0.0 == .protocolSymbol }
+            .map(\.1)
+        XCTAssertTrue(names.contains("SimDisplayRenderable"))
+        XCTAssertTrue(names.contains("SimDisplayIOSurfaceRenderable"))
+        XCTAssertTrue(names.contains("SimLegacyHIDDescriptor"))
+    }
+
+    func testNoSymbolIsDeclaredTwiceWithinAFramework() {
+        for framework in PrivateFramework.allCases {
+            let names = PrivateSymbolProbe.symbols(for: framework).map(\.1)
+            XCTAssertEqual(Set(names).count, names.count, "\(framework)")
+        }
+    }
+}
+
 final class PrivateSymbolSpellingTests: XCTestCase {
     func testObjectiveCFrameworkTriesTheBareNameFirst() {
         XCTAssertEqual(

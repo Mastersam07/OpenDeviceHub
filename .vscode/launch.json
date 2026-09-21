@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:OpenDeviceHub}/engine",
+            "name": "Debug odhub (engine)",
+            "target": "odhub",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug odhub (engine)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:OpenDeviceHub}/engine",
+            "name": "Release odhub (engine)",
+            "target": "odhub",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release odhub (engine)"
+        }
+    ]
+}

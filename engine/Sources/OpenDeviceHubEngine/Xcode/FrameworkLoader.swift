@@ -2,6 +2,7 @@ import Foundation
 
 public enum PrivateFramework: String, Sendable, Hashable, CaseIterable {
     case coreSimulator = "CoreSimulator"
+    case coreSimDeviceIO = "CoreSimDeviceIO"
     case simulatorKit = "SimulatorKit"
 
     /// Probed in order. CoreSimulator lives outside Xcode; SimulatorKit moved from the developer
@@ -13,6 +14,14 @@ public enum PrivateFramework: String, Sendable, Hashable, CaseIterable {
                 "/Library/Developer/PrivateFrameworks/CoreSimulator.framework/CoreSimulator",
                 install.developerDir
                     .appending(path: "Library/PrivateFrameworks/CoreSimulator.framework/CoreSimulator")
+                    .path(percentEncoded: false),
+            ]
+        case .coreSimDeviceIO:
+            let suffix = "CoreSimulator.framework/Frameworks/CoreSimDeviceIO.framework/CoreSimDeviceIO"
+            return [
+                "/Library/Developer/PrivateFrameworks/\(suffix)",
+                install.developerDir
+                    .appending(path: "Library/PrivateFrameworks/\(suffix)")
                     .path(percentEncoded: false),
             ]
         case .simulatorKit:
