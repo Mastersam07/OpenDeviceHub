@@ -10,8 +10,27 @@ public final class DeviceScreenView: MTKView {
         case ended
     }
 
+    public enum ContactStyle: Sendable {
+        case single
+        /// Option held: the pointer is one finger and its mirror through the centre is the other.
+        case mirrored
+        /// Option and Shift held: two fingers travelling together.
+        case parallel
+    }
+
     /// Reports a click in the view's own coordinates, whose origin is the bottom left.
-    public var onContact: ((CGPoint, ContactPhase) -> Void)?
+    public var onContact: ((CGPoint, ContactPhase, ContactStyle) -> Void)?
+    /// Reports a trackpad pinch or rotate, as a spread in view points and an angle in radians.
+    public var onGesture: ((ContactPhase, CGFloat, CGFloat) -> Void)?
+
+    private var gestureSpread: CGFloat = 0
+    private var gestureAngle: CGFloat = 0
+    private var isGestureActive = false
+
+    private func style(for event: NSEvent) -> ContactStyle {
+        guard event.modifierFlags.contains(.option) else { return .single }
+        return event.modifierFlags.contains(.shift) ? .parallel : .mirrored
+    }
 
     public init(device: MTLDevice) {
         super.init(frame: .zero, device: device)
@@ -34,14 +53,45 @@ public final class DeviceScreenView: MTKView {
     }
 
     public override func mouseDown(with event: NSEvent) {
-        onContact?(convert(event.locationInWindow, from: nil), .began)
+        onContact?(convert(event.locationInWindow, from: nil), .began, style(for: event))
     }
 
     public override func mouseDragged(with event: NSEvent) {
-        onContact?(convert(event.locationInWindow, from: nil), .moved)
+        onContact?(convert(event.locationInWindow, from: nil), .moved, style(for: event))
     }
 
     public override func mouseUp(with event: NSEvent) {
-        onContact?(convert(event.locationInWindow, from: nil), .ended)
+        onContact?(convert(event.locationInWindow, from: nil), .ended, style(for: event))
+    }
+
+    public override func magnify(with event: NSEvent) {
+        // A trackpad pinch reports a relative change, so it is accumulated into a spread measured
+        // in view points, starting from a quarter of the shorter edge.
+        updateGesture(phase: event.phase, spreadDelta: event.magnification * min(bounds.width, bounds.height), angleDelta: 0)
+    }
+
+    public override func rotate(with event: NSEvent) {
+        updateGesture(phase: event.phase, spreadDelta: 0, angleDelta: CGFloat(-event.rotation) * .pi / 180)
+    }
+
+    private func updateGesture(phase: NSEvent.Phase, spreadDelta: CGFloat, angleDelta: CGFloat) {
+        switch phase {
+        case .began:
+            gestureSpread = min(bounds.width, bounds.height) / 4
+            gestureAngle = 0
+            isGestureActive = true
+            onGesture?(.began, gestureSpread, gestureAngle)
+        case .changed:
+            guard isGestureActive else { return }
+            gestureSpread = max(gestureSpread + spreadDelta, 1)
+            gestureAngle += angleDelta
+            onGesture?(.moved, gestureSpread, gestureAngle)
+        case .ended, .cancelled:
+            guard isGestureActive else { return }
+            isGestureActive = false
+            onGesture?(.ended, gestureSpread, gestureAngle)
+        default:
+            break
+        }
     }
 }
