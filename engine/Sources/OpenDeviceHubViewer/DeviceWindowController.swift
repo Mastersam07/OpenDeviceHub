@@ -207,10 +207,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
                 pixelSize: pixelSize
             ) else { return }
 
-            let event = TouchEvent(
-                phase: phase == .began ? .began : .ended,
-                points: [normalized]
-            )
+            let touchPhase: TouchEvent.Phase = switch phase {
+            case .began: .began
+            case .moved: .moved
+            case .ended: .ended
+            }
+            let event = TouchEvent(phase: touchPhase, points: [normalized])
             Task { try? await input.touch(event) }
         }
     }
