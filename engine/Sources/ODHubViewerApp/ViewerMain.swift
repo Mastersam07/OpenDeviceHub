@@ -116,8 +116,28 @@ struct ODHubViewer: ParsableCommand {
                         // which needs a drag source and is not built yet.
                         NSWorkspace.shared.activateFileViewerSelecting(finished)
                     }
+                },
+                simulateMemoryWarning: {
+                    for udid in manager.openUDIDs {
+                        do {
+                            try adapter.simulateMemoryWarning(udid)
+                            print("sent a memory warning to \(udid)")
+                        } catch {
+                            print("memory warning failed: \(error.localizedDescription)")
+                        }
+                    }
+                },
+                openSystemLog: {
+                    for udid in manager.openUDIDs {
+                        NSWorkspace.shared.open(SimctlService.systemLogDirectory(udid: udid))
+                    }
+                },
+                openAppData: {
+                    for udid in manager.openUDIDs {
+                        NSWorkspace.shared.open(SimctlService.deviceDataDirectory(udid: udid))
+                    }
                 }
-            ))
+            ), capabilities: adapter.capabilities)
 
             application.activate(ignoringOtherApps: true)
             let delegate = ViewerAppDelegate { manager.closeAll() }

@@ -200,3 +200,45 @@ extension SimctlService {
         }
     }
 }
+
+extension SimctlService {
+    public enum ContainerKind: String, Sendable, CaseIterable {
+        case app
+        case data
+        case groups
+    }
+
+    static func appContainerArguments(udid: String, bundleID: String, kind: ContainerKind) -> [String] {
+        ["simctl", "get_app_container", udid, bundleID, kind.rawValue]
+    }
+
+    public func appContainer(udid: String, bundleID: String, kind: ContainerKind) throws -> URL? {
+        let arguments = Self.appContainerArguments(udid: udid, bundleID: bundleID, kind: kind)
+        let result = try ProcessRunner.run("/usr/bin/xcrun", arguments)
+        guard result.status == 0 else {
+            throw EngineError.simctl(
+                args: Array(arguments.dropFirst()),
+                code: result.status,
+                stderr: result.standardError
+            )
+        }
+        let path = result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty, path != "(null)" else { return nil }
+        return URL(fileURLWithPath: path)
+    }
+
+    /// Where the simulator writes this device's logs.
+    public static func systemLogDirectory(udid: String) -> URL {
+        URL(fileURLWithPath: NSHomeDirectory())
+            .appending(path: "Library/Logs/CoreSimulator")
+            .appending(path: udid)
+    }
+
+    /// The device's own data directory, which is where an app's container lives.
+    public static func deviceDataDirectory(udid: String) -> URL {
+        URL(fileURLWithPath: NSHomeDirectory())
+            .appending(path: "Library/Developer/CoreSimulator/Devices")
+            .appending(path: udid)
+            .appending(path: "data")
+    }
+}

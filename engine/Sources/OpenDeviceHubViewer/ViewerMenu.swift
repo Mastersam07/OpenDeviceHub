@@ -13,6 +13,9 @@ public enum ViewerMenu {
         public var saveScreenshot: () -> Void
         public var copyScreenshot: () -> Void
         public var toggleRecording: () -> Void
+        public var simulateMemoryWarning: () -> Void
+        public var openSystemLog: () -> Void
+        public var openAppData: () -> Void
 
         public init(
             setScaleMode: @escaping (ScaleMode) -> Void,
@@ -22,7 +25,10 @@ public enum ViewerMenu {
             setAppearance: @escaping (SimctlService.Appearance) -> Void,
             saveScreenshot: @escaping () -> Void,
             copyScreenshot: @escaping () -> Void,
-            toggleRecording: @escaping () -> Void
+            toggleRecording: @escaping () -> Void,
+            simulateMemoryWarning: @escaping () -> Void,
+            openSystemLog: @escaping () -> Void,
+            openAppData: @escaping () -> Void
         ) {
             self.setScaleMode = setScaleMode
             self.toggleBezel = toggleBezel
@@ -32,10 +38,17 @@ public enum ViewerMenu {
             self.saveScreenshot = saveScreenshot
             self.copyScreenshot = copyScreenshot
             self.toggleRecording = toggleRecording
+            self.simulateMemoryWarning = simulateMemoryWarning
+            self.openSystemLog = openSystemLog
+            self.openAppData = openAppData
         }
     }
 
-    public static func install(into application: NSApplication, actions: Actions) -> MenuTarget {
+    public static func install(
+        into application: NSApplication,
+        actions: Actions,
+        capabilities: Capabilities
+    ) -> MenuTarget {
         let target = MenuTarget(actions: actions)
         let bar = NSMenu()
 
@@ -81,9 +94,38 @@ public enum ViewerMenu {
         deviceItem.submenu = deviceMenu
         bar.addItem(deviceItem)
 
+        let debugItem = NSMenuItem()
+        let debugMenu = NSMenu(title: "Debug")
+        let memoryWarning = target.item("Simulate Memory Warning", #selector(MenuTarget.memoryWarning), "", [])
+        // Unavailable items stay visible but disabled, with the reason in a tooltip, rather than
+        // disappearing and leaving the menu looking arbitrary.
+        disable(memoryWarning, unless: capabilities.contains(.memoryWarning), reason: "not available on this Xcode")
+        debugMenu.addItem(memoryWarning)
+
+        let slowAnimations = NSMenuItem(title: "Slow Animations", action: nil, keyEquivalent: "")
+        disable(slowAnimations, unless: capabilities.contains(.slowAnimations), reason: "no symbol for this on this Xcode")
+        debugMenu.addItem(slowAnimations)
+
+        let shake = NSMenuItem(title: "Shake", action: nil, keyEquivalent: "")
+        disable(shake, unless: capabilities.contains(.shake), reason: "no symbol for this on this Xcode")
+        debugMenu.addItem(shake)
+
+        debugMenu.addItem(.separator())
+        debugMenu.addItem(target.item("Open System Log", #selector(MenuTarget.systemLog), "", []))
+        debugMenu.addItem(target.item("Open App Data in Finder", #selector(MenuTarget.appData), "", []))
+        debugItem.submenu = debugMenu
+        bar.addItem(debugItem)
+
         application.mainMenu = bar
         return target
     }
+}
+
+private func disable(_ item: NSMenuItem, unless available: Bool, reason: String) {
+    guard !available else { return }
+    item.action = nil
+    item.isEnabled = false
+    item.toolTip = reason
 }
 
 /// Holds the menu actions. AppKit keeps menu targets weakly, so the caller retains this.
@@ -114,6 +156,9 @@ public final class MenuTarget: NSObject {
     @objc func keepOnTop() { actions.toggleKeepOnTop() }
     @objc func saveScreenshot() { actions.saveScreenshot() }
     @objc func record() { actions.toggleRecording() }
+    @objc func memoryWarning() { actions.simulateMemoryWarning() }
+    @objc func systemLog() { actions.openSystemLog() }
+    @objc func appData() { actions.openAppData() }
     @objc func copyScreenshot() { actions.copyScreenshot() }
     @objc func paste() { actions.pasteToDevice() }
 

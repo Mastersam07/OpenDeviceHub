@@ -110,6 +110,23 @@ public final class Xcode26Adapter: SimulatorAdapter, @unchecked Sendable {
         return try LegacyHIDInputSession(device: device, simulatorKit: simulatorKit)
     }
 
+    public func simulateMemoryWarning(_ udid: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let device = try rawDevice(udid)
+        guard DeviceState.from(state: device.state, stateString: device.stateString) == .booted else {
+            throw EngineError.deviceNotBooted(udid: udid)
+        }
+        guard (device as AnyObject).responds(to: NSSelectorFromString("simulateMemoryWarning")) else {
+            throw EngineError.symbolNotFound(
+                name: "-[SimDevice simulateMemoryWarning]",
+                framework: PrivateFramework.coreSimulator.rawValue
+            )
+        }
+        device.simulateMemoryWarning()
+    }
+
     private func rawDevice(_ udid: String) throws -> any ODHSimDevice {
         let deviceSet: any ODHSimDeviceSet
         do {
