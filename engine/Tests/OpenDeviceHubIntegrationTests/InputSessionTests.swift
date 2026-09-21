@@ -137,3 +137,37 @@ final class PasteboardTests: XCTestCase {
         XCTAssertEqual(read.trimmingCharacters(in: .whitespacesAndNewlines), text)
     }
 }
+
+final class DebugActionTests: XCTestCase {
+    func testAMemoryWarningIsDeliveredWithoutError() throws {
+        try IntegrationGate.requireEnabled()
+        let adapter = try AdapterFactory.make(for: XcodeLocator.locate())
+        guard let booted = try adapter.devices().first(where: { $0.state == .booted }) else {
+            throw XCTSkip("no booted simulator")
+        }
+        XCTAssertTrue(adapter.capabilities.contains(.memoryWarning))
+        try adapter.simulateMemoryWarning(booted.udid)
+    }
+
+    func testAMemoryWarningIsRefusedOnAShutdownDevice() throws {
+        try IntegrationGate.requireEnabled()
+        let adapter = try AdapterFactory.make(for: XcodeLocator.locate())
+        guard let shutdown = try adapter.devices().first(where: { $0.state == .shutdown }) else {
+            throw XCTSkip("every simulator is booted")
+        }
+        XCTAssertThrowsError(try adapter.simulateMemoryWarning(shutdown.udid))
+    }
+
+    func testTheAppContainerResolvesForAnInstalledApp() throws {
+        try IntegrationGate.requireEnabled()
+        let adapter = try AdapterFactory.make(for: XcodeLocator.locate())
+        guard let booted = try adapter.devices().first(where: { $0.state == .booted }) else {
+            throw XCTSkip("no booted simulator")
+        }
+        let container = try? SimctlService().appContainer(
+            udid: booted.udid, bundleID: "io.opendevicehub.rotator", kind: .data
+        )
+        guard let container else { throw XCTSkip("the test app is not installed on this device") }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: container.path))
+    }
+}

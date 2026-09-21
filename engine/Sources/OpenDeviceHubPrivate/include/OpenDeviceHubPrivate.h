@@ -37,6 +37,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) NSString *runtimeIdentifier;
 @property (nonatomic, readonly) BOOL available;
 @property (nonatomic, readonly, nullable) id io;
+/// Delivers a low memory warning to the guest. Verified present on Xcode 26.5 (17F42).
+- (void)simulateMemoryWarning;
 @end
 
 @protocol ODHSimDeviceSet <NSObject>

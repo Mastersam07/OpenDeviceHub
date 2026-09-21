@@ -122,6 +122,7 @@ public protocol SimulatorAdapter: Sendable {
     func devices() throws -> [DeviceInfo]
     func openDisplay(_ udid: String) throws -> any DisplaySession
     func openInput(_ udid: String) throws -> any InputSession
+    func simulateMemoryWarning(_ udid: String) throws
 }
 
 extension DeviceState {

@@ -128,3 +128,29 @@ final class SimctlPasteboardArgumentTests: XCTestCase {
         XCTAssertEqual(SimctlService.bootStatusArguments(udid: "ABC"), ["simctl", "bootstatus", "ABC", "-b"])
     }
 }
+
+final class DebugPathTests: XCTestCase {
+    func testAppContainerArguments() {
+        XCTAssertEqual(
+            SimctlService.appContainerArguments(udid: "ABC", bundleID: "com.example.app", kind: .data),
+            ["simctl", "get_app_container", "ABC", "com.example.app", "data"]
+        )
+    }
+
+    func testEveryContainerKindIsPassedThrough() {
+        for kind in SimctlService.ContainerKind.allCases {
+            let arguments = SimctlService.appContainerArguments(udid: "A", bundleID: "b", kind: kind)
+            XCTAssertEqual(arguments.last, kind.rawValue)
+        }
+    }
+
+    func testTheSystemLogDirectoryIsUnderTheUsersLogs() {
+        let url = SimctlService.systemLogDirectory(udid: "ABC")
+        XCTAssertTrue(url.path.hasSuffix("Library/Logs/CoreSimulator/ABC"))
+    }
+
+    func testTheDeviceDataDirectoryPointsAtTheDevice() {
+        let url = SimctlService.deviceDataDirectory(udid: "ABC")
+        XCTAssertTrue(url.path.hasSuffix("CoreSimulator/Devices/ABC/data"))
+    }
+}
