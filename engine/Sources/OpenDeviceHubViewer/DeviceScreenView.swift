@@ -1,5 +1,6 @@
 import AppKit
 import MetalKit
+import QuartzCore
 import OpenDeviceHubEngine
 
 /// Draws only when a frame arrives, so the measured rate is the simulator's output rate rather
@@ -42,6 +43,10 @@ public final class DeviceScreenView: MTKView, NSDraggingSource {
         isPaused = true
         enableSetNeedsDisplay = true
         autoResizeDrawable = true
+        wantsLayer = true
+        layer?.isOpaque = false
+        (layer as? CAMetalLayer)?.isOpaque = false
+        clearColor = MTLClearColorMake(0, 0, 0, 0)
         registerForDrops()
     }
 

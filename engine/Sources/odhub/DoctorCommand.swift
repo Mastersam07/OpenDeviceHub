@@ -30,8 +30,40 @@ struct Doctor: ParsableCommand {
             }
         }
 
+        print("")
+        print("Device bodies")
+        reportChrome()
+
         if loadFailed {
             throw ExitCode.failure
+        }
+    }
+
+    /// The body artwork lives outside Xcode, in DeviceKit, so it is reported separately: a missing
+    /// bundle is not a broken install, it only means a device keeps the plain masked screen.
+    private func reportChrome() {
+        let directory = URL(fileURLWithPath: ChromeLocator.chromeDirectory)
+        let bundles = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil))?
+            .filter { $0.pathExtension == "devicechrome" } ?? []
+        guard !bundles.isEmpty else {
+            print("  none found in \(ChromeLocator.chromeDirectory)")
+            return
+        }
+        print("  \(bundles.count) in \(ChromeLocator.chromeDirectory)")
+
+        let adapter = try? AdapterFactory.make(for: XcodeLocator.locate())
+        let devices = (try? adapter?.devices()) ?? []
+        let booted = devices.filter { $0.state == .booted }
+        let shown = booted.isEmpty ? Array(devices.prefix(3)) : booted
+        for device in shown {
+            let type = device.deviceTypeIdentifier
+            if let chrome = ChromeLocator.chrome(forDeviceType: type) {
+                let buttons = chrome.buttons.map(\.name).joined(separator: ", ")
+                print("  ok      \(device.name): \(chrome.identifier)")
+                print("          body \(Int(chrome.insets.left))pt, buttons: \(buttons)")
+            } else {
+                print("  missing \(device.name): no body for \(type)")
+            }
         }
     }
 

@@ -11,6 +11,8 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private let session: any DisplaySession
     private let renderer: FrameRenderer
     private let screenView: DeviceScreenView
+    private let chromeView: DeviceChromeView
+    private var chrome: DeviceChrome?
     private var frameTask: Task<Void, Never>?
 
     private let input: (any InputSession)?
@@ -20,7 +22,6 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     /// Set once the window has been placed. Sizing and centring during construction move the
     /// window, and saving those would make every device look like it had a remembered position.
     private var tracksFrameChanges = false
-    private var deviceAspectRatio: CGSize = .zero
     private var baseTitle: String?
     private let latency = LatencyMeter()
     private var showsLatency = false
@@ -39,7 +40,8 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         bezelEnabled: Bool,
         keepOnTop: Bool,
         frameStore: WindowFrameStore,
-        fpsLabel: String?
+        fpsLabel: String?,
+        chrome: DeviceChrome?
     ) throws {
         self.frameStore = frameStore
         self.udid = udid
@@ -53,11 +55,16 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         screenView = DeviceScreenView(device: device)
         renderer = try FrameRenderer(device: device, pixelFormat: screenView.colorPixelFormat)
         screenView.delegate = renderer
+        chromeView = DeviceChromeView(screenView: screenView)
+        self.chrome = chrome
 
-        let contentSize = DeviceGeometry.pointSize(
+        let screenSize = DeviceGeometry.pointSize(
             pixelSize: session.pixelSize,
             pointScale: session.pointScale
         )
+        let contentSize = bezelEnabled && chrome != nil
+            ? ChromeGeometry.contentSize(screen: screenSize, chrome: chrome!, orientation: .portrait)
+            : screenSize
         let window = DeviceWindow(
             contentRect: CGRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -66,13 +73,17 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         )
         window.title = title
         baseTitle = title
-        window.contentView = screenView
+        window.contentView = chromeView
+        // Without this the body's buttons never see the pointer, so they cannot rise under it.
+        window.acceptsMouseMovedEvents = true
         window.contentAspectRatio = contentSize
-        self.deviceAspectRatio = contentSize
         window.center()
         window.collectionBehavior.insert(.fullScreenPrimary)
         super.init(window: window)
         window.delegate = self
+        chromeView.setScreenSize(screenSize)
+        chromeView.setChrome(bezelEnabled ? chrome : nil)
+        installChromeButtons()
         applyScaleMode(scaleMode)
         setKeepOnTop(keepOnTop)
 
@@ -121,7 +132,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             pointScale: session.pointScale,
             pixelsPerInch: session.pixelsPerInch
         )
-        guard let size = DeviceGeometry.contentSize(
+        guard let screenSize = DeviceGeometry.contentSize(
             for: mode,
             device: device,
             screen: ScaleMode.screenMetrics(for: window.screen ?? NSScreen.main),
@@ -129,8 +140,31 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         ) else {
             return mode == .fit ? .noFixedSize : .unavailable
         }
-        window.setContentSize(size)
-        keepOnScreen()
+        // A scale mode sizes the screen, so the body has to be added on top of whatever it asks
+        // for, or the window would crop it.
+        // The scale mode already turned the screen, and the chrome turns it again, so this undoes
+        // the first turn to hand the chrome the upright size it expects. Swapping twice is the
+        // same size back.
+        let upright = orientation.displayedSize(portraitNative: screenSize)
+        chromeView.setScreenSize(upright)
+        let size = chromeView.hasChrome && chrome != nil
+            ? ChromeGeometry.contentSize(screen: upright, chrome: chrome!, orientation: orientation)
+            : screenSize
+        // Full screen owns the window's size, and a locked ratio collapses it, so only the shape
+        // the chrome fits itself into changes there. Turning the device in full screen used to
+        // resize the window and lock the new ratio, which fought the transition.
+        if window.styleMask.contains(.fullScreen) {
+            chromeView.needsLayout = true
+            chromeView.needsDisplay = true
+        } else {
+            // The ratio has to be relaxed before the size is set. AppKit applies the old one to
+            // the new size otherwise, which shrank the window to the bare screen's shape when the
+            // body came back.
+            window.contentResizeIncrements = NSSize(width: 1, height: 1)
+            window.setContentSize(size)
+            window.contentAspectRatio = size
+            keepOnScreen()
+        }
 
         let visible = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? .zero
         let titleBar = window.frame.height - window.contentLayoutRect.height
@@ -153,7 +187,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     public var currentScaleMode: ScaleMode { scaleMode }
 
-    public var supportsBezel: Bool { session.supportsBezel }
+    public var supportsBezel: Bool { session.supportsBezel || chrome != nil }
 
     public var isBezelEnabled: Bool { bezelEnabled }
 
@@ -161,7 +195,17 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     /// only changes what is drawn inside the same framebuffer.
     public func setBezelEnabled(_ enabled: Bool) {
         bezelEnabled = enabled
+        // Two halves: the guest's own screen shape, and the body drawn around it.
         session.setBezelEnabled(enabled)
+        chromeView.setChrome(enabled ? chrome : nil)
+        applyScaleMode(scaleMode)
+    }
+
+    private func installChromeButtons() {
+        chromeView.onButton = { [weak self] button, phase in
+            guard let self, let input else { return }
+            Task { try? await input.button(button, phase: phase) }
+        }
     }
 
     /// Keeps the device above other applications, the way the classic Simulator could.
@@ -225,11 +269,9 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     public func setOrientation(_ orientation: DeviceOrientation) {
         self.orientation = orientation
         renderer.setOrientation(orientation)
-        let displayed = orientation.displayedSize(portraitNative: session.pixelSize)
-        let scale = session.pointScale > 0 ? session.pointScale : 1
-        let aspect = CGSize(width: displayed.width / scale, height: displayed.height / scale)
-        window?.contentAspectRatio = aspect
-        deviceAspectRatio = aspect
+        chromeView.setOrientation(orientation)
+        // The scale mode settles the window's shape and its ratio, including the body, and leaves
+        // both alone in full screen.
         applyScaleMode(scaleMode)
         screenView.needsDisplay = true
     }
@@ -258,8 +300,9 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     public func windowDidExitFullScreen(_ notification: Notification) {
         (window as? DeviceWindow)?.constrainsToScreen = false
-        guard deviceAspectRatio != .zero else { return }
-        window?.contentAspectRatio = deviceAspectRatio
+        // The device may have been turned while full screen, where the window is not resized, so
+        // the shape it comes back to is whatever the current orientation asks for.
+        applyScaleMode(scaleMode)
     }
 
     public func windowDidMove(_ notification: Notification) {
