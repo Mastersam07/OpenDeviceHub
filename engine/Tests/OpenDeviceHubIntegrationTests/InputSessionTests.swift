@@ -121,3 +121,19 @@ extension InputSessionTests {
         try await session.key(KeyEvent(phase: .up, usage: 0x29))
     }
 }
+
+final class PasteboardTests: XCTestCase {
+    func testTextRoundTripsThroughTheDevicePasteboard() throws {
+        try IntegrationGate.requireEnabled()
+
+        let adapter = try AdapterFactory.make(for: XcodeLocator.locate())
+        guard let booted = try adapter.devices().first(where: { $0.state == .booted }) else {
+            throw XCTSkip("no booted simulator")
+        }
+        let simctl = SimctlService()
+        let text = "odhub pasteboard \(UUID().uuidString)"
+        try simctl.pasteboardCopy(text, udid: booted.udid)
+        let read = try simctl.pasteboardPaste(udid: booted.udid)
+        XCTAssertEqual(read.trimmingCharacters(in: .whitespacesAndNewlines), text)
+    }
+}
