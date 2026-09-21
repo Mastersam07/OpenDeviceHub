@@ -12,6 +12,8 @@ public final class DeviceChromeView: NSView {
     private var slices: [String: NSImage] = [:]
     private var buttonImages: [String: NSImage] = [:]
     private var pressed: ChromeButton?
+    private var screenSize: CGSize = .zero
+    private var orientation: DeviceOrientation = .portrait
     private var hovered: ChromeButton?
     private var tracking: NSTrackingArea?
 
@@ -29,6 +31,19 @@ public final class DeviceChromeView: NSView {
     public override var isFlipped: Bool { false }
 
     /// Nil takes the body away and gives the screen the whole view back.
+    /// The device's upright screen size, which the body is sized against.
+    public func setScreenSize(_ size: CGSize) {
+        screenSize = size
+        needsLayout = true
+        needsDisplay = true
+    }
+
+    public func setOrientation(_ orientation: DeviceOrientation) {
+        self.orientation = orientation
+        needsLayout = true
+        needsDisplay = true
+    }
+
     public func setChrome(_ chrome: DeviceChrome?) {
         self.chrome = chrome
         composite = nil
@@ -60,8 +75,22 @@ public final class DeviceChromeView: NSView {
 
     /// The screen's area inside this view, which is everything when there is no body.
     public var screenRect: CGRect {
-        guard let chrome, hasChrome else { return bounds }
-        return ChromeGeometry.screenRect(content: bounds.size, chrome: chrome)
+        guard let chrome, hasChrome, screenSize.width > 0 else { return bounds }
+        return ChromeGeometry.screenRect(
+            viewSize: bounds.size, screen: screenSize, chrome: chrome, orientation: orientation
+        )
+    }
+
+    private var deviceTransform: CGAffineTransform {
+        guard let chrome, hasChrome, screenSize.width > 0 else { return .identity }
+        return ChromeGeometry.deviceTransform(
+            viewSize: bounds.size, screen: screenSize, chrome: chrome, orientation: orientation
+        )
+    }
+
+    private var uprightSize: CGSize {
+        guard let chrome else { return bounds.size }
+        return ChromeGeometry.contentSize(screen: screenSize, chrome: chrome)
     }
 
     public override func layout() {
@@ -70,8 +99,15 @@ public final class DeviceChromeView: NSView {
     }
 
     public override func draw(_ dirtyRect: NSRect) {
-        guard let chrome, hasChrome else { return }
-        let body = ChromeGeometry.bodyRect(content: bounds.size, chrome: chrome)
+        guard let chrome, hasChrome, screenSize.width > 0 else { return }
+        guard let context = NSGraphicsContext.current else { return }
+
+        context.saveGraphicsState()
+        defer { context.restoreGraphicsState() }
+        // Everything below is in the device's own upright space, so it turns with the device.
+        context.cgContext.concatenate(deviceTransform)
+
+        let body = ChromeGeometry.bodyRect(content: uprightSize, chrome: chrome)
 
         // A side button sits under the body, so only the sliver standing proud of it shows. Drawing
         // it over the body instead leaves a slab stuck to the surface.
@@ -101,7 +137,7 @@ public final class DeviceChromeView: NSView {
             let rect = ChromeGeometry.buttonRect(
                 button,
                 imageSize: buttonImages[button.image]?.size ?? image.size,
-                content: bounds.size,
+                content: uprightSize,
                 chrome: chrome,
                 hovered: hovered == button || pressed == button
             )
@@ -114,9 +150,10 @@ public final class DeviceChromeView: NSView {
     }
 
     private func button(at point: CGPoint) -> ChromeButton? {
-        guard let chrome, hasChrome else { return nil }
+        guard let chrome, hasChrome, screenSize.width > 0 else { return nil }
+        let inDevice = point.applying(deviceTransform.inverted())
         return ChromeGeometry.button(
-            at: point, sizes: imageSizes, content: bounds.size, chrome: chrome
+            at: inDevice, sizes: imageSizes, content: uprightSize, chrome: chrome
         )
     }
 
