@@ -49,3 +49,41 @@ public struct SimctlService: Sendable {
         return Data(result.standardOutput.utf8)
     }
 }
+
+extension SimctlService {
+    static func bootArguments(udid: String) -> [String] {
+        ["simctl", "boot", udid]
+    }
+
+    static func shutdownArguments(udid: String) -> [String] {
+        ["simctl", "shutdown", udid]
+    }
+
+    static func bootStatusArguments(udid: String) -> [String] {
+        ["simctl", "bootstatus", udid, "-b"]
+    }
+
+    /// Booting is something simctl does well, so the adapter does not reach for `bootWithOptions:`.
+    /// An already booted device makes `simctl boot` fail, which is treated as success.
+    public func boot(udid: String) throws {
+        let result = try ProcessRunner.run("/usr/bin/xcrun", Self.bootArguments(udid: udid))
+        if result.status != 0, !result.standardError.contains("current state: Booted") {
+            throw EngineError.simctl(
+                args: Array(Self.bootArguments(udid: udid).dropFirst()),
+                code: result.status,
+                stderr: result.standardError
+            )
+        }
+    }
+
+    public func waitForBoot(udid: String) throws {
+        let result = try ProcessRunner.run("/usr/bin/xcrun", Self.bootStatusArguments(udid: udid))
+        guard result.status == 0 else {
+            throw EngineError.simctl(
+                args: Array(Self.bootStatusArguments(udid: udid).dropFirst()),
+                code: result.status,
+                stderr: result.standardError
+            )
+        }
+    }
+}

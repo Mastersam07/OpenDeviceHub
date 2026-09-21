@@ -35,6 +35,10 @@ let package = Package(
             dependencies: ["OpenDeviceHubEngine"]
         ),
         .testTarget(
+            name: "OpenDeviceHubViewerTests",
+            dependencies: ["OpenDeviceHubViewer"]
+        ),
+        .testTarget(
             name: "OpenDeviceHubIntegrationTests",
             dependencies: ["OpenDeviceHubEngine"]
         ),

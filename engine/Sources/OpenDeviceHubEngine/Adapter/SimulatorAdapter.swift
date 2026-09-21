@@ -114,6 +114,7 @@ public protocol SimulatorAdapter: Sendable {
     var xcode: XcodeInstall { get }
     var capabilities: Capabilities { get }
     func devices() throws -> [DeviceInfo]
+    func openDisplay(_ udid: String) throws -> any DisplaySession
 }
 
 extension DeviceState {

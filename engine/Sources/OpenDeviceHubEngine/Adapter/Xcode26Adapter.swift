@@ -48,6 +48,68 @@ public final class Xcode26Adapter: SimulatorAdapter, @unchecked Sendable {
         }
     }
 
+    public func openDisplay(_ udid: String) throws -> any DisplaySession {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let device = try rawDevice(udid)
+        let state = DeviceState.from(state: device.state, stateString: device.stateString)
+        guard state == .booted else {
+            throw EngineError.deviceNotBooted(udid: udid)
+        }
+        guard let io = device.io else {
+            throw EngineError.capabilityUnavailable(name: "device IO")
+        }
+
+        let scale = CGFloat(device.deviceType?.mainScreenScale ?? 1)
+        let ports = unsafeBitCast(io as AnyObject, to: (any ODHSimDeviceIO).self).ioPorts
+
+        guard let renderableProtocol = NSProtocolFromString("SimDisplayRenderable"),
+              let surfaceProtocol = NSProtocolFromString("SimDisplayIOSurfaceRenderable"),
+              let stateProtocol = NSProtocolFromString("SimDisplayDescriptorState") else {
+            throw EngineError.symbolNotFound(name: "SimDisplay protocols", framework: "CoreSimDeviceIO")
+        }
+
+        for element in ports {
+            let port = unsafeBitCast(element as AnyObject, to: (any ODHSimDeviceIOPort).self)
+            guard let descriptor = port.descriptor as AnyObject?,
+                  descriptor.conforms(to: renderableProtocol),
+                  descriptor.conforms(to: surfaceProtocol) else { continue }
+
+            let typedDescriptor = unsafeBitCast(descriptor, to: (any ODHSimDeviceIOPortDescriptor).self)
+            guard let portState = typedDescriptor.state as AnyObject?,
+                  portState.conforms(to: stateProtocol) else { continue }
+
+            // Two ports share the identifier com.apple.framebuffer.display on 17F42. Class 0 is the
+            // device's own screen; class 1 is a secondary display that stays empty while unused.
+            let displayState = unsafeBitCast(portState, to: (any ODHSimDisplayDescriptorState).self)
+            guard displayState.displayClass == 0 else { continue }
+
+            return try SimulatorDisplaySession(descriptor: descriptor, pointScale: scale)
+        }
+
+        throw EngineError.capabilityUnavailable(name: "main display port")
+    }
+
+    private func rawDevice(_ udid: String) throws -> any ODHSimDevice {
+        let deviceSet: any ODHSimDeviceSet
+        do {
+            deviceSet = try context.defaultDeviceSet()
+        } catch {
+            throw EngineError.privateCall(
+                symbol: "-[SimServiceContext defaultDeviceSetWithError:]",
+                message: error.localizedDescription
+            )
+        }
+        for element in deviceSet.devices {
+            let device = unsafeBitCast(element as AnyObject, to: (any ODHSimDevice).self)
+            if device.udid.uuidString.caseInsensitiveCompare(udid) == .orderedSame {
+                return device
+            }
+        }
+        throw EngineError.deviceNotFound(udid: udid)
+    }
+
     private static func makeServiceContext(developerDir: String) throws -> any ODHSimServiceContext {
         guard let contextClass = NSClassFromString("SimServiceContext") else {
             throw EngineError.symbolNotFound(name: "SimServiceContext", framework: "CoreSimulator")
