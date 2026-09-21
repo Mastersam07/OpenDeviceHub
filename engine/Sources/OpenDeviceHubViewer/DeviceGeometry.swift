@@ -1,4 +1,5 @@
 import CoreGraphics
+import OpenDeviceHubEngine
 
 public struct DeviceMetrics: Sendable, Hashable {
     public let pixelSize: CGSize
@@ -44,6 +45,30 @@ public enum DeviceGeometry {
             && contentSize.height + titleBarHeight <= visibleSize.height
     }
 
+    /// Moves a window frame so its title bar stays reachable on screen, without resizing it: a
+    /// window bigger than the screen is allowed, one whose title bar sits above the menu bar is
+    /// not. Rotating or changing scale mode keeps the top left corner, so a tall shape can
+    /// otherwise land above the screen.
+    public static func onScreenOrigin(frame: CGRect, visibleFrame: CGRect) -> CGPoint {
+        guard visibleFrame.width > 0, visibleFrame.height > 0 else { return frame.origin }
+
+        var x = frame.minX
+        if frame.width <= visibleFrame.width {
+            x = min(max(x, visibleFrame.minX), visibleFrame.maxX - frame.width)
+        } else {
+            x = min(max(x, visibleFrame.maxX - frame.width), visibleFrame.minX)
+        }
+
+        var y = frame.minY
+        if frame.height <= visibleFrame.height {
+            y = min(max(y, visibleFrame.minY), visibleFrame.maxY - frame.height)
+        } else {
+            y = visibleFrame.maxY - frame.height
+        }
+
+        return CGPoint(x: x, y: y)
+    }
+
     /// The size in macOS points that shows the device's screen at its own point size. The scale is
     /// guarded because a device type with no reported scale would otherwise divide by zero.
     public static func pointSize(pixelSize: CGSize, pointScale: CGFloat) -> CGSize {
@@ -56,9 +81,15 @@ public enum DeviceGeometry {
     public static func contentSize(
         for mode: ScaleMode,
         device: DeviceMetrics,
-        screen: ScreenMetrics
+        screen: ScreenMetrics,
+        orientation: DeviceOrientation = .portrait
     ) -> CGSize? {
         guard device.pixelSize.width > 0, device.pixelSize.height > 0 else { return nil }
+        let device = DeviceMetrics(
+            pixelSize: orientation.displayedSize(portraitNative: device.pixelSize),
+            pointScale: device.pointScale,
+            pixelsPerInch: device.pixelsPerInch
+        )
 
         switch mode {
         case .fit:

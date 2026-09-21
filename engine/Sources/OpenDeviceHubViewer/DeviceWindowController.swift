@@ -25,6 +25,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private let latency = LatencyMeter()
     private var showsLatency = false
     private var parallelOffset = CGSize(width: 0.12, height: 0)
+    private var orientation: DeviceOrientation = .portrait
     private var scaleMode: ScaleMode
     private var bezelEnabled: Bool
     private let frameStore: WindowFrameStore
@@ -83,6 +84,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             } else {
                 window.setFrameOrigin(remembered.origin)
             }
+            keepOnScreen()
         }
 
         if let fpsLabel {
@@ -122,11 +124,13 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         guard let size = DeviceGeometry.contentSize(
             for: mode,
             device: device,
-            screen: ScaleMode.screenMetrics(for: window.screen ?? NSScreen.main)
+            screen: ScaleMode.screenMetrics(for: window.screen ?? NSScreen.main),
+            orientation: orientation
         ) else {
             return mode == .fit ? .noFixedSize : .unavailable
         }
         window.setContentSize(size)
+        keepOnScreen()
 
         let visible = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? .zero
         let titleBar = window.frame.height - window.contentLayoutRect.height
@@ -136,6 +140,15 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             titleBarHeight: titleBar
         )
         return fits ? .applied(size) : .largerThanScreen(size)
+    }
+
+    private func keepOnScreen() {
+        guard let window,
+              !window.styleMask.contains(.fullScreen),
+              let visible = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
+        let origin = DeviceGeometry.onScreenOrigin(frame: window.frame, visibleFrame: visible)
+        guard origin != window.frame.origin else { return }
+        window.setFrameOrigin(origin)
     }
 
     public var currentScaleMode: ScaleMode { scaleMode }
@@ -206,6 +219,22 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         isRecording = visible
         updateTitle()
     }
+
+    /// Turns the window and the image to match the device. The device itself is turned by the
+    /// adapter; this is the half the host owns.
+    public func setOrientation(_ orientation: DeviceOrientation) {
+        self.orientation = orientation
+        renderer.setOrientation(orientation)
+        let displayed = orientation.displayedSize(portraitNative: session.pixelSize)
+        let scale = session.pointScale > 0 ? session.pointScale : 1
+        let aspect = CGSize(width: displayed.width / scale, height: displayed.height / scale)
+        window?.contentAspectRatio = aspect
+        deviceAspectRatio = aspect
+        applyScaleMode(scaleMode)
+        screenView.needsDisplay = true
+    }
+
+    public var currentOrientation: DeviceOrientation { orientation }
 
     /// Offers a finished recording for dragging out of the window.
     public func setDraggableFile(_ file: URL?) {
@@ -289,10 +318,11 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
         screenView.onContact = { [weak self] point, phase, style in
             guard let self, let input else { return }
+            let orientation = self.orientation
             guard let primary = CoordinateMapper.normalize(
                 viewPoint: point,
                 viewSize: screenView.bounds.size,
-                pixelSize: pixelSize
+                pixelSize: orientation.displayedSize(portraitNative: pixelSize)
             ) else { return }
 
             let touchPhase: TouchEvent.Phase = switch phase {
@@ -301,15 +331,18 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             case .ended: .ended
             }
 
-            var points = [primary]
+            var shown = [primary]
             switch style {
             case .single:
                 break
             case .mirrored:
-                points.append(TwoFingerGesture.mirrored(primary, about: CGPoint(x: 0.5, y: 0.5)))
+                shown.append(TwoFingerGesture.mirrored(primary, about: CGPoint(x: 0.5, y: 0.5)))
             case .parallel:
                 if phase == .began { self.parallelOffset = CGSize(width: 0.12, height: 0) }
-                points.append(TwoFingerGesture.offsetPartner(primary, by: self.parallelOffset))
+                shown.append(TwoFingerGesture.offsetPartner(primary, by: self.parallelOffset))
+            }
+            let points = shown.map {
+                CoordinateMapper.portraitNativePoint(from: $0, orientation: orientation)
             }
 
             if touchPhase == .began { self.latency.clickSent() }
@@ -336,11 +369,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             guard size.width > 0, size.height > 0 else { return }
 
             let normalizedSpread = spread / min(size.width, size.height)
+            let orientation = self.orientation
             let contacts = TwoFingerGesture.contacts(
                 centre: CGPoint(x: 0.5, y: 0.5),
                 spread: normalizedSpread,
                 angle: angle
-            )
+            ).map { CoordinateMapper.portraitNativePoint(from: $0, orientation: orientation) }
             let touchPhase: TouchEvent.Phase = switch phase {
             case .began: .began
             case .moved: .moved

@@ -25,6 +25,73 @@ final class DeviceGeometryTests: XCTestCase {
     }
 }
 
+final class OnScreenOriginTests: XCTestCase {
+    private let visible = CGRect(x: 0, y: 0, width: 1512, height: 944)
+
+    func testAFrameAlreadyOnScreenIsLeftAlone() {
+        let frame = CGRect(x: 100, y: 100, width: 375, height: 699)
+        XCTAssertEqual(
+            DeviceGeometry.onScreenOrigin(frame: frame, visibleFrame: visible),
+            frame.origin
+        )
+    }
+
+    func testATallerShapeIsPulledDownSoItsTitleBarStaysReachable() {
+        // A landscape window remembered at this origin becomes portrait on rotation, which would
+        // push its title bar above the top of the screen.
+        let frame = CGRect(x: 0, y: 504, width: 375, height: 699)
+        let origin = DeviceGeometry.onScreenOrigin(frame: frame, visibleFrame: visible)
+        XCTAssertEqual(origin.y, 944 - 699)
+        XCTAssertEqual(origin.x, 0)
+    }
+
+    func testAFrameOffTheBottomIsPushedUp() {
+        let frame = CGRect(x: 40, y: -300, width: 375, height: 400)
+        XCTAssertEqual(
+            DeviceGeometry.onScreenOrigin(frame: frame, visibleFrame: visible),
+            CGPoint(x: 40, y: 0)
+        )
+    }
+
+    func testAFrameOffTheRightIsPulledBack() {
+        let frame = CGRect(x: 1400, y: 100, width: 375, height: 400)
+        XCTAssertEqual(
+            DeviceGeometry.onScreenOrigin(frame: frame, visibleFrame: visible),
+            CGPoint(x: 1512 - 375, y: 100)
+        )
+    }
+
+    func testAWindowTallerThanTheScreenHangsFromTheTop() {
+        let frame = CGRect(x: 100, y: -400, width: 375, height: 1600)
+        let origin = DeviceGeometry.onScreenOrigin(frame: frame, visibleFrame: visible)
+        XCTAssertEqual(origin.x, 100)
+        XCTAssertEqual(origin.y, 944 - 1600)
+    }
+
+    func testAWindowWiderThanTheScreenStaysWhereItIsWhileItCoversTheScreen() {
+        let frame = CGRect(x: -200, y: 100, width: 2000, height: 400)
+        XCTAssertEqual(
+            DeviceGeometry.onScreenOrigin(frame: frame, visibleFrame: visible),
+            CGPoint(x: -200, y: 100)
+        )
+    }
+
+    func testAWindowWiderThanTheScreenIsPulledBackWhenItUncoversIt() {
+        let frame = CGRect(x: 300, y: 100, width: 2000, height: 400)
+        let origin = DeviceGeometry.onScreenOrigin(frame: frame, visibleFrame: visible)
+        XCTAssertEqual(origin.x, 0)
+        XCTAssertEqual(origin.y, 100)
+    }
+
+    func testAnEmptyScreenLeavesTheFrameAlone() {
+        let frame = CGRect(x: 10, y: 20, width: 100, height: 100)
+        XCTAssertEqual(
+            DeviceGeometry.onScreenOrigin(frame: frame, visibleFrame: .zero),
+            frame.origin
+        )
+    }
+}
+
 final class ScaleModeTests: XCTestCase {
     func testEveryModeHasADistinctDisplayName() {
         let names = ScaleMode.allCases.map(\.displayName)

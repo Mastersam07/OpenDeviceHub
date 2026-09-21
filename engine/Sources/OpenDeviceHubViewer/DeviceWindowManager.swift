@@ -102,6 +102,8 @@ public final class DeviceWindowManager {
     /// The UDIDs of every open window, so a menu action can reach all of them.
     public var openUDIDs: [String] { Array(controllers.keys) }
 
+    public func controller(for udid: String) -> DeviceWindowController? { controllers[udid] }
+
     public func toggleBezel() {
         let enabled = controllers.values.first?.isBezelEnabled ?? true
         setBezelEnabled(!enabled)

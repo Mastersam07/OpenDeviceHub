@@ -19,6 +19,8 @@ public enum ViewerMenu {
         public var shake: () -> Void
         public var toggleSlowAnimations: () -> Void
         public var toggleLatencyOverlay: () -> Void
+        public var pressButton: (HardwareButton) -> Void
+        public var rotate: (Bool) -> Void
 
         public init(
             setScaleMode: @escaping (ScaleMode) -> Void,
@@ -34,7 +36,9 @@ public enum ViewerMenu {
             openAppData: @escaping () -> Void,
             shake: @escaping () -> Void,
             toggleSlowAnimations: @escaping () -> Void,
-            toggleLatencyOverlay: @escaping () -> Void
+            toggleLatencyOverlay: @escaping () -> Void,
+            pressButton: @escaping (HardwareButton) -> Void,
+            rotate: @escaping (Bool) -> Void
         ) {
             self.setScaleMode = setScaleMode
             self.toggleBezel = toggleBezel
@@ -50,6 +54,8 @@ public enum ViewerMenu {
             self.shake = shake
             self.toggleSlowAnimations = toggleSlowAnimations
             self.toggleLatencyOverlay = toggleLatencyOverlay
+            self.pressButton = pressButton
+            self.rotate = rotate
         }
     }
 
@@ -95,6 +101,22 @@ public enum ViewerMenu {
 
         let deviceItem = NSMenuItem()
         let deviceMenu = NSMenu(title: "Device")
+        let home = target.item("Home", #selector(MenuTarget.home), "h", [.command, .shift])
+        disable(home, unless: capabilities.contains(.hardwareButtons), reason: "not available on this Xcode")
+        deviceMenu.addItem(home)
+        let lockItem = target.item("Lock", #selector(MenuTarget.lock), "l", [.command])
+        disable(lockItem, unless: capabilities.contains(.hardwareButtons), reason: "not available on this Xcode")
+        deviceMenu.addItem(lockItem)
+        deviceMenu.addItem(target.item("Volume Up", #selector(MenuTarget.volumeUp), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.command]))
+        deviceMenu.addItem(target.item("Volume Down", #selector(MenuTarget.volumeDown), String(UnicodeScalar(NSDownArrowFunctionKey)!), [.command]))
+        deviceMenu.addItem(.separator())
+        let rotateLeft = target.item("Rotate Left", #selector(MenuTarget.rotateLeft), String(UnicodeScalar(NSLeftArrowFunctionKey)!), [.command])
+        let rotateRight = target.item("Rotate Right", #selector(MenuTarget.rotateRight), String(UnicodeScalar(NSRightArrowFunctionKey)!), [.command])
+        for item in [rotateLeft, rotateRight] {
+            disable(item, unless: capabilities.contains(.rotation), reason: "not available on this Xcode")
+            deviceMenu.addItem(item)
+        }
+        deviceMenu.addItem(.separator())
         deviceMenu.addItem(target.item("Save Screenshot", #selector(MenuTarget.saveScreenshot), "s", []))
         deviceMenu.addItem(target.item("Record Screen", #selector(MenuTarget.record), "r", []))
         deviceMenu.addItem(.separator())
@@ -173,6 +195,12 @@ public final class MenuTarget: NSObject {
     @objc func systemLog() { actions.openSystemLog() }
     @objc func appData() { actions.openAppData() }
     @objc func shake() { actions.shake() }
+    @objc func home() { actions.pressButton(.home) }
+    @objc func lock() { actions.pressButton(.lock) }
+    @objc func volumeUp() { actions.pressButton(.volumeUp) }
+    @objc func volumeDown() { actions.pressButton(.volumeDown) }
+    @objc func rotateLeft() { actions.rotate(true) }
+    @objc func rotateRight() { actions.rotate(false) }
 
     @objc func latency(_ sender: NSMenuItem) {
         isLatencyVisible.toggle()
