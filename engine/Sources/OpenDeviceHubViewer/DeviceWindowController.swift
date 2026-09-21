@@ -20,6 +20,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     /// window, and saving those would make every device look like it had a remembered position.
     private var tracksFrameChanges = false
     private var deviceAspectRatio: CGSize = .zero
+    private var baseTitle: String?
     private var parallelOffset = CGSize(width: 0.12, height: 0)
     private var scaleMode: ScaleMode
     private var bezelEnabled: Bool
@@ -169,6 +170,14 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     }
 
     public var deviceTitle: String { window?.title ?? udid }
+
+    /// A red dot in the title bar while recording, so a long capture is obvious.
+    public func setRecordingIndicatorVisible(_ visible: Bool) {
+        guard let window else { return }
+        let base = baseTitle ?? window.title
+        baseTitle = base
+        window.title = visible ? "\u{25CF} \(base)" : base
+    }
 
     public func rememberFrame() {
         guard tracksFrameChanges,
