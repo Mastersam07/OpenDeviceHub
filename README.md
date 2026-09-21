@@ -14,6 +14,7 @@ The machine is coming. ⚙️
 
 - macOS on Apple Silicon
 - Xcode 27 or later, with at least one iOS simulator runtime installed
+- Xcode 26 support is planned
 
 ## License
 
