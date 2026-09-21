@@ -112,3 +112,110 @@ final class OrientedCoordinateTests: XCTestCase {
         XCTAssertEqual(mapped?.y ?? -1, 1, accuracy: 0.001)
     }
 }
+
+final class WorkspaceOrientationValueTests: XCTestCase {
+    func testTheGuestValuesAreTheOnesTheWorkspacePortExpects() {
+        XCTAssertEqual(DeviceOrientation.portrait.gsEventValue, 1)
+        XCTAssertEqual(DeviceOrientation.portraitUpsideDown.gsEventValue, 2)
+        XCTAssertEqual(DeviceOrientation.landscapeRight.gsEventValue, 3)
+        XCTAssertEqual(DeviceOrientation.landscapeLeft.gsEventValue, 4)
+    }
+
+    func testEveryOrientationHasADistinctGuestValue() {
+        let values = DeviceOrientation.allCases.map(\.gsEventValue)
+        XCTAssertEqual(Set(values).count, values.count)
+    }
+}
+
+final class HomeGestureTests: XCTestCase {
+    func testTheSwipeStartsAtTheBottomEdgeAndTravelsUp() {
+        let path = HomeGesture.swipePath()
+        XCTAssertGreaterThan(path[0].y, 0.98, "must begin inside the bottom edge region")
+        XCTAssertLessThan(path[path.count - 1].y, 0.5, "and finish well up the screen")
+    }
+
+    func testTheSwipeStaysOnTheVerticalCentreLine() {
+        for point in HomeGesture.swipePath() {
+            XCTAssertEqual(point.x, 0.5, accuracy: 0.0001)
+        }
+    }
+
+    func testTheSwipeHasEnoughIntermediatePoints() {
+        // A contact that jumps reads as a tap, so the path needs real intermediate steps.
+        XCTAssertGreaterThan(HomeGesture.swipePath().count, 10)
+    }
+
+    func testEveryPointIsOnScreen() {
+        for point in HomeGesture.swipePath() {
+            XCTAssertTrue((0...1).contains(point.x))
+            XCTAssertTrue((0...1).contains(point.y))
+        }
+    }
+}
+
+final class TouchEdgeTests: XCTestCase {
+    func testEachEdgeHasTheValueTheGuestRecognises() {
+        XCTAssertEqual(IndigoHID.edgeValue(for: .none), 0)
+        XCTAssertEqual(IndigoHID.edgeValue(for: .top), 1)
+        XCTAssertEqual(IndigoHID.edgeValue(for: .left), 2)
+        XCTAssertEqual(IndigoHID.edgeValue(for: .bottom), 3)
+        XCTAssertEqual(IndigoHID.edgeValue(for: .right), 4)
+    }
+
+    func testAPlainTouchCarriesNoEdge() {
+        let event = TouchEvent(phase: .began, points: [CGPoint(x: 0.5, y: 0.5)])
+        XCTAssertEqual(event.edge, TouchEvent.Edge.none)
+    }
+
+    func testTheHomeSwipeIsSentFromTheBottomEdge() {
+        let event = TouchEvent(phase: .began, points: [HomeGesture.swipePath()[0]], edge: .bottom)
+        XCTAssertEqual(IndigoHID.edgeValue(for: event.edge), 3)
+    }
+}
+
+final class ShownToDeviceSpaceTests: XCTestCase {
+    private let phone = CGSize(width: 750, height: 1334)
+
+    /// The viewer normalizes against the displayed size and then turns the result into portrait
+    /// native space itself, so that two step path has to agree with the one step mapper.
+    func testTheTwoStepPathAgreesWithTheOrientationAwareMapper() {
+        for orientation in DeviceOrientation.allCases {
+            let displayed = orientation.displayedSize(portraitNative: phone)
+            let view = CGSize(width: displayed.width / 2, height: displayed.height / 2)
+            for point in [CGPoint(x: 10, y: 20), CGPoint(x: 300, y: 90), CGPoint(x: 0, y: 0)] {
+                let oneStep = CoordinateMapper.normalize(
+                    viewPoint: point,
+                    viewSize: view,
+                    pixelSize: phone,
+                    orientation: orientation
+                )
+                let shown = CoordinateMapper.normalize(
+                    viewPoint: point,
+                    viewSize: view,
+                    pixelSize: displayed
+                )
+                let twoStep = shown.map {
+                    CoordinateMapper.portraitNativePoint(from: $0, orientation: orientation)
+                }
+                XCTAssertEqual(oneStep?.x ?? -1, twoStep?.x ?? -2, accuracy: 0.0001)
+                XCTAssertEqual(oneStep?.y ?? -1, twoStep?.y ?? -2, accuracy: 0.0001)
+            }
+        }
+    }
+
+    func testTurningBackAndForthReturnsTheSamePoint() {
+        let point = CGPoint(x: 0.31, y: 0.78)
+        for orientation in DeviceOrientation.allCases {
+            let there = CoordinateMapper.portraitNativePoint(from: point, orientation: orientation)
+            let back = CoordinateMapper.portraitNativePoint(
+                from: CoordinateMapper.portraitNativePoint(
+                    from: CoordinateMapper.portraitNativePoint(from: there, orientation: orientation),
+                    orientation: orientation
+                ),
+                orientation: orientation
+            )
+            XCTAssertEqual(back.x, point.x, accuracy: 0.0001)
+            XCTAssertEqual(back.y, point.y, accuracy: 0.0001)
+        }
+    }
+}

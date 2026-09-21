@@ -26,8 +26,18 @@ enum IndigoHID {
     static let eventTypeContactDown: UInt = 1
     static let eventTypeContactUp: UInt = 2
 
-    /// The contact did not originate at a screen edge. Verified on Xcode 26.5 (17F42).
+    /// Which edge a contact started at. Verified on Xcode 26.5 (17F42).
     static let edgeNone: UInt32 = 0
+
+    static func edgeValue(for edge: TouchEvent.Edge) -> UInt32 {
+        switch edge {
+        case .none: 0
+        case .top: 1
+        case .left: 2
+        case .bottom: 3
+        case .right: 4
+        }
+    }
 
     /// The builder normalizes the point by this size, so a unit size leaves an already normalized
     /// point untouched. Verified on Xcode 26.5 (17F42).
@@ -80,6 +90,42 @@ enum IndigoHID {
     static let keyboardBuilderSymbol = "IndigoHIDMessageForKeyboardArbitrary"
 
     typealias KeyboardMessageBuilder = @convention(c) (Int32, Int32) -> UnsafeMutableRawPointer?
+
+    /// `IndigoHIDMessageForButton(eventSource, direction, target)`. The argument order matters and
+    /// is not the one the name suggests: the target comes last and is always `buttonTarget`, while
+    /// the button itself is chosen by the event source. Verified on Xcode 26.5 (17F42) by pressing
+    /// Home and Lock and watching the device respond.
+    static let buttonBuilderSymbol = "IndigoHIDMessageForButton"
+    static let buttonTarget: Int32 = 0x33
+
+    /// `IndigoHIDMessageForHIDArbitrary(target, usagePage, usage, direction)`, used for the volume
+    /// keys, which travel on the consumer page rather than as buttons.
+    static let arbitraryBuilderSymbol = "IndigoHIDMessageForHIDArbitrary"
+    static let consumerUsagePage: UInt32 = 0x0c
+
+    /// Down and up for buttons and consumer usages, which is 1 and 2 rather than the 1 and 0 a
+    /// boolean would suggest.
+    static let buttonDown: Int32 = 1
+    static let buttonUp: Int32 = 2
+
+    typealias ButtonMessageBuilder = @convention(c) (Int32, Int32, Int32) -> UnsafeMutableRawPointer?
+    typealias ArbitraryMessageBuilder = @convention(c) (Int32, UInt32, UInt32, Int32) -> UnsafeMutableRawPointer?
+
+    /// How each hardware button reaches the guest. Every value confirmed on Xcode 26.5 (17F42).
+    enum Button {
+        /// Buttons identified by their event source, sent through the button builder.
+        static let eventSources: [HardwareButton: Int32] = [
+            .home: 0,
+            .lock: 1,
+            .siri: 0x400002,
+        ]
+
+        /// Buttons that are consumer page usages instead.
+        static let consumerUsages: [HardwareButton: UInt32] = [
+            .volumeUp: 0xe9,
+            .volumeDown: 0xea,
+        ]
+    }
 
     typealias MouseMessageBuilder = @convention(c) (
         UnsafeMutablePointer<CGPoint>?,

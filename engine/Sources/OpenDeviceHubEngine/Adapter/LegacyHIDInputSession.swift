@@ -13,6 +13,8 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
     private let client: any ODHSimDeviceLegacyHIDClient
     private let buildMouseMessage: IndigoHID.MouseMessageBuilder
     private let buildKeyboardMessage: IndigoHID.KeyboardMessageBuilder
+    private let buildButtonMessage: IndigoHID.ButtonMessageBuilder
+    private let buildArbitraryMessage: IndigoHID.ArbitraryMessageBuilder
     private let queue = DispatchQueue(label: "\(Brand.identifierPrefix).hid")
     private let lock = NSLock()
     private var isClosed = false
@@ -33,6 +35,16 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
             )
         }
         buildKeyboardMessage = unsafeBitCast(keyboardSymbol, to: IndigoHID.KeyboardMessageBuilder.self)
+
+        guard let buttonSymbol = simulatorKit.symbol(named: IndigoHID.buttonBuilderSymbol),
+              let arbitrarySymbol = simulatorKit.symbol(named: IndigoHID.arbitraryBuilderSymbol) else {
+            throw EngineError.symbolNotFound(
+                name: "\(IndigoHID.buttonBuilderSymbol) or \(IndigoHID.arbitraryBuilderSymbol)",
+                framework: PrivateFramework.simulatorKit.rawValue
+            )
+        }
+        buildButtonMessage = unsafeBitCast(buttonSymbol, to: IndigoHID.ButtonMessageBuilder.self)
+        buildArbitraryMessage = unsafeBitCast(arbitrarySymbol, to: IndigoHID.ArbitraryMessageBuilder.self)
 
         guard let clientClass = NSClassFromString("SimulatorKit.SimDeviceLegacyHIDClient") else {
             throw EngineError.symbolNotFound(
@@ -113,9 +125,12 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
 
         try ensureOpen()
 
+        let edge = IndigoHID.edgeValue(for: event.edge)
         let message = event.points.count == 1
-            ? try makeSingleTouchMessage(point: event.points[0], eventType: eventType)
-            : try makeTwoTouchMessage(first: event.points[0], second: event.points[1], eventType: eventType)
+            ? try makeSingleTouchMessage(point: event.points[0], eventType: eventType, edge: edge)
+            : try makeTwoTouchMessage(
+                first: event.points[0], second: event.points[1], eventType: eventType, edge: edge
+            )
         try await send(message)
     }
 
@@ -124,12 +139,13 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
     private func makeTwoTouchMessage(
         first: CGPoint,
         second: CGPoint,
-        eventType: UInt
+        eventType: UInt,
+        edge: UInt32
     ) throws -> UnsafeMutableRawPointer {
         var a = CGPoint(x: first.x, y: first.y)
         var b = CGPoint(x: second.x, y: second.y)
         guard let message = buildMouseMessage(
-            &a, &b, IndigoHID.touchTarget, eventType, IndigoHID.unitScreenSize, IndigoHID.edgeNone
+            &a, &b, IndigoHID.touchTarget, eventType, IndigoHID.unitScreenSize, edge
         ) else {
             throw EngineError.privateCall(symbol: IndigoHID.mouseBuilderSymbol, message: "returned nil")
         }
@@ -159,6 +175,30 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
         try await send(message)
     }
 
+    func button(_ button: HardwareButton, phase: ButtonPhase) async throws {
+        try ensureOpen()
+        let direction = phase == .down ? IndigoHID.buttonDown : IndigoHID.buttonUp
+
+        let message: UnsafeMutableRawPointer?
+        if let source = IndigoHID.Button.eventSources[button] {
+            message = buildButtonMessage(source, direction, IndigoHID.buttonTarget)
+        } else if let usage = IndigoHID.Button.consumerUsages[button] {
+            message = buildArbitraryMessage(
+                Int32(IndigoHID.touchTarget), IndigoHID.consumerUsagePage, usage, direction
+            )
+        } else {
+            throw EngineError.capabilityUnavailable(name: "hardware button \(button)")
+        }
+
+        guard let message else {
+            throw EngineError.privateCall(
+                symbol: IndigoHID.buttonBuilderSymbol,
+                message: "returned nil for \(button)"
+            )
+        }
+        try await send(message)
+    }
+
     func close() {
         lock.lock()
         isClosed = true
@@ -175,7 +215,8 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
 
     private func makeSingleTouchMessage(
         point: CGPoint,
-        eventType: UInt
+        eventType: UInt,
+        edge: UInt32
     ) throws -> UnsafeMutableRawPointer {
         var contact = CGPoint(x: point.x, y: point.y)
         guard let source = buildMouseMessage(
@@ -184,7 +225,7 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
             IndigoHID.touchTarget,
             eventType,
             IndigoHID.unitScreenSize,
-            IndigoHID.edgeNone
+            edge
         ) else {
             throw EngineError.privateCall(
                 symbol: IndigoHID.mouseBuilderSymbol,
