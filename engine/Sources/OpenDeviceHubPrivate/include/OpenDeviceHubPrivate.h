@@ -84,6 +84,15 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) NSArray *ioPorts;
 @end
 
+@protocol ODHSimDeviceLegacyHIDClient <NSObject>
+/// `message` points at an `IndigoHIDMessageStruct`. With `freeWhenDone` the client takes ownership
+/// of the buffer and frees it, so it has to come from `malloc` or `calloc`.
+- (void)sendWithMessage:(void *)message
+           freeWhenDone:(BOOL)freeWhenDone
+        completionQueue:(nullable dispatch_queue_t)queue
+             completion:(void (^)(NSError *_Nullable))completion;
+@end
+
 @protocol ODHSimServiceContext <NSObject>
 - (nullable id<ODHSimDeviceSet>)defaultDeviceSetWithError:(NSError **)error;
 @end

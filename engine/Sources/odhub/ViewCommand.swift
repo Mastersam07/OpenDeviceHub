@@ -40,23 +40,35 @@ struct View: ParsableCommand {
         }
 
         let session = try adapter.openDisplay(device.udid)
+        let input: (any InputSession)?
+        do {
+            input = try adapter.openInput(device.udid)
+        } catch {
+            input = nil
+            print("Clicking will not send taps: \(error.localizedDescription)")
+        }
         print("\(device.name)  \(Int(session.pixelSize.width))x\(Int(session.pixelSize.height)) at \(session.pointScale)x")
 
         // The command runs on the process's main thread, which is where AppKit has to live.
         try MainActor.assumeIsolated {
-            try present(device: device, session: session)
+            try present(device: device, session: session, input: input)
         }
     }
 
     /// AppKit has to own the main thread. `NSApplication.run()` never returns, so the task that
     /// awaits this never resumes and the process belongs to the window from here on.
     @MainActor
-    private func present(device: DeviceInfo, session: any DisplaySession) throws {
+    private func present(
+        device: DeviceInfo,
+        session: any DisplaySession,
+        input: (any InputSession)?
+    ) throws {
         let application = NSApplication.shared
         application.setActivationPolicy(.regular)
         let controller = try DeviceWindowController(
             title: "\(device.name) (\(device.runtimeName))",
             session: session,
+            input: input,
             reportFPS: fps
         )
         controller.showWindow(nil)

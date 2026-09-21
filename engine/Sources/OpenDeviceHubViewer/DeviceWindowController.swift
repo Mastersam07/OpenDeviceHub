@@ -11,11 +11,19 @@ public final class DeviceWindowController: NSWindowController {
 
     public var onClick: ((CGPoint) -> Void)?
 
-    public init(title: String, session: any DisplaySession, reportFPS: Bool) throws {
+    private let input: (any InputSession)?
+
+    public init(
+        title: String,
+        session: any DisplaySession,
+        input: (any InputSession)?,
+        reportFPS: Bool
+    ) throws {
         guard let device = MTLCreateSystemDefaultDevice() else {
             throw ViewerError.metalUnavailable("no system default device")
         }
         self.session = session
+        self.input = input
         screenView = DeviceScreenView(device: device)
         renderer = try FrameRenderer(device: device, pixelFormat: screenView.colorPixelFormat)
         screenView.delegate = renderer
@@ -39,6 +47,9 @@ public final class DeviceWindowController: NSWindowController {
         if reportFPS {
             installFPSCounter()
         }
+        if input != nil {
+            installClickToTap()
+        }
         startConsumingFrames()
     }
 
@@ -50,7 +61,26 @@ public final class DeviceWindowController: NSWindowController {
     public func stop() {
         frameTask?.cancel()
         frameTask = nil
+        input?.close()
         session.close()
+    }
+
+    private func installClickToTap() {
+        let pixelSize = session.pixelSize
+        screenView.onContact = { [weak self] point, phase in
+            guard let self, let input else { return }
+            guard let normalized = CoordinateMapper.normalize(
+                viewPoint: point,
+                viewSize: screenView.bounds.size,
+                pixelSize: pixelSize
+            ) else { return }
+
+            let event = TouchEvent(
+                phase: phase == .began ? .began : .ended,
+                points: [normalized]
+            )
+            Task { try? await input.touch(event) }
+        }
     }
 
     private func startConsumingFrames() {

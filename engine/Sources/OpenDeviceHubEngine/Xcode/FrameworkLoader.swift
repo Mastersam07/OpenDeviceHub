@@ -68,6 +68,10 @@ public enum FrameworkLoader {
 
 extension LoadedFramework {
     public func hasSymbol(_ name: String) -> Bool {
-        dlsym(handle, name) != nil
+        symbol(named: name) != nil
+    }
+
+    func symbol(named name: String) -> UnsafeMutableRawPointer? {
+        dlsym(handle, name)
     }
 }

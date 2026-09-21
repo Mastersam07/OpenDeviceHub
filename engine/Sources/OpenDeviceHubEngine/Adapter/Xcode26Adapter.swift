@@ -91,6 +91,19 @@ public final class Xcode26Adapter: SimulatorAdapter, @unchecked Sendable {
         throw EngineError.capabilityUnavailable(name: "main display port")
     }
 
+    public func openInput(_ udid: String) throws -> any InputSession {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let device = try rawDevice(udid)
+        let state = DeviceState.from(state: device.state, stateString: device.stateString)
+        guard state == .booted else {
+            throw EngineError.deviceNotBooted(udid: udid)
+        }
+        let simulatorKit = try FrameworkLoader.load(.simulatorKit, from: xcode)
+        return try LegacyHIDInputSession(device: device, simulatorKit: simulatorKit)
+    }
+
     private func rawDevice(_ udid: String) throws -> any ODHSimDevice {
         let deviceSet: any ODHSimDeviceSet
         do {
