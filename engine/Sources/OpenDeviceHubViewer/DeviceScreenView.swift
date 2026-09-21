@@ -42,6 +42,7 @@ public final class DeviceScreenView: MTKView {
         isPaused = true
         enableSetNeedsDisplay = true
         autoResizeDrawable = true
+        registerForDrops()
     }
 
     @available(*, unavailable)
@@ -56,6 +57,36 @@ public final class DeviceScreenView: MTKView {
     }
 
     public override var acceptsFirstResponder: Bool { true }
+
+    /// Reports files and URLs dropped on the device.
+    public var onDrop: (([URL], String?) -> Bool)?
+
+    private func registerForDrops() {
+        registerForDraggedTypes([.fileURL, .URL, .string])
+    }
+
+    public override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        onDrop == nil ? [] : .copy
+    }
+
+    public override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        guard let onDrop else { return false }
+        let pasteboard = sender.draggingPasteboard
+
+        let urls = (pasteboard.readObjects(forClasses: [NSURL.self], options: [
+            .urlReadingFileURLsOnly: true,
+        ]) as? [URL]) ?? []
+        if !urls.isEmpty {
+            return onDrop(urls, nil)
+        }
+
+        // A web or custom scheme URL, which opens on the device rather than being installed.
+        if let text = pasteboard.string(forType: .URL) ?? pasteboard.string(forType: .string),
+           let scheme = URLComponents(string: text)?.scheme, !scheme.isEmpty {
+            return onDrop([], text)
+        }
+        return false
+    }
 
     public override func keyDown(with event: NSEvent) {
         guard let usage = KeyboardMap.usage(forVirtualKeyCode: event.keyCode) else {

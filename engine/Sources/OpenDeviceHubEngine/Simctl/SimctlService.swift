@@ -157,3 +157,46 @@ extension SimctlService {
         return Appearance(rawValue: result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
+
+extension SimctlService {
+    static func installArguments(udid: String, app: URL) -> [String] {
+        ["simctl", "install", udid, app.path(percentEncoded: false)]
+    }
+
+    static func addMediaArguments(udid: String, files: [URL]) -> [String] {
+        ["simctl", "addmedia", udid] + files.map { $0.path(percentEncoded: false) }
+    }
+
+    static func addRootCertificateArguments(udid: String, certificate: URL) -> [String] {
+        ["simctl", "keychain", udid, "add-root-cert", certificate.path(percentEncoded: false)]
+    }
+
+    static func openURLArguments(udid: String, url: String) -> [String] {
+        ["simctl", "openurl", udid, url]
+    }
+
+    public func perform(_ action: DropAction, udid: String) throws {
+        let arguments: [String]
+        switch action {
+        case .installApp(let app):
+            arguments = Self.installArguments(udid: udid, app: app)
+        case .addMedia(let files):
+            arguments = Self.addMediaArguments(udid: udid, files: files)
+        case .addRootCertificate(let certificate):
+            arguments = Self.addRootCertificateArguments(udid: udid, certificate: certificate)
+        case .openURL(let url):
+            arguments = Self.openURLArguments(udid: udid, url: url)
+        case .unsupported(let url):
+            throw EngineError.capabilityUnavailable(name: "dropping \(url.lastPathComponent)")
+        }
+
+        let result = try ProcessRunner.run("/usr/bin/xcrun", arguments)
+        guard result.status == 0 else {
+            throw EngineError.simctl(
+                args: Array(arguments.dropFirst()),
+                code: result.status,
+                stderr: result.standardError
+            )
+        }
+    }
+}

@@ -214,6 +214,42 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         onClose?(udid)
     }
 
+    /// Runs the dropped actions, asking first for anything that changes what the device trusts.
+    private func perform(_ actions: [DropAction]) -> Bool {
+        let simctl = SimctlService()
+        var didSomething = false
+        for action in actions {
+            if action.needsConfirmation, !confirm(action) { continue }
+            do {
+                try simctl.perform(action, udid: udid)
+                didSomething = true
+            } catch {
+                present(error)
+            }
+        }
+        return didSomething
+    }
+
+    private func confirm(_ action: DropAction) -> Bool {
+        guard case .addRootCertificate(let certificate) = action else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Trust \(certificate.lastPathComponent)?"
+        alert.informativeText = """
+            This adds the certificate to the simulator's trusted root store, so the device will \
+            trust anything it signs.
+            """
+        alert.addButton(withTitle: "Trust")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func present(_ error: any Error) {
+        let alert = NSAlert()
+        alert.messageText = "That drop did not work."
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
+    }
+
     private func installClickToTap() {
         let pixelSize = session.pixelSize
         let screenView = screenView
@@ -245,6 +281,14 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
             let event = TouchEvent(phase: touchPhase, points: points)
             Task { try? await input.touch(event) }
+        }
+
+        screenView.onDrop = { [weak self] urls, text in
+            guard let self else { return false }
+            var actions = DropRouting.actions(for: urls)
+            if let text { actions.append(.openURL(text)) }
+            guard !actions.isEmpty else { return false }
+            return self.perform(actions)
         }
 
         screenView.onKey = { [weak self] usage, isDown in
