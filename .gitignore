@@ -1,0 +1,18 @@
+.DS_Store
+
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserdatad
+*.xcworkspace/xcuserdata/
+
+# Private header dumps from the local Xcode.
+build/
+
+# Flutter
+app/.dart_tool/
+app/build/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/macos/Flutter/ephemeral/
+app/macos/Pods/
