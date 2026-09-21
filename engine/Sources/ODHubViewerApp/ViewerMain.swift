@@ -305,15 +305,20 @@ private func installToolbars(manager: DeviceWindowManager, adapter: any Simulato
                 }
             },
             saveScreenshot: {
-                let directory = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-                    ?? URL(fileURLWithPath: NSTemporaryDirectory())
-                for url in manager.saveScreenshots(into: directory, only: udid) {
+                for url in manager.saveScreenshots(into: recordingDirectory(), only: udid) {
                     print("saved \(url.path(percentEncoded: false))")
                 }
             },
-            rotate: { [weak controller] in
+            stopRecording: {
+                for url in manager.toggleRecording(into: recordingDirectory()) {
+                    print("recorded \(url.path(percentEncoded: false))")
+                }
+            },
+            rotate: { [weak controller] toLeft in
                 guard let controller else { return }
-                let next = controller.currentOrientation.rotatedRight
+                let next = toLeft
+                    ? controller.currentOrientation.rotatedLeft
+                    : controller.currentOrientation.rotatedRight
                 do {
                     try adapter.setOrientation(next, udid: udid)
                     controller.setOrientation(next)
@@ -335,4 +340,11 @@ private func swipeHome(_ session: any InputSession) async throws {
     try await session.touch(
         TouchEvent(phase: .ended, points: [path[path.count - 1]], edge: .bottom)
     )
+}
+
+/// Recordings and screenshots land on the Desktop, falling back to a temporary folder on a machine
+/// that has none.
+private func recordingDirectory() -> URL {
+    FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+        ?? URL(fileURLWithPath: NSTemporaryDirectory())
 }

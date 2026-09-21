@@ -116,6 +116,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     public func stop() {
         guard !isStopped else { return }
         isStopped = true
+        toolbar?.stop()
         frameTask?.cancel()
         frameTask = nil
         input?.close()
@@ -263,6 +264,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     public func setRecordingIndicatorVisible(_ visible: Bool) {
         isRecording = visible
         updateTitle()
+        toolbar?.setRecording(visible)
     }
 
     /// Turns the window and the image to match the device. The device itself is turned by the
