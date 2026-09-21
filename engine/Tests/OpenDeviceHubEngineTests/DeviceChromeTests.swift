@@ -210,7 +210,7 @@ final class ChromeGeometryTests: XCTestCase {
         let rect = ChromeGeometry.buttonRect(
             power, imageSize: CGSize(width: 16, height: 101), content: content, chrome: chrome
         )
-        XCTAssertEqual(rect.minX, 456 - 16 - 8)
+        XCTAssertEqual(rect.minX, 456 - 16 - 8 + ChromeGeometry.sideButtonProtrusion)
         XCTAssertEqual(rect.maxY, 910 - 262)
     }
 
@@ -221,7 +221,7 @@ final class ChromeGeometryTests: XCTestCase {
         let rect = ChromeGeometry.buttonRect(
             volume, imageSize: CGSize(width: 16, height: 64), content: content, chrome: chrome
         )
-        XCTAssertEqual(rect.minX, 8)
+        XCTAssertEqual(rect.minX, 8 - ChromeGeometry.sideButtonProtrusion)
         XCTAssertEqual(rect.maxY, 910 - 221)
     }
 
@@ -291,6 +291,47 @@ final class ChromeGeometryTests: XCTestCase {
             power, imageSize: size, content: content, chrome: chrome, hovered: true
         )
         XCTAssertGreaterThan(raised.minX, resting.minX)
+    }
+
+    /// Pinned against Simulator on 17F42 at Point Accurate, where the volume button spans 6 to
+    /// 10pt from the window edge. The chrome's own offset of 8 lands 2pt shy of that.
+    func testASideButtonProtrudesAsFarAsSimulatorDraws() throws {
+        let chrome = try makeChrome()
+        let content = ChromeGeometry.contentSize(screen: screen, chrome: chrome)
+        let volume = try XCTUnwrap(chrome.buttons.first { $0.name == "volume-up" })
+        let rect = ChromeGeometry.buttonRect(
+            volume, imageSize: CGSize(width: 16, height: 64), content: content, chrome: chrome
+        )
+        XCTAssertEqual(rect.minX, 6)
+
+        let power = try XCTUnwrap(chrome.buttons.first { $0.name == "power" })
+        let right = ChromeGeometry.buttonRect(
+            power, imageSize: CGSize(width: 16, height: 101), content: content, chrome: chrome
+        )
+        XCTAssertEqual(right.maxX, content.width - 6, "and the same on the other edge")
+    }
+
+    /// The Home button is inside the bottom bezel rather than standing proud of an edge, so it is
+    /// not nudged outwards.
+    func testABottomAnchoredButtonIsNotPushedOut() throws {
+        let json = """
+        {"identifier":"x","images":{
+          "sizing":{"leftWidth":28,"rightWidth":28,"topHeight":111,"bottomHeight":111},
+          "devicePadding":{"top":0,"left":9,"bottom":0,"right":9}},
+         "inputs":[{"name":"home","type":"button","image":"Home BTN","anchor":"bottom",
+                    "offsets":{"normal":{"x":0,"y":-90}}}]}
+        """
+        let chrome = try DeviceChrome.parse(
+            json: Data(json.utf8), bundle: URL(fileURLWithPath: "/tmp/x")
+        )
+        let content = ChromeGeometry.contentSize(
+            screen: CGSize(width: 375, height: 667), chrome: chrome
+        )
+        let home = try XCTUnwrap(chrome.buttons.first)
+        let rect = ChromeGeometry.buttonRect(
+            home, imageSize: CGSize(width: 67, height: 67), content: content, chrome: chrome
+        )
+        XCTAssertEqual(rect.midX, content.width / 2, accuracy: 0.5)
     }
 
     func testAClickOnTheScreenFindsNoButton() throws {

@@ -4,6 +4,10 @@ import Foundation
 /// Where the body, the screen and the buttons sit inside a window. Pure, so the arithmetic is
 /// tested without opening anything.
 public enum ChromeGeometry {
+    /// How much further out than its stated offset a side button is drawn, so it matches
+    /// Simulator. See `buttonRect`.
+    public static let sideButtonProtrusion: CGFloat = 2
+
     /// The window content a screen of this size needs once the body and its proud buttons are
     /// allowed for.
     public static func contentSize(screen: CGSize, chrome: DeviceChrome) -> CGSize {
@@ -48,6 +52,12 @@ public enum ChromeGeometry {
         let body = bodyRect(content: content, chrome: chrome)
         let offset = hovered ? button.rolloverOffset : button.offset
 
+        // The chrome's own offset leaves a side button 2pt shy of where Simulator draws it,
+        // measured on 17F42 at Point Accurate: its volume button spans 6 to 10pt from the window
+        // edge, and the offset alone gives 8 to 10. The body itself lines up exactly, so this
+        // moves only the buttons, and only the ones that stand proud of an edge.
+        let proud = sideButtonProtrusion
+
         // A side button measures y down from the top of the body. A bottom anchored one, such as
         // the Home button, carries a negative y measured up from the bottom instead.
         let y: CGFloat = switch button.anchor {
@@ -56,8 +66,8 @@ public enum ChromeGeometry {
         }
 
         let x: CGFloat = switch button.anchor {
-        case .left: offset.x
-        case .right: content.width - imageSize.width + offset.x
+        case .left: offset.x - proud
+        case .right: content.width - imageSize.width + offset.x + proud
         case .top, .bottom: body.midX - imageSize.width / 2 + offset.x
         }
 
