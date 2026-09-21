@@ -112,6 +112,34 @@ public final class DeviceWindowManager {
         setKeepOnTop(!enabled)
     }
 
+    /// Writes a PNG of every open device into `directory`, returning the files written.
+    @discardableResult
+    public func saveScreenshots(into directory: URL, date: Date = Date()) -> [URL] {
+        var written: [URL] = []
+        for controller in controllers.values {
+            guard let data = controller.screenshotPNG() else { continue }
+            let url = directory.appending(path: ScreenshotWriter.fileName(
+                deviceName: controller.deviceTitle,
+                date: date
+            ))
+            if (try? data.write(to: url)) != nil {
+                written.append(url)
+            }
+        }
+        return written
+    }
+
+    /// Copies the frontmost device's screen to the Mac clipboard.
+    @discardableResult
+    public func copyScreenshotToClipboard() -> Bool {
+        let controller = controllers.values.first { $0.window?.isKeyWindow == true }
+            ?? controllers.values.first
+        guard let data = controller?.screenshotPNG(),
+              let image = NSImage(data: data) else { return false }
+        NSPasteboard.general.clearContents()
+        return NSPasteboard.general.writeObjects([image])
+    }
+
     public func closeAll() {
         for udid in controllers.keys {
             close(udid)

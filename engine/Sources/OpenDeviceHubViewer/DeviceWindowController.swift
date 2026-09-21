@@ -163,6 +163,13 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         tracksFrameChanges = true
     }
 
+    /// The most recent frame as a PNG, matching whatever the window is showing including the bezel.
+    public func screenshotPNG() -> Data? {
+        renderer.currentSurface.flatMap(ScreenshotWriter.pngData)
+    }
+
+    public var deviceTitle: String { window?.title ?? udid }
+
     public func rememberFrame() {
         guard tracksFrameChanges,
               let window,
