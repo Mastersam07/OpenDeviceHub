@@ -77,13 +77,32 @@ struct ODHubViewer: ParsableCommand {
                 print("Skipped \(failure)")
             }
 
+            let menuTarget = ViewerMenu.install(into: application, actions: ViewerMenu.Actions(
+                setScaleMode: { manager.applyScaleMode($0) },
+                toggleBezel: { manager.toggleBezel() },
+                toggleKeepOnTop: { manager.toggleKeepOnTop() },
+                pasteToDevice: {
+                    guard let text = NSPasteboard.general.string(forType: .string) else { return }
+                    let simctl = SimctlService()
+                    for udid in manager.openUDIDs {
+                        try? simctl.pasteboardCopy(text, udid: udid)
+                    }
+                },
+                setAppearance: { appearance in
+                    let simctl = SimctlService()
+                    for udid in manager.openUDIDs {
+                        try? simctl.setAppearance(appearance, udid: udid)
+                    }
+                }
+            ))
+
             application.activate(ignoringOtherApps: true)
             let delegate = ViewerAppDelegate { manager.closeAll() }
             // NSApplication holds its delegate weakly, and nothing else refers to these objects
             // once the run loop starts, so without this ARC releases them and the display sessions
             // die with them: the windows stay up and never draw again.
             application.delegate = delegate
-            withExtendedLifetime((manager, delegate)) {
+            withExtendedLifetime((manager, delegate, menuTarget)) {
                 application.run()
             }
         }

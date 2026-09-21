@@ -99,6 +99,19 @@ public final class DeviceWindowManager {
         }
     }
 
+    /// The UDIDs of every open window, so a menu action can reach all of them.
+    public var openUDIDs: [String] { Array(controllers.keys) }
+
+    public func toggleBezel() {
+        let enabled = controllers.values.first?.isBezelEnabled ?? true
+        setBezelEnabled(!enabled)
+    }
+
+    public func toggleKeepOnTop() {
+        let enabled = controllers.values.first?.isKeptOnTop ?? false
+        setKeepOnTop(!enabled)
+    }
+
     public func closeAll() {
         for udid in controllers.keys {
             close(udid)
