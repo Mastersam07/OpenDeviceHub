@@ -41,8 +41,6 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate {
     private let actions: DeviceToolbarActions
     private var captureItem: NSToolbarItem?
     private var isRecording = false
-    private var blink: Timer?
-    private var blinkIsBright = true
 
     init(actions: DeviceToolbarActions) {
         self.actions = actions
@@ -62,26 +60,7 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate {
     func setRecording(_ recording: Bool) {
         guard isRecording != recording else { return }
         isRecording = recording
-        blink?.invalidate()
-        blink = nil
-        blinkIsBright = true
-        if recording, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            blink = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, let item = self.captureItem else { return }
-                    self.blinkIsBright.toggle()
-                    self.describeCapture(item)
-                }
-            }
-        }
         if let captureItem { describeCapture(captureItem) }
-    }
-
-    /// Stops the blink. A repeating timer outlives its owner, so the window says when it is done
-    /// rather than leaving one running against a closed device.
-    func stop() {
-        blink?.invalidate()
-        blink = nil
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -126,32 +105,14 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate {
 
     private func describeCapture(_ item: NSToolbarItem) {
         if isRecording {
-            // Red so a running recording is obvious at a glance, and blinking unless the system
-            // has been asked to hold still.
-            let red: NSColor = blinkIsBright ? .systemRed : NSColor.systemRed.withSystemEffect(.disabled)
-            describe(
-                item,
-                symbol: "stop.circle",
-                title: "Stop Recording",
-                tip: "Stop Recording (\u{2318}R)",
-                tint: red
-            )
+            describe(item, symbol: "stop.circle", title: "Stop Recording", tip: "Stop Recording (\u{2318}R)")
         } else {
             describe(item, symbol: "camera", title: "Screenshot", tip: "Screenshot (\u{2318}S)")
         }
     }
 
-    private func describe(
-        _ item: NSToolbarItem,
-        symbol: String,
-        title: String,
-        tip: String,
-        tint: NSColor? = nil
-    ) {
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-        item.image = tint.map { colour in
-            image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [colour]))
-        } ?? image
+    private func describe(_ item: NSToolbarItem, symbol: String, title: String, tip: String) {
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
         item.label = title
         item.paletteLabel = title
         item.toolTip = tip

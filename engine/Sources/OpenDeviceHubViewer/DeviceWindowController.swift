@@ -14,12 +14,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private let chromeView: DeviceChromeView
     private var chrome: DeviceChrome?
     private var toolbar: DeviceToolbar?
+    private let recordingIndicator = RecordingIndicator()
     private var frameTask: Task<Void, Never>?
 
     private let input: (any InputSession)?
     private var isStopped = false
     private var keepOnTop = false
-    private var isRecording = false
     /// Set once the window has been placed. Sizing and centring during construction move the
     /// window, and saving those would make every device look like it had a remembered position.
     private var tracksFrameChanges = false
@@ -116,7 +116,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     public func stop() {
         guard !isStopped else { return }
         isStopped = true
-        toolbar?.stop()
+        recordingIndicator.detach()
         frameTask?.cancel()
         frameTask = nil
         input?.close()
@@ -251,7 +251,9 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         guard let window else { return }
         let base = baseTitle ?? window.title
         baseTitle = base
-        var title = isRecording ? "\u{25CF} \(base)" : base
+        // The recording dot is a title bar accessory rather than part of the title, so the name
+        // stays steady while it pulses.
+        var title = base
         if showsLatency, let reading = latency.reading {
             title += String(
                 format: "  %.0f ms (avg %.0f over %d)",
@@ -262,7 +264,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     }
 
     public func setRecordingIndicatorVisible(_ visible: Bool) {
-        isRecording = visible
+        recordingIndicator.setVisible(visible, on: window)
         updateTitle()
         toolbar?.setRecording(visible)
     }
