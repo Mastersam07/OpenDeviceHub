@@ -1,8 +1,8 @@
 # OpenDeviceHub
 
-An open-source iOS Simulator app for Xcode 27+.
+An open-source iOS Simulator app for Xcode 26 and 27.
 
-Xcode 27 replaced Simulator.app with Device Hub. OpenDeviceHub brings back the classic Simulator workflow — one window per device, pixel-accurate scaling, familiar shortcuts — with extra tooling for mobile developers and first-class Flutter support.
+Xcode 27 replaced Simulator.app with Device Hub. OpenDeviceHub brings back the classic Simulator workflow (one window per device, pixel-accurate scaling, familiar shortcuts) with extra tooling for mobile developers and first-class Flutter support.
 
 ## Status
 
@@ -13,8 +13,8 @@ The machine is coming. ⚙️
 ## Requirements
 
 - macOS on Apple Silicon
-- Xcode 27 or later, with at least one iOS simulator runtime installed
-- Xcode 26 support is planned
+- Xcode 26, with at least one iOS simulator runtime installed
+- Xcode 27 support is in progress
 
 ## License
 
