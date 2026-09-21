@@ -194,6 +194,9 @@ public final class Xcode26Adapter: SimulatorAdapter, @unchecked Sendable {
            class_getInstanceMethod(device, NSSelectorFromString("simulateMemoryWarning")) != nil {
             capabilities.insert(.memoryWarning)
         }
+        // Shake and slow animations are Darwin notifications the guest's UIKit listens for, not
+        // private selectors, so they are available whenever simctl can reach the device.
+        capabilities.formUnion([.shake, .slowAnimations])
         return capabilities
     }
 }

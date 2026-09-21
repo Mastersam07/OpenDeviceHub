@@ -16,11 +16,14 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private let input: (any InputSession)?
     private var isStopped = false
     private var keepOnTop = false
+    private var isRecording = false
     /// Set once the window has been placed. Sizing and centring during construction move the
     /// window, and saving those would make every device look like it had a remembered position.
     private var tracksFrameChanges = false
     private var deviceAspectRatio: CGSize = .zero
     private var baseTitle: String?
+    private let latency = LatencyMeter()
+    private var showsLatency = false
     private var parallelOffset = CGSize(width: 0.12, height: 0)
     private var scaleMode: ScaleMode
     private var bezelEnabled: Bool
@@ -61,6 +64,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             defer: false
         )
         window.title = title
+        baseTitle = title
         window.contentView = screenView
         window.contentAspectRatio = contentSize
         self.deviceAspectRatio = contentSize
@@ -169,14 +173,43 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         renderer.currentSurface.flatMap(ScreenshotWriter.pngData)
     }
 
-    public var deviceTitle: String { window?.title ?? udid }
+    /// The plain device name, without the recording dot or the latency overlay, so screenshot and
+    /// recording file names do not pick up whatever the title bar happens to be showing.
+    public var deviceTitle: String { baseTitle ?? window?.title ?? udid }
 
     /// A red dot in the title bar while recording, so a long capture is obvious.
-    public func setRecordingIndicatorVisible(_ visible: Bool) {
+    /// Shows click to frame latency in the title bar, which is the debug overlay the plan asks for.
+    public func setLatencyOverlayVisible(_ visible: Bool) {
+        showsLatency = visible
+        if !visible { updateTitle() }
+    }
+
+    public var isLatencyOverlayVisible: Bool { showsLatency }
+
+    public var latencyReading: LatencyMeter.Reading? { latency.reading }
+
+    private func updateTitle() {
         guard let window else { return }
         let base = baseTitle ?? window.title
         baseTitle = base
-        window.title = visible ? "\u{25CF} \(base)" : base
+        var title = isRecording ? "\u{25CF} \(base)" : base
+        if showsLatency, let reading = latency.reading {
+            title += String(
+                format: "  %.0f ms (avg %.0f over %d)",
+                reading.lastMilliseconds, reading.averageMilliseconds, reading.sampleCount
+            )
+        }
+        window.title = title
+    }
+
+    public func setRecordingIndicatorVisible(_ visible: Bool) {
+        isRecording = visible
+        updateTitle()
+    }
+
+    /// Offers a finished recording for dragging out of the window.
+    public func setDraggableFile(_ file: URL?) {
+        screenView.draggableFile = file
     }
 
     public func rememberFrame() {
@@ -279,6 +312,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
                 points.append(TwoFingerGesture.offsetPartner(primary, by: self.parallelOffset))
             }
 
+            if touchPhase == .began { self.latency.clickSent() }
             let event = TouchEvent(phase: touchPhase, points: points)
             Task { try? await input.touch(event) }
         }
@@ -319,12 +353,16 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private func startConsumingFrames() {
         let renderer = renderer
         let screenView = screenView
-        frameTask = Task { [frames = session.frames] in
+        frameTask = Task { [frames = session.frames, weak self] in
             for await frame in frames {
                 if Task.isCancelled { return }
                 renderer.accept(frame)
-                await MainActor.run {
+                await MainActor.run { [weak self] in
                     screenView.needsDisplay = true
+                    guard let self else { return }
+                    if self.latency.frameDrawn() != nil, self.showsLatency {
+                        self.updateTitle()
+                    }
                 }
             }
         }

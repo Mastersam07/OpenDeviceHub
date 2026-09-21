@@ -16,6 +16,9 @@ public enum ViewerMenu {
         public var simulateMemoryWarning: () -> Void
         public var openSystemLog: () -> Void
         public var openAppData: () -> Void
+        public var shake: () -> Void
+        public var toggleSlowAnimations: () -> Void
+        public var toggleLatencyOverlay: () -> Void
 
         public init(
             setScaleMode: @escaping (ScaleMode) -> Void,
@@ -28,7 +31,10 @@ public enum ViewerMenu {
             toggleRecording: @escaping () -> Void,
             simulateMemoryWarning: @escaping () -> Void,
             openSystemLog: @escaping () -> Void,
-            openAppData: @escaping () -> Void
+            openAppData: @escaping () -> Void,
+            shake: @escaping () -> Void,
+            toggleSlowAnimations: @escaping () -> Void,
+            toggleLatencyOverlay: @escaping () -> Void
         ) {
             self.setScaleMode = setScaleMode
             self.toggleBezel = toggleBezel
@@ -41,6 +47,9 @@ public enum ViewerMenu {
             self.simulateMemoryWarning = simulateMemoryWarning
             self.openSystemLog = openSystemLog
             self.openAppData = openAppData
+            self.shake = shake
+            self.toggleSlowAnimations = toggleSlowAnimations
+            self.toggleLatencyOverlay = toggleLatencyOverlay
         }
     }
 
@@ -102,17 +111,19 @@ public enum ViewerMenu {
         disable(memoryWarning, unless: capabilities.contains(.memoryWarning), reason: "not available on this Xcode")
         debugMenu.addItem(memoryWarning)
 
-        let slowAnimations = NSMenuItem(title: "Slow Animations", action: nil, keyEquivalent: "")
-        disable(slowAnimations, unless: capabilities.contains(.slowAnimations), reason: "no symbol for this on this Xcode")
+        let slowAnimations = target.item("Slow Animations", #selector(MenuTarget.slowAnimations(_:)), "", [])
+        disable(slowAnimations, unless: capabilities.contains(.slowAnimations), reason: "not available on this Xcode")
         debugMenu.addItem(slowAnimations)
 
-        let shake = NSMenuItem(title: "Shake", action: nil, keyEquivalent: "")
-        disable(shake, unless: capabilities.contains(.shake), reason: "no symbol for this on this Xcode")
+        let shake = target.item("Shake", #selector(MenuTarget.shake), "z", [.control, .command])
+        disable(shake, unless: capabilities.contains(.shake), reason: "not available on this Xcode")
         debugMenu.addItem(shake)
 
         debugMenu.addItem(.separator())
         debugMenu.addItem(target.item("Open System Log", #selector(MenuTarget.systemLog), "", []))
         debugMenu.addItem(target.item("Open App Data in Finder", #selector(MenuTarget.appData), "", []))
+        debugMenu.addItem(.separator())
+        debugMenu.addItem(target.item("Show Click to Frame Latency", #selector(MenuTarget.latency(_:)), "l", [.command, .shift]))
         debugItem.submenu = debugMenu
         bar.addItem(debugItem)
 
@@ -133,6 +144,8 @@ private func disable(_ item: NSMenuItem, unless available: Bool, reason: String)
 public final class MenuTarget: NSObject {
     private let actions: ViewerMenu.Actions
     private var isDark = false
+    private var isSlowAnimations = false
+    private var isLatencyVisible = false
 
     init(actions: ViewerMenu.Actions) {
         self.actions = actions
@@ -159,6 +172,19 @@ public final class MenuTarget: NSObject {
     @objc func memoryWarning() { actions.simulateMemoryWarning() }
     @objc func systemLog() { actions.openSystemLog() }
     @objc func appData() { actions.openAppData() }
+    @objc func shake() { actions.shake() }
+
+    @objc func latency(_ sender: NSMenuItem) {
+        isLatencyVisible.toggle()
+        sender.state = isLatencyVisible ? .on : .off
+        actions.toggleLatencyOverlay()
+    }
+
+    @objc func slowAnimations(_ sender: NSMenuItem) {
+        isSlowAnimations.toggle()
+        sender.state = isSlowAnimations ? .on : .off
+        actions.toggleSlowAnimations()
+    }
     @objc func copyScreenshot() { actions.copyScreenshot() }
     @objc func paste() { actions.pasteToDevice() }
 
