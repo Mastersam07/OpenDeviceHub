@@ -106,3 +106,25 @@ final class RuntimeNamingTests: XCTestCase {
         XCTAssertEqual(RuntimeIdentifier.readableName(for: ""), "")
     }
 }
+
+final class SimctlPasteboardArgumentTests: XCTestCase {
+    func testPasteboardCopyArguments() {
+        XCTAssertEqual(
+            SimctlService.pasteboardCopyArguments(udid: "ABC"),
+            ["simctl", "pbcopy", "ABC"]
+        )
+    }
+
+    func testPasteboardPasteArguments() {
+        XCTAssertEqual(
+            SimctlService.pasteboardPasteArguments(udid: "ABC"),
+            ["simctl", "pbpaste", "ABC"]
+        )
+    }
+
+    func testBootArgumentsMatchTheDocumentedSyntax() {
+        XCTAssertEqual(SimctlService.bootArguments(udid: "ABC"), ["simctl", "boot", "ABC"])
+        XCTAssertEqual(SimctlService.shutdownArguments(udid: "ABC"), ["simctl", "shutdown", "ABC"])
+        XCTAssertEqual(SimctlService.bootStatusArguments(udid: "ABC"), ["simctl", "bootstatus", "ABC", "-b"])
+    }
+}

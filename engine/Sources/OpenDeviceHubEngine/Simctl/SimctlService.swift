@@ -87,3 +87,39 @@ extension SimctlService {
         }
     }
 }
+
+extension SimctlService {
+    static func pasteboardCopyArguments(udid: String) -> [String] {
+        ["simctl", "pbcopy", udid]
+    }
+
+    static func pasteboardPasteArguments(udid: String) -> [String] {
+        ["simctl", "pbpaste", udid]
+    }
+
+    /// Puts text on the device's pasteboard, so it can be pasted inside the guest.
+    public func pasteboardCopy(_ text: String, udid: String) throws {
+        let arguments = Self.pasteboardCopyArguments(udid: udid)
+        let result = try ProcessRunner.run("/usr/bin/xcrun", arguments, standardInput: text)
+        guard result.status == 0 else {
+            throw EngineError.simctl(
+                args: Array(arguments.dropFirst()),
+                code: result.status,
+                stderr: result.standardError
+            )
+        }
+    }
+
+    public func pasteboardPaste(udid: String) throws -> String {
+        let arguments = Self.pasteboardPasteArguments(udid: udid)
+        let result = try ProcessRunner.run("/usr/bin/xcrun", arguments)
+        guard result.status == 0 else {
+            throw EngineError.simctl(
+                args: Array(arguments.dropFirst()),
+                code: result.status,
+                stderr: result.standardError
+            )
+        }
+        return result.standardOutput
+    }
+}
