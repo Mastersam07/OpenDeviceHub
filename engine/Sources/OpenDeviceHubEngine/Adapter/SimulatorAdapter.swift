@@ -114,9 +114,29 @@ public protocol SimulatorAdapter: Sendable {
     var xcode: XcodeInstall { get }
     var capabilities: Capabilities { get }
     func devices() throws -> [DeviceInfo]
-    func deviceStateChanges() -> AsyncStream<DeviceInfo>
-    func boot(_ udid: String) async throws
-    func shutdown(_ udid: String) async throws
-    func openDisplay(_ udid: String) throws -> DisplaySession
-    func openInput(_ udid: String) throws -> InputSession
+}
+
+extension DeviceState {
+    /// The numeric values were observed on Xcode 26.5 (17F42) by polling a real boot and shutdown
+    /// cycle. Anything else falls back to the device's own state string, which both CoreSimulator
+    /// and simctl report.
+    public static func from(state: UInt, stateString: String) -> DeviceState {
+        switch state {
+        case 1: .shutdown
+        case 2: .booting
+        case 3: .booted
+        case 4: .shuttingDown
+        default: from(stateString: stateString)
+        }
+    }
+
+    public static func from(stateString: String) -> DeviceState {
+        switch stateString.lowercased().filter({ !$0.isWhitespace }) {
+        case "shutdown": .shutdown
+        case "booting": .booting
+        case "booted": .booted
+        case "shuttingdown": .shuttingDown
+        default: .unknown
+        }
+    }
 }
