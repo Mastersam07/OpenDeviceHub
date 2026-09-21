@@ -1,7 +1,6 @@
 import CoreGraphics
 
 /// Pure conversion between a viewer's coordinates and the device's normalized touch space.
-/// Portrait only for now; rotation is handled when the viewer supports it.
 public enum CoordinateMapper {
     /// The area inside a view that shows the device screen, preserving aspect ratio and centred,
     /// so the leftover space is split evenly as letterbox or pillarbox bars.
@@ -22,8 +21,40 @@ public enum CoordinateMapper {
     }
 
     /// Converts a point in AppKit view coordinates, whose origin is the bottom left, into the
-    /// device's normalized space, whose origin is the top left. Returns nil when the point falls on
-    /// a letterbox bar rather than on the screen.
+    /// device's portrait native normalized space, whose origin is the top left, undoing whatever
+    /// rotation the viewer is showing. Returns nil when the point falls on a letterbox bar rather
+    /// than on the screen.
+    public static func normalize(
+        viewPoint: CGPoint,
+        viewSize: CGSize,
+        pixelSize: CGSize,
+        orientation: DeviceOrientation
+    ) -> CGPoint? {
+        let displayed = orientation.displayedSize(portraitNative: pixelSize)
+        guard let shown = normalize(viewPoint: viewPoint, viewSize: viewSize, pixelSize: displayed) else {
+            return nil
+        }
+        return portraitNativePoint(from: shown, orientation: orientation)
+    }
+
+    /// Turns a point in what the viewer shows back into the portrait native space the device's
+    /// digitizer expects. Both spaces have their origin at the top left.
+    static func portraitNativePoint(
+        from shown: CGPoint,
+        orientation: DeviceOrientation
+    ) -> CGPoint {
+        switch orientation {
+        case .portrait:
+            return shown
+        case .landscapeLeft:
+            return CGPoint(x: shown.y, y: 1 - shown.x)
+        case .portraitUpsideDown:
+            return CGPoint(x: 1 - shown.x, y: 1 - shown.y)
+        case .landscapeRight:
+            return CGPoint(x: 1 - shown.y, y: shown.x)
+        }
+    }
+
     public static func normalize(
         viewPoint: CGPoint,
         viewSize: CGSize,
