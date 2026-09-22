@@ -23,17 +23,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        let deviceSet: any ODHSimDeviceSet
-        do {
-            deviceSet = try context.defaultDeviceSet()
-        } catch {
-            throw EngineError.privateCall(
-                symbol: "-[SimServiceContext defaultDeviceSetWithError:]",
-                message: error.localizedDescription
-            )
-        }
-
-        return (deviceSet.devices ?? []).compactMap { element in
+        return (try deviceSet().devices ?? []).compactMap { element in
             let device = unsafeBitCast(element as AnyObject, to: (any ODHSimDevice).self)
             guard let udid = device.udid?.uuidString else { return nil }
             let runtimeIdentifier = device.runtimeIdentifier ?? ""
@@ -154,17 +144,29 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         try WorkspaceOrientation.send(orientation, to: port)
     }
 
-    private func rawDevice(_ udid: String) throws -> any ODHSimDevice {
-        let deviceSet: any ODHSimDeviceSet
+    public func watchDeviceStates() throws -> any DeviceNotifier {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard capabilities.contains(.deviceNotifications) else {
+            throw EngineError.capabilityUnavailable(name: "device notifications")
+        }
+        return try SimulatorDeviceNotifier(deviceSet: deviceSet())
+    }
+
+    private func deviceSet() throws -> any ODHSimDeviceSet {
         do {
-            deviceSet = try context.defaultDeviceSet()
+            return try context.defaultDeviceSet()
         } catch {
             throw EngineError.privateCall(
                 symbol: "-[SimServiceContext defaultDeviceSetWithError:]",
                 message: error.localizedDescription
             )
         }
-        for element in deviceSet.devices ?? [] {
+    }
+
+    private func rawDevice(_ udid: String) throws -> any ODHSimDevice {
+        for element in try deviceSet().devices ?? [] {
             let device = unsafeBitCast(element as AnyObject, to: (any ODHSimDevice).self)
             if device.udid?.uuidString.caseInsensitiveCompare(udid) == .orderedSame {
                 return device
@@ -229,6 +231,15 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         if let device = NSClassFromString("SimDevice"),
            class_getInstanceMethod(device, NSSelectorFromString("lookup:error:")) != nil {
             capabilities.insert(.rotation)
+        }
+        if let deviceSet = NSClassFromString("SimDeviceSet"),
+           class_getInstanceMethod(
+               deviceSet, NSSelectorFromString("registerNotificationHandlerOnQueue:handler:")
+           ) != nil,
+           class_getInstanceMethod(
+               deviceSet, NSSelectorFromString("unregisterNotificationHandler:error:")
+           ) != nil {
+            capabilities.insert(.deviceNotifications)
         }
         return capabilities
     }

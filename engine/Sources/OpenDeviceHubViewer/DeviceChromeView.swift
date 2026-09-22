@@ -113,6 +113,20 @@ public final class DeviceChromeView: NSView {
     public override func layout() {
         super.layout()
         screenView.frame = screenRect
+        overlay?.frame = screenRect
+    }
+
+    /// Covers the device's screen, and only the screen, so the body still frames whatever the
+    /// overlay is saying.
+    public var overlay: NSView? {
+        didSet {
+            oldValue?.removeFromSuperview()
+            if let overlay {
+                overlay.frame = screenRect
+                addSubview(overlay, positioned: .above, relativeTo: screenView)
+            }
+            needsLayout = true
+        }
     }
 
     public override func draw(_ dirtyRect: NSRect) {

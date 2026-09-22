@@ -164,10 +164,10 @@ final class DebugActionTests: XCTestCase {
         guard let booted = try adapter.devices().first(where: { $0.state == .booted }) else {
             throw XCTSkip("no booted simulator")
         }
-        let container = try? SimctlService().appContainer(
-            udid: booted.udid, bundleID: "io.opendevicehub.rotator", kind: .data
-        )
-        guard let container else { throw XCTSkip("the test app is not installed on this device") }
+        try IntegrationHost.install(on: booted.udid)
+        let container = try XCTUnwrap(SimctlService().appContainer(
+            udid: booted.udid, bundleID: IntegrationHost.bundleID, kind: .data
+        ))
         XCTAssertTrue(FileManager.default.fileExists(atPath: container.path))
     }
 }

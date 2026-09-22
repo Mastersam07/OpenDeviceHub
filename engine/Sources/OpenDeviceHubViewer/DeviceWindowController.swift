@@ -8,7 +8,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     /// Called when the window closes, so the owner can drop its reference.
     public var onClose: ((String) -> Void)?
 
-    private let session: any DisplaySession
+    private var session: any DisplaySession
     private let renderer: FrameRenderer
     private let screenView: DeviceScreenView
     private let chromeView: DeviceChromeView
@@ -16,8 +16,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private var toolbar: DeviceToolbar?
     private let recordingIndicator = RecordingIndicator()
     private var frameTask: Task<Void, Never>?
+    private var overlay: ShutdownOverlayView?
+    /// Called when the window's Reboot button is pressed. The owner boots the device; the window
+    /// comes back on its own once the notifier says it is up.
+    public var onReboot: (() -> Void)?
 
-    private let input: (any InputSession)?
+    private var input: (any InputSession)?
     private var isStopped = false
     private var keepOnTop = false
     /// Set once the window has been placed. Sizing and centring during construction move the
@@ -117,10 +121,51 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         guard !isStopped else { return }
         isStopped = true
         recordingIndicator.detach()
+        closeSessions()
+    }
+
+    private func closeSessions() {
         frameTask?.cancel()
         frameTask = nil
         input?.close()
+        input = nil
         session.close()
+    }
+
+    public var isDetached: Bool { overlay != nil }
+
+    /// The device has gone. The sessions are dropped rather than left pointing at a device that no
+    /// longer answers, and the window says so instead of holding the last frame it happened to get.
+    public func detach(reason: DetachReason) {
+        guard !isStopped else { return }
+        closeSessions()
+        let overlay = self.overlay ?? ShutdownOverlayView(deviceName: deviceTitle)
+        if self.overlay == nil {
+            overlay.onReboot = { [weak self] in self?.onReboot?() }
+            self.overlay = overlay
+            chromeView.overlay = overlay
+        }
+        switch reason {
+        case .shutDown: overlay.setShutDown()
+        case .booting: overlay.setBooting()
+        case .failed(let message): overlay.setFailed(message)
+        }
+        toolbar?.setEnabled(false)
+    }
+
+    /// The device is back. The window keeps its size, position and orientation, so a reboot looks
+    /// like the screen coming back on rather than a new window.
+    public func reattach(session: any DisplaySession, input: (any InputSession)?) {
+        guard !isStopped else { return }
+        closeSessions()
+        self.session = session
+        self.input = input
+        session.setBezelEnabled(bezelEnabled)
+        chromeView.overlay = nil
+        overlay = nil
+        toolbar?.setEnabled(true)
+        startConsumingFrames()
+        applyScaleMode(scaleMode)
     }
 
     /// Resizes the window so the device screen is shown at the requested scale. Fit leaves the

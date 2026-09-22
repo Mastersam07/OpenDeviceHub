@@ -6,6 +6,11 @@ import OpenDeviceHubEngine
 @MainActor
 public final class DeviceWindowManager {
     private var controllers: [String: DeviceWindowController] = [:]
+    private var followTask: Task<Void, Never>?
+    // Held because a notifier closes itself when it goes, which would end the stream silently.
+    private var notifier: (any DeviceNotifier)?
+    private var boot: ((String) throws -> Void)?
+    private var report: (String) -> Void = { _ in }
     private let frameStore: WindowFrameStore
     private let placementGap: CGFloat = 12
 
@@ -68,6 +73,60 @@ public final class DeviceWindowManager {
         }
         controller.beginTrackingFrameChanges()
         return controller
+    }
+
+    /// Keeps every window in step with its device. A shutdown from anywhere, ours, simctl, Xcode or
+    /// Device Hub, puts the window into its shut down state, and a boot from anywhere brings it
+    /// back. Driven entirely by the notifier: nothing here asks for device state on a timer.
+    public func follow(
+        _ notifier: any DeviceNotifier,
+        attach: @escaping (String) throws -> DeviceAttachment,
+        boot: @escaping (String) throws -> Void,
+        report: @escaping (String) -> Void = { _ in }
+    ) {
+        self.report = report
+        self.boot = boot
+        self.notifier = notifier
+        followTask?.cancel()
+        followTask = Task { [weak self] in
+            for await change in notifier.changes {
+                guard let self else { return }
+                self.apply(change, attach: attach)
+            }
+        }
+    }
+
+    private func apply(_ change: DeviceStateChange, attach: (String) throws -> DeviceAttachment) {
+        guard let controller = controller(for: change.udid) else { return }
+        switch DeviceWindowTransition.forState(change.state, isDetached: controller.isDetached) {
+        case .ignore:
+            return
+        case .detach(let reason):
+            if reason == .shutDown {
+                controller.onReboot = { [weak self] in self?.reboot(change.udid) }
+            }
+            controller.detach(reason: reason)
+            report("\(controller.deviceTitle) \(reason.summary)")
+        case .reattach:
+            do {
+                let attachment = try attach(change.udid)
+                controller.reattach(session: attachment.session, input: attachment.input)
+                report("\(controller.deviceTitle) reattached")
+            } catch {
+                let reason = DetachReason.failed(error.localizedDescription)
+                controller.detach(reason: reason)
+                report("\(controller.deviceTitle) could not be reattached: \(reason.summary)")
+            }
+        }
+    }
+
+    private func reboot(_ udid: String) {
+        guard let boot else { return }
+        do {
+            try boot(udid)
+        } catch {
+            controller(for: udid)?.detach(reason: .failed(error.localizedDescription))
+        }
     }
 
     public func close(_ udid: String) {
@@ -206,9 +265,24 @@ public final class DeviceWindowManager {
     }
 
     public func closeAll() {
+        followTask?.cancel()
+        followTask = nil
+        notifier?.close()
+        notifier = nil
         stopRecording()
         for udid in controllers.keys {
             close(udid)
         }
+    }
+}
+
+/// The pair of sessions a window needs, so reattaching after a reboot is one call.
+public struct DeviceAttachment {
+    public let session: any DisplaySession
+    public let input: (any InputSession)?
+
+    public init(session: any DisplaySession, input: (any InputSession)?) {
+        self.session = session
+        self.input = input
     }
 }
