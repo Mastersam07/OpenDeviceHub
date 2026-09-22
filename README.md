@@ -15,6 +15,16 @@ The machine is coming. ⚙️
 - macOS on Apple Silicon
 - Xcode 26 or 27, with at least one iOS simulator runtime installed
 
+## Building
+
+```sh
+scripts/build.sh
+```
+
+This wraps `swift build`. Use it rather than calling `swift build` directly: SwiftPM records the
+deployment target as the linked SDK version, and AppKit then gives the window its pre macOS 26
+toolbar appearance.
+
 ## License
 
 MIT

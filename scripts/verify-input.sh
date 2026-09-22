@@ -23,7 +23,7 @@ for runtime, devices in json.load(sys.stdin)['devices'].items():
 raise SystemExit('no booted simulator, boot one first')")"
 fi
 
-[ -x "${odhub}" ] || swift build --package-path "${repo_root}/engine" >/dev/null
+[ -x "${odhub}" ] || "${repo_root}/scripts/build.sh" >/dev/null
 app="$("${repo_root}/scripts/build-test-host.sh")"
 
 echo "Device: ${udid}"
