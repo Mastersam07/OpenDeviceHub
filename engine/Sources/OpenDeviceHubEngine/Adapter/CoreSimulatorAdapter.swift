@@ -33,17 +33,18 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
             )
         }
 
-        return deviceSet.devices.map { element in
+        return (deviceSet.devices ?? []).compactMap { element in
             let device = unsafeBitCast(element as AnyObject, to: (any ODHSimDevice).self)
-            let runtimeIdentifier = device.runtimeIdentifier
+            guard let udid = device.udid?.uuidString else { return nil }
+            let runtimeIdentifier = device.runtimeIdentifier ?? ""
             return DeviceInfo(
-                udid: device.udid.uuidString,
-                name: device.name,
+                udid: udid,
+                name: device.name ?? udid,
                 deviceTypeIdentifier: device.deviceType?.identifier ?? "",
                 runtimeIdentifier: runtimeIdentifier,
                 runtimeName: device.runtime?.name
                     ?? RuntimeIdentifier.readableName(for: runtimeIdentifier),
-                state: DeviceState.from(state: device.state, stateString: device.stateString),
+                state: DeviceState.from(state: device.state, stateString: device.stateString ?? ""),
                 isAvailable: device.available
             )
         }
@@ -54,7 +55,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         defer { lock.unlock() }
 
         let device = try rawDevice(udid)
-        let state = DeviceState.from(state: device.state, stateString: device.stateString)
+        let state = DeviceState.from(state: device.state, stateString: device.stateString ?? "")
         guard state == .booted else {
             throw EngineError.deviceNotBooted(udid: udid)
         }
@@ -63,7 +64,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         }
 
         let scale = CGFloat(device.deviceType?.mainScreenScale ?? 1)
-        let ports = unsafeBitCast(io as AnyObject, to: (any ODHSimDeviceIO).self).ioPorts
+        let ports = unsafeBitCast(io as AnyObject, to: (any ODHSimDeviceIO).self).ioPorts ?? []
 
         guard let renderableProtocol = NSProtocolFromString("SimDisplayRenderable"),
               let surfaceProtocol = NSProtocolFromString("SimDisplayIOSurfaceRenderable"),
@@ -103,7 +104,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         defer { lock.unlock() }
 
         let device = try rawDevice(udid)
-        let state = DeviceState.from(state: device.state, stateString: device.stateString)
+        let state = DeviceState.from(state: device.state, stateString: device.stateString ?? "")
         guard state == .booted else {
             throw EngineError.deviceNotBooted(udid: udid)
         }
@@ -116,7 +117,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         defer { lock.unlock() }
 
         let device = try rawDevice(udid)
-        guard DeviceState.from(state: device.state, stateString: device.stateString) == .booted else {
+        guard DeviceState.from(state: device.state, stateString: device.stateString ?? "") == .booted else {
             throw EngineError.deviceNotBooted(udid: udid)
         }
         guard (device as AnyObject).responds(to: NSSelectorFromString("simulateMemoryWarning")) else {
@@ -133,7 +134,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         defer { lock.unlock() }
 
         let device = try rawDevice(udid)
-        guard DeviceState.from(state: device.state, stateString: device.stateString) == .booted else {
+        guard DeviceState.from(state: device.state, stateString: device.stateString ?? "") == .booted else {
             throw EngineError.deviceNotBooted(udid: udid)
         }
         guard (device as AnyObject).responds(to: NSSelectorFromString("lookup:error:")) else {
@@ -163,9 +164,9 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
                 message: error.localizedDescription
             )
         }
-        for element in deviceSet.devices {
+        for element in deviceSet.devices ?? [] {
             let device = unsafeBitCast(element as AnyObject, to: (any ODHSimDevice).self)
-            if device.udid.uuidString.caseInsensitiveCompare(udid) == .orderedSame {
+            if device.udid?.uuidString.caseInsensitiveCompare(udid) == .orderedSame {
                 return device
             }
         }
