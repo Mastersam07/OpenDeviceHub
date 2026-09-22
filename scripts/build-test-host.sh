@@ -14,7 +14,9 @@ arch="$(uname -m)"
 
 rm -rf "${bundle}"
 mkdir -p "${bundle}"
-xcrun swiftc -sdk "${sdk}" -target "${target}" \
+# xcrun exports SDKROOT for whichever SDK it was asked for, and the clang importer reads it. Left
+# as plain `xcrun swiftc` it exports the macOS one, which then disagrees with -sdk and -target.
+xcrun --sdk iphonesimulator swiftc -sdk "${sdk}" -target "${target}" \
   "${source_dir}/main.swift" -o "${bundle}/ODHTestHost"
 cp "${source_dir}/Info.plist" "${bundle}/Info.plist"
 echo "${bundle}"
