@@ -140,6 +140,9 @@ public protocol SimulatorAdapter: Sendable {
     /// Turns the device itself, which makes the guest re-lay out. The viewer still has to turn its
     /// own view to match, since the framebuffer stays portrait native.
     func setOrientation(_ orientation: DeviceOrientation, udid: String) throws
+    /// Watches every device in the set, so a window learns that its device has gone or come back
+    /// without asking.
+    func watchDeviceStates() throws -> any DeviceNotifier
 }
 
 extension DeviceState {

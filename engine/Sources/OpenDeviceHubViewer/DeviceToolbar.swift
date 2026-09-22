@@ -41,6 +41,8 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate {
     private let actions: DeviceToolbarActions
     private var captureItem: NSToolbarItem?
     private var isRecording = false
+    private var items: [NSToolbarItem] = []
+    private var isEnabled = true
 
     init(actions: DeviceToolbarActions) {
         self.actions = actions
@@ -63,6 +65,13 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate {
         if let captureItem { describeCapture(captureItem) }
     }
 
+    /// Greyed out while the device is gone, so the buttons cannot be pressed at a device that is
+    /// not there.
+    func setEnabled(_ enabled: Bool) {
+        isEnabled = enabled
+        for item in items { item.isEnabled = enabled }
+    }
+
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [.flexibleSpace] + Item.all
     }
@@ -80,6 +89,11 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate {
         item.target = self
         item.isBordered = true
         item.visibilityPriority = .high
+        // Without this AppKit re-enables the item on its own validation pass, which would light the
+        // buttons back up while the device is still gone.
+        item.autovalidates = false
+        item.isEnabled = isEnabled
+        items.append(item)
 
         switch identifier {
         case Item.home:

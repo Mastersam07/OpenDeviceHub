@@ -188,6 +188,25 @@ struct ODHubViewer: ParsableCommand {
 
             installToolbars(manager: manager, adapter: adapter)
 
+            do {
+                let notifier = try adapter.watchDeviceStates()
+                manager.follow(
+                    notifier,
+                    attach: { udid in
+                        let session = try adapter.openDisplay(udid)
+                        session.setBezelEnabled(bezel)
+                        return DeviceAttachment(
+                            session: session,
+                            input: try? adapter.openInput(udid)
+                        )
+                    },
+                    boot: { udid in try SimctlService().boot(udid: udid) },
+                    report: { print($0) }
+                )
+            } catch {
+                print("device state changes will not be followed: \(error.localizedDescription)")
+            }
+
             application.activate(ignoringOtherApps: true)
             let delegate = ViewerAppDelegate { manager.closeAll() }
             // NSApplication holds its delegate weakly, and nothing else refers to these objects
