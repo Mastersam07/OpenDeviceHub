@@ -76,6 +76,18 @@ extension SimctlService {
         }
     }
 
+    /// An already shut down device makes `simctl shutdown` fail, which is treated as success.
+    public func shutdown(udid: String) throws {
+        let result = try ProcessRunner.run("/usr/bin/xcrun", Self.shutdownArguments(udid: udid))
+        if result.status != 0, !result.standardError.contains("current state: Shutdown") {
+            throw EngineError.simctl(
+                args: Array(Self.shutdownArguments(udid: udid).dropFirst()),
+                code: result.status,
+                stderr: result.standardError
+            )
+        }
+    }
+
     public func waitForBoot(udid: String) throws {
         let result = try ProcessRunner.run("/usr/bin/xcrun", Self.bootStatusArguments(udid: udid))
         guard result.status == 0 else {
