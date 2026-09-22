@@ -9,6 +9,15 @@ final class DeviceWindow: NSWindow {
     var constrainsToScreen = false
 
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
-        constrainsToScreen ? super.constrainFrameRect(frameRect, to: screen) : frameRect
+        if constrainsToScreen {
+            return super.constrainFrameRect(frameRect, to: screen)
+        }
+        guard let visible = (screen ?? self.screen ?? NSScreen.main)?.visibleFrame else {
+            return frameRect
+        }
+        // Keeping the size is the whole point of the override, but a window still has to be
+        // reachable, so only where it sits is adjusted.
+        let titleBar = max(frameRect.height - contentLayoutRect.height, 28)
+        return DeviceGeometry.reachableFrame(frameRect, in: visible, titleBarHeight: titleBar)
     }
 }

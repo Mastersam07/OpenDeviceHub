@@ -161,4 +161,23 @@ public enum ChromeGeometry {
             deviceTransform(viewSize: viewSize, screen: screen, chrome: chrome, orientation: orientation)
         )
     }
+
+    /// The bands left over around a centred device, which are painted rather than left showing
+    /// whatever is behind. Empty when the device fills the view, which is the ordinary case.
+    public static func margins(around rect: CGRect, in bounds: CGRect) -> [CGRect] {
+        guard !rect.isEmpty, !rect.contains(bounds) else { return [] }
+        let clipped = rect.intersection(bounds)
+        guard !clipped.isEmpty else { return [bounds] }
+
+        return [
+            CGRect(x: bounds.minX, y: clipped.maxY,
+                   width: bounds.width, height: bounds.maxY - clipped.maxY),
+            CGRect(x: bounds.minX, y: bounds.minY,
+                   width: bounds.width, height: clipped.minY - bounds.minY),
+            CGRect(x: bounds.minX, y: clipped.minY,
+                   width: clipped.minX - bounds.minX, height: clipped.height),
+            CGRect(x: clipped.maxX, y: clipped.minY,
+                   width: bounds.maxX - clipped.maxX, height: clipped.height),
+        ].filter { $0.width > 0 && $0.height > 0 }
+    }
 }

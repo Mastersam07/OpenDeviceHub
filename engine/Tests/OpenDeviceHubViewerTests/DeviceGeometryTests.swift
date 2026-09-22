@@ -92,6 +92,75 @@ final class OnScreenOriginTests: XCTestCase {
     }
 }
 
+/// AppKit's own constraining is bypassed so a Pixel Accurate window may exceed the display, which
+/// also removed the guard against dragging a window away entirely.
+final class ReachableFrameTests: XCTestCase {
+    private let visible = CGRect(x: 0, y: 0, width: 1512, height: 944)
+    private let titleBar: CGFloat = 52
+
+    private func reachable(_ frame: CGRect) -> CGRect {
+        DeviceGeometry.reachableFrame(frame, in: visible, titleBarHeight: titleBar)
+    }
+
+    func testAWindowOnScreenIsLeftWhereItIs() {
+        let frame = CGRect(x: 200, y: 100, width: 456, height: 700)
+        XCTAssertEqual(reachable(frame), frame)
+    }
+
+    /// A window taller than the screen hangs off the bottom rather than losing its title bar.
+    func testATallWindowHangsOffTheBottom() {
+        let result = reachable(CGRect(x: 200, y: 100, width: 456, height: 962))
+        XCTAssertEqual(result.maxY, 944)
+        XCTAssertEqual(result.size, CGSize(width: 456, height: 962))
+    }
+
+    func testAWindowTallerThanTheScreenKeepsItsSize() {
+        let frame = CGRect(x: 0, y: -400, width: 456, height: 1311)
+        let result = reachable(frame)
+        XCTAssertEqual(result.size, frame.size, "the whole point of the override is keeping the size")
+    }
+
+    func testAWindowDraggedOffTheLeftKeepsAStripOnScreen() {
+        let result = reachable(CGRect(x: -900, y: 100, width: 456, height: 962))
+        XCTAssertEqual(result.maxX, DeviceGeometry.minimumReachableWidth)
+        XCTAssertEqual(result.width, 456)
+    }
+
+    func testAWindowDraggedOffTheRightKeepsAStripOnScreen() {
+        let result = reachable(CGRect(x: 2000, y: 100, width: 456, height: 962))
+        XCTAssertEqual(result.minX, 1512 - DeviceGeometry.minimumReachableWidth)
+    }
+
+    /// Hanging off an edge is allowed, so long as enough is left to grab.
+    func testAWindowMostlyOffTheEdgeIsStillAllowed() {
+        let frame = CGRect(x: -300, y: 100, width: 456, height: 700)
+        XCTAssertEqual(reachable(frame), frame)
+    }
+
+    func testTheTitleBarIsNeverPushedAboveTheTop() {
+        let result = reachable(CGRect(x: 100, y: 500, width: 456, height: 962))
+        XCTAssertEqual(result.maxY, 944)
+    }
+
+    func testTheTitleBarIsNeverDraggedBelowTheBottom() {
+        let result = reachable(CGRect(x: 100, y: -2000, width: 456, height: 962))
+        XCTAssertEqual(result.maxY, titleBar, "a strip of title bar has to stay grabbable")
+    }
+
+    func testANarrowWindowIsNotForcedWiderThanItself() {
+        let result = reachable(CGRect(x: -500, y: 100, width: 40, height: 200))
+        XCTAssertEqual(result.maxX, 40)
+    }
+
+    func testAnEmptyScreenLeavesTheFrameAlone() {
+        let frame = CGRect(x: -900, y: 100, width: 456, height: 962)
+        XCTAssertEqual(
+            DeviceGeometry.reachableFrame(frame, in: .zero, titleBarHeight: titleBar),
+            frame
+        )
+    }
+}
+
 final class ScaleModeTests: XCTestCase {
     func testEveryModeHasADistinctDisplayName() {
         let names = ScaleMode.allCases.map(\.displayName)

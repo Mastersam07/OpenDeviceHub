@@ -69,6 +69,34 @@ public enum DeviceGeometry {
         return CGPoint(x: x, y: y)
     }
 
+    /// How much of a window has to stay on screen for it to be grabbed again.
+    public static let minimumReachableWidth: CGFloat = 96
+
+    /// Keeps a window reachable without resizing it. AppKit's own constraining is bypassed so a
+    /// Pixel Accurate window may be larger than the display, and that also removed the guard that
+    /// stops a window being dragged away entirely. This puts back only that guard: the title bar
+    /// stays inside the visible area and a strip of the window stays on screen, while the window
+    /// is free to hang off any edge otherwise.
+    public static func reachableFrame(
+        _ frame: CGRect,
+        in visibleFrame: CGRect,
+        titleBarHeight: CGFloat
+    ) -> CGRect {
+        guard visibleFrame.width > 0, visibleFrame.height > 0 else { return frame }
+
+        var origin = frame.origin
+        // The title bar is the strip at the top, so the window's own top edge is what has to stay
+        // between the bottom of the screen and the top of it.
+        let highest = visibleFrame.maxY
+        let lowest = visibleFrame.minY + titleBarHeight
+        origin.y = min(max(frame.maxY, lowest), highest) - frame.height
+
+        let overlap = min(minimumReachableWidth, frame.width)
+        origin.x = min(max(origin.x, visibleFrame.minX - frame.width + overlap), visibleFrame.maxX - overlap)
+
+        return CGRect(origin: origin, size: frame.size)
+    }
+
     /// The size in macOS points that shows the device's screen at its own point size. The scale is
     /// guarded because a device type with no reported scale would otherwise divide by zero.
     public static func pointSize(pixelSize: CGSize, pointScale: CGFloat) -> CGSize {
