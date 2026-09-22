@@ -233,7 +233,17 @@ public final class DeviceChromeView: NSView {
         // The screen keeps its own clicks; only the body's buttons are ours.
         let local = convert(point, from: superview)
         if button(at: local) != nil { return self }
+        // A swipe up from the bottom of the device starts on the chin below the glass as often as
+        // on it, the way a thumb does on a real phone. Without this the body swallows the contact
+        // and the system gesture never begins.
+        if isOnChin(local) { return screenView }
         return super.hitTest(point)
+    }
+
+    private func isOnChin(_ local: CGPoint) -> Bool {
+        let screen = screenRect
+        guard bounds.contains(local), !screen.contains(local) else { return false }
+        return local.y < screen.minY && local.x >= screen.minX && local.x <= screen.maxX
     }
 
     public override func mouseDown(with event: NSEvent) {

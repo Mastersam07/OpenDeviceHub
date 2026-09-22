@@ -37,3 +37,49 @@ final class TouchPathTests: XCTestCase {
         XCTAssertTrue(path.allSatisfy { $0 == point })
     }
 }
+
+/// The app switcher half of the bottom edge swipe, and the edge band. Which of the two gestures
+/// the guest performs is decided by the settle, verified separately against a real simulator.
+final class AppSwitcherGestureTests: XCTestCase {
+    func testBothSwipesStartInsideTheBottomEdgeBand() {
+        for path in [HomeGesture.swipePath(), HomeGesture.appSwitcherPath()] {
+            XCTAssertEqual(TouchEvent.Edge.beginning(at: path[0]), .bottom)
+        }
+    }
+
+    func testTheSwitcherSwipeStopsLowerThanTheHomeSwipe() {
+        let home = HomeGesture.swipePath().last!
+        let switcher = HomeGesture.appSwitcherPath().last!
+        XCTAssertGreaterThan(switcher.y, home.y, "the cards sit lower than the home swipe travels")
+    }
+
+    func testTheSettleNeverRepeatsAPosition() {
+        let rest = CGPoint(x: 0.5, y: 0.6)
+        let settle = HomeGesture.settlePath(around: rest, steps: 8)
+        XCTAssertEqual(settle.count, 8)
+        for (previous, next) in zip(settle, settle.dropFirst()) {
+            XCTAssertNotEqual(previous.y, next.y, "a move with no delta is not movement")
+        }
+        for point in settle {
+            XCTAssertEqual(point.x, rest.x)
+            XCTAssertLessThan(abs(point.y - rest.y), 0.002)
+        }
+    }
+
+    func testTheSettleIsNeverEmpty() {
+        XCTAssertFalse(HomeGesture.settlePath(around: .zero, steps: 0).isEmpty)
+    }
+
+    func testEachSideOfTheScreenIsRecognised() {
+        XCTAssertEqual(TouchEvent.Edge.beginning(at: CGPoint(x: 0.5, y: 0.99)), .bottom)
+        XCTAssertEqual(TouchEvent.Edge.beginning(at: CGPoint(x: 0.5, y: 0.01)), .top)
+        XCTAssertEqual(TouchEvent.Edge.beginning(at: CGPoint(x: 0.01, y: 0.5)), .left)
+        XCTAssertEqual(TouchEvent.Edge.beginning(at: CGPoint(x: 0.99, y: 0.5)), .right)
+        XCTAssertEqual(TouchEvent.Edge.beginning(at: CGPoint(x: 0.5, y: 0.5)), .none)
+    }
+
+    func testAContactJustInsideTheBandIsNotAnEdge() {
+        XCTAssertEqual(TouchEvent.Edge.beginning(at: CGPoint(x: 0.5, y: 0.96)), .none)
+        XCTAssertEqual(TouchEvent.Edge.beginning(at: CGPoint(x: 0.5, y: 0.97)), .bottom)
+    }
+}
