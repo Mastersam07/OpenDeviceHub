@@ -2,10 +2,10 @@
 
 /// Declarations for the CoreSimulator symbols the adapter sends messages to. These are protocols
 /// only: no Apple class is declared, nothing is linked, and every selector here was confirmed on
-/// Xcode 26.5 (17F42) before being written down.
+/// Xcode 26.5 (17F42) and again on Xcode 27 (27A266a) before being written down.
 ///
 /// The BOOL getters are spelled `available` rather than `isAvailable`, which is what the runtime
-/// actually exports on 17F42.
+/// actually exports on both builds.
 ///
 /// There is deliberately no `NS_ASSUME_NONNULL` here. Everything on the other side is a remote
 /// proxy into another process, and a proxy returns nil once its device goes away, which happens
@@ -53,6 +53,15 @@
 /// cast, and the real `SimDevice` does not formally adopt these protocols, so the check traps.
 /// Elements are cast individually instead.
 @property (nonatomic, readonly, nullable) NSArray *devices;
+/// `SimDeviceSet` adopts `SimDeviceNotifier`, so one registration here covers every device in the
+/// set, including devices booted by something else. The returned handle is what unregisters it.
+/// Verified on Xcode 27 (27A266a).
+///
+/// The notification is a dictionary, but it is declared as `id` because nothing guarantees that:
+/// the block is typed `void (^)(id)` and different senders put different things in it.
+- (NSUInteger)registerNotificationHandlerOnQueue:(dispatch_queue_t _Nonnull)queue
+                                         handler:(void (^_Nonnull)(id _Nullable))handler;
+- (BOOL)unregisterNotificationHandler:(NSUInteger)handle error:(NSError *_Nullable *_Nullable)error;
 @end
 
 @protocol ODHSimDisplayDescriptorState <NSObject>

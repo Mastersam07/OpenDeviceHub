@@ -16,6 +16,7 @@ public struct Capabilities: OptionSet, Sendable, Hashable {
     public static let biometrics = Capabilities(rawValue: 1 << 8)
     public static let pointer = Capabilities(rawValue: 1 << 9)
     public static let rotation = Capabilities(rawValue: 1 << 10)
+    public static let deviceNotifications = Capabilities(rawValue: 1 << 11)
 }
 
 extension Capabilities {
@@ -31,6 +32,7 @@ extension Capabilities {
         ("biometrics", .biometrics),
         ("pointer", .pointer),
         ("rotation", .rotation),
+        ("deviceNotifications", .deviceNotifications),
     ]
 
     public var names: [String] {
