@@ -29,23 +29,47 @@ public struct DeviceToolbarActions {
 }
 
 /// The row of buttons above a device, matching what the classic Simulator offers.
+///
+/// Every item is a plain `NSToolbarItem` with an image and an action and nothing else set on it.
+/// Setting `isBordered`, or a custom view, opts an item out of all of it.
 @MainActor
-final class DeviceToolbar: NSObject, NSToolbarDelegate {
+final class DeviceToolbar: NSObject, NSToolbarDelegate, NSToolbarItemValidation {
     private enum Item {
         static let home = NSToolbarItem.Identifier("odh.home")
         static let capture = NSToolbarItem.Identifier("odh.capture")
         static let rotate = NSToolbarItem.Identifier("odh.rotate")
-        static let all = [home, capture, rotate]
     }
 
     private let actions: DeviceToolbarActions
-    private var captureItem: NSToolbarItem?
+    private let items: [NSToolbarItem]
+    private var captureItem: NSToolbarItem { items[1] }
     private var isRecording = false
-    private var items: [NSToolbarItem] = []
     private var isEnabled = true
 
     init(actions: DeviceToolbarActions) {
         self.actions = actions
+        let home = NSToolbarItem(itemIdentifier: Item.home)
+        let capture = NSToolbarItem(itemIdentifier: Item.capture)
+        let rotate = NSToolbarItem(itemIdentifier: Item.rotate)
+        items = [home, capture, rotate]
+        super.init()
+
+        describe(home, symbol: "house", title: "Home", tip: "Home (\u{21E7}\u{2318}H)")
+        home.action = #selector(goHome)
+        describeCapture(capture)
+        capture.action = #selector(capture(_:))
+        describe(
+            rotate,
+            symbol: "rotate.right",
+            title: "Rotate",
+            tip: "Rotate Right (\u{2318}\u{2192}, hold \u{2325} for left)"
+        )
+        rotate.action = #selector(rotateDevice)
+
+        for item in items {
+            item.target = self
+            item.visibilityPriority = .high
+        }
     }
 
     func install(on window: NSWindow) {
@@ -53,8 +77,12 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate {
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = false
+        if #available(macOS 15, *) {
+            toolbar.allowsDisplayModeCustomization = false
+        }
         window.toolbar = toolbar
         window.toolbarStyle = .unified
+        window.titlebarSeparatorStyle = .none
     }
 
     /// While a recording runs the camera becomes the way to stop it, so one button covers both
@@ -62,18 +90,23 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate {
     func setRecording(_ recording: Bool) {
         guard isRecording != recording else { return }
         isRecording = recording
-        if let captureItem { describeCapture(captureItem) }
+        describeCapture(captureItem)
     }
 
     /// Greyed out while the device is gone, so the buttons cannot be pressed at a device that is
-    /// not there.
+    /// not there. Enforced through validation rather than by switching autovalidation off, which
+    /// would also give up AppKit's own handling of the items.
     func setEnabled(_ enabled: Bool) {
         isEnabled = enabled
         for item in items { item.isEnabled = enabled }
     }
 
+    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        isEnabled
+    }
+
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.flexibleSpace] + Item.all
+        [.flexibleSpace] + items.map(\.itemIdentifier)
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -85,43 +118,19 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate {
         itemForItemIdentifier identifier: NSToolbarItem.Identifier,
         willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.target = self
-        item.isBordered = true
-        item.visibilityPriority = .high
-        // Without this AppKit re-enables the item on its own validation pass, which would light the
-        // buttons back up while the device is still gone.
-        item.autovalidates = false
-        item.isEnabled = isEnabled
-        items.append(item)
-
-        switch identifier {
-        case Item.home:
-            describe(item, symbol: "house", title: "Home", tip: "Home (\u{21E7}\u{2318}H)")
-            item.action = #selector(home)
-        case Item.capture:
-            captureItem = item
-            describeCapture(item)
-            item.action = #selector(capture)
-        case Item.rotate:
-            describe(
-                item,
-                symbol: "rotate.right",
-                title: "Rotate",
-                tip: "Rotate Right (\u{2318}\u{2192}, hold \u{2325} for left)"
-            )
-            item.action = #selector(rotate)
-        default:
-            return nil
-        }
-        return item
+        items.first { $0.itemIdentifier == identifier }
     }
 
     private func describeCapture(_ item: NSToolbarItem) {
         if isRecording {
             describe(item, symbol: "stop.circle", title: "Stop Recording", tip: "Stop Recording (\u{2318}R)")
         } else {
-            describe(item, symbol: "camera", title: "Screenshot", tip: "Screenshot (\u{2318}S)")
+            describe(
+                item,
+                symbol: "camera.on.rectangle",
+                title: "Screenshot",
+                tip: "Screenshot (\u{2318}S)"
+            )
         }
     }
 
@@ -132,9 +141,9 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate {
         item.toolTip = tip
     }
 
-    @objc private func home() { actions.goHome() }
+    @objc private func goHome() { actions.goHome() }
 
-    @objc private func capture() {
+    @objc private func capture(_ sender: Any?) {
         if isRecording {
             actions.stopRecording()
         } else {
@@ -142,7 +151,7 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate {
         }
     }
 
-    @objc private func rotate() {
+    @objc private func rotateDevice() {
         actions.rotate(NSApp.currentEvent?.modifierFlags.contains(.option) == true)
     }
 }
