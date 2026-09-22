@@ -1,3 +1,8 @@
+//
+//  Adapted from Siniulator's `rotateUsingPurple` (Krzysztof Magiera, MIT), which credits idb for
+//  the underlying Purple GSEvent protocol. See THIRD_PARTY_NOTICES.md.
+//
+
 import Darwin
 import Foundation
 

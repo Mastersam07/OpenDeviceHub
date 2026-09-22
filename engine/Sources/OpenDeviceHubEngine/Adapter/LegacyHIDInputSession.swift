@@ -1,6 +1,7 @@
 //
-//  The single touch message construction is adapted from idb (Meta Platforms, MIT) and Siniulator
-//  (Krzysztof Magiera, MIT). See THIRD_PARTY_NOTICES.md.
+//  The single touch message construction, and the button and edge values it sends, are adapted
+//  from idb (Meta Platforms, MIT) and Siniulator (Krzysztof Magiera, MIT). See
+//  THIRD_PARTY_NOTICES.md.
 //
 
 import CoreGraphics

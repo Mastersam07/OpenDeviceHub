@@ -1,6 +1,8 @@
 //
-//  The single touch message layout below is adapted from idb (Meta Platforms, MIT) and Siniulator
-//  (Krzysztof Magiera, MIT), which arrived at the same envelope independently. See
+//  Adapted from idb (Meta Platforms, MIT) and Siniulator (Krzysztof Magiera, MIT). From idb: the
+//  single touch message layout, the hardware button event sources and targets, the down and up
+//  values, the volume consumer usages and the edge values. From Siniulator: the same envelope,
+//  reached independently, and the argument order the button builder actually takes. See
 //  THIRD_PARTY_NOTICES.md.
 //
 
@@ -8,8 +10,11 @@ import CoreGraphics
 import Foundation
 
 /// Every Indigo wire constant lives here so that a new Xcode can be checked against one file.
-/// Each value was confirmed on the build named beside it, by sending a tap that visibly landed,
-/// not by reading prior art.
+///
+/// The touch layout was found by observation. The button and edge values came from idb's header
+/// and were then confirmed on the build named beside each one, by pressing the button or making
+/// the gesture and watching the device respond. Where a value is carried from prior art without
+/// that confirmation, it says so.
 enum IndigoHID {
     /// The HID service that handles mouse and touch contacts. Verified on Xcode 26.5 (17F42).
     /// Deliberately not `IndigoHIDTargetForScreen`, which binds to the screen digitizer and
