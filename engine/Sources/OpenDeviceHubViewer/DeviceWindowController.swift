@@ -31,6 +31,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private let latency = LatencyMeter()
     private var showsLatency = false
     private var parallelOffset = CGSize(width: 0.12, height: 0)
+    private var dragEdge: TouchEvent.Edge = .none
     private var orientation: DeviceOrientation = .portrait
     private var scaleMode: ScaleMode
     private var bezelEnabled: Bool
@@ -456,8 +457,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
                 CoordinateMapper.portraitNativePoint(from: $0, orientation: orientation)
             }
 
-            if touchPhase == .began { self.latency.clickSent() }
-            let event = TouchEvent(phase: touchPhase, points: points)
+            if touchPhase == .began {
+                self.latency.clickSent()
+                self.dragEdge = style == .single ? .beginning(at: primary) : .none
+            }
+            let event = TouchEvent(phase: touchPhase, points: points, edge: self.dragEdge)
+            if touchPhase == .ended { self.dragEdge = .none }
             Task { try? await input.touch(event) }
         }
 
