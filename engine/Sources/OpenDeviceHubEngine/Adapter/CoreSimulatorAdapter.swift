@@ -4,7 +4,7 @@ import OpenDeviceHubPrivate
 
 /// CoreSimulator makes no thread safety promise, so every call into it is serialized here. The
 /// stored context is an Objective-C object and cannot be `Sendable` on its own.
-public final class Xcode26Adapter: SimulatorAdapter, @unchecked Sendable {
+public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
     public let xcode: XcodeInstall
     public let capabilities: Capabilities
 

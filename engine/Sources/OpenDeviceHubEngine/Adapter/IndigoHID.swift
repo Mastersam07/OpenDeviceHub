@@ -16,13 +16,13 @@ import Foundation
 /// the gesture and watching the device respond. Where a value is carried from prior art without
 /// that confirmation, it says so.
 enum IndigoHID {
-    /// The HID service that handles mouse and touch contacts. Verified on Xcode 26.5 (17F42).
+    /// The HID service that handles mouse and touch contacts. Verified on Xcode 26.5 (17F42) and Xcode 27 (27A266a).
     /// Deliberately not `IndigoHIDTargetForScreen`, which binds to the screen digitizer and
     /// requires the screen to be registered first.
     static let touchTarget: UInt32 = 0x32
 
     /// Contact down and contact up, passed to the builder as its event type.
-    /// Verified on Xcode 26.5 (17F42).
+    /// Verified on Xcode 26.5 (17F42) and Xcode 27 (27A266a).
     ///
     /// There is no separate "moved" type. The builder accepts only 1, 2, 3 and 4, and 3 and 4
     /// produce byte identical messages to 1 and 2: same `eventMask` 0x3, same range and touch
@@ -31,7 +31,9 @@ enum IndigoHID {
     static let eventTypeContactDown: UInt = 1
     static let eventTypeContactUp: UInt = 2
 
-    /// Which edge a contact started at. Verified on Xcode 26.5 (17F42).
+    /// Which edge a contact started at. Only the bottom value has been shown to change
+    /// behaviour, on Xcode 26.5 (17F42) and again on Xcode 27 (27A266a). The rest come from idb's
+    /// header and are inert on both.
     static let edgeNone: UInt32 = 0
 
     static func edgeValue(for edge: TouchEvent.Edge) -> UInt32 {
@@ -45,18 +47,19 @@ enum IndigoHID {
     }
 
     /// The builder normalizes the point by this size, so a unit size leaves an already normalized
-    /// point untouched. Verified on Xcode 26.5 (17F42).
+    /// point untouched. Verified on Xcode 26.5 (17F42) and Xcode 27 (27A266a).
     static let unitScreenSize = CGSize(width: 1, height: 1)
 
     /// Offsets of the contact ratio inside the builder's message. The struct is four byte packed,
-    /// so these doubles are not eight byte aligned. Verified on Xcode 26.5 (17F42).
+    /// so these doubles are not eight byte aligned. Verified on Xcode 26.5 (17F42) and Xcode 27 (27A266a).
     static let xRatioOffset = 0x3c
     static let yRatioOffset = 0x44
 
     /// The hand built single touch message. The builder only ever emits a multi-touch message with
     /// an implicit second contact, which the guest reads as a two finger gesture rather than a tap,
     /// so a fresh envelope is built and the contact copied into it.
-    /// Every offset and size verified on Xcode 26.5 (17F42).
+    /// Every offset and size verified on Xcode 26.5 (17F42), and still landing taps and
+    /// pinches correctly on Xcode 27 (27A266a).
     enum Message {
         static let size = 320
         static let innerSizeOffset = 0x18
@@ -85,11 +88,11 @@ enum IndigoHID {
     }
 
     /// `IndigoHIDMessageForMouseNSEvent`, resolved from SimulatorKit with `dlsym`.
-    /// Verified on Xcode 26.5 (17F42).
+    /// Verified on Xcode 26.5 (17F42) and Xcode 27 (27A266a).
     static let mouseBuilderSymbol = "IndigoHIDMessageForMouseNSEvent"
 
     /// `IndigoHIDMessageForKeyboardArbitrary(usage, isDown)` returns a complete 192 byte message
-    /// that is sent unchanged, no envelope needed. Verified on Xcode 26.5 (17F42), where
+    /// that is sent unchanged, no envelope needed. Verified on Xcode 26.5 (17F42) and Xcode 27 (27A266a). On 17F42
     /// `IndigoHIDStringForKeyUsageCode` names 0x04 "A", 0x28 the return arrow and 0x2c "space",
     /// confirming these are standard USB HID keyboard usages.
     static let keyboardBuilderSymbol = "IndigoHIDMessageForKeyboardArbitrary"
@@ -98,8 +101,8 @@ enum IndigoHID {
 
     /// `IndigoHIDMessageForButton(eventSource, direction, target)`. The argument order matters and
     /// is not the one the name suggests: the target comes last and is always `buttonTarget`, while
-    /// the button itself is chosen by the event source. Verified on Xcode 26.5 (17F42) by pressing
-    /// Home and Lock and watching the device respond.
+    /// the button itself is chosen by the event source. Verified on Xcode 26.5 (17F42) and
+    /// Xcode 27 (27A266a) by pressing Home and Lock and watching the device respond.
     static let buttonBuilderSymbol = "IndigoHIDMessageForButton"
     static let buttonTarget: Int32 = 0x33
 
@@ -117,6 +120,8 @@ enum IndigoHID {
     typealias ArbitraryMessageBuilder = @convention(c) (Int32, UInt32, UInt32, Int32) -> UnsafeMutableRawPointer?
 
     /// How each hardware button reaches the guest. Every value confirmed on Xcode 26.5 (17F42).
+    /// Home, Lock and volume up confirmed again on Xcode 27 (27A266a); Siri and volume down were
+    /// not re-driven there.
     enum Button {
         /// Buttons identified by their event source, sent through the button builder.
         static let eventSources: [HardwareButton: Int32] = [

@@ -40,26 +40,30 @@ final class DeviceStateStringTests: XCTestCase {
 }
 
 final class AdapterSelectionTests: XCTestCase {
-    func testXcode26SelectsTheXcode26Adapter() throws {
-        XCTAssertEqual(try AdapterFactory.kind(for: XcodeVersion(major: 26, minor: 5)), .xcode26)
-        XCTAssertEqual(try AdapterFactory.kind(for: XcodeVersion(major: 26)), .xcode26)
-    }
-
-    func testXcode27IsRejectedWhileItsAdapterIsMissing() {
-        XCTAssertThrowsError(try AdapterFactory.kind(for: XcodeVersion(major: 27))) { error in
-            guard case EngineError.unsupportedXcode(let version, let supported, _) = error else {
-                return XCTFail("wrong error: \(error)")
-            }
-            XCTAssertEqual(version, "27.0")
-            XCTAssertEqual(supported, "26")
+    func testTheVerifiedMajorsUseTheOneAdapter() throws {
+        for version in [XcodeVersion(major: 26), XcodeVersion(major: 26, minor: 5), XcodeVersion(major: 27)] {
+            XCTAssertEqual(try AdapterFactory.kind(for: version), .coreSimulator, "\(version)")
+            XCTAssertNil(AdapterFactory.advisory(for: version), "\(version) is verified")
         }
     }
 
-    func testANewerMajorIsAlsoRejectedForNow() {
-        XCTAssertThrowsError(try AdapterFactory.kind(for: XcodeVersion(major: 28)))
+    func testANewerMajorRunsWithAnAdvisory() throws {
+        let version = XcodeVersion(major: 28)
+        XCTAssertEqual(try AdapterFactory.kind(for: version), .coreSimulator)
+        let advisory = try XCTUnwrap(AdapterFactory.advisory(for: version))
+        XCTAssertTrue(advisory.contains("28"))
+        XCTAssertTrue(advisory.contains("27"), "it should name what was actually verified")
     }
 
-    func testOlderXcodeIsRejected() {
-        XCTAssertThrowsError(try AdapterFactory.kind(for: XcodeVersion(major: 25, minor: 3)))
+    func testAnOlderMajorFailsAndSaysWhat() {
+        XCTAssertThrowsError(try AdapterFactory.kind(for: XcodeVersion(major: 25))) { error in
+            guard case EngineError.unsupportedXcode(let version, let supported, let note) = error else {
+                return XCTFail("wrong error: \(error)")
+            }
+            XCTAssertEqual(version, "25.0")
+            XCTAssertEqual(supported, "26 and 27")
+            XCTAssertTrue(note.contains("oldest"))
+        }
     }
 }
+
