@@ -87,18 +87,33 @@ final class ViewController: UIViewController {
     }
 }
 
+@objc(AppDelegate)
 final class AppDelegate: UIResponder, UIApplicationDelegate {
-    var window: UIWindow?
-
     func application(
         _ application: UIApplication,
-        didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?
-    ) -> Bool {
-        let window = UIWindow(frame: UIScreen.main.bounds)
+        configurationForConnecting session: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        UISceneConfiguration(name: "Default", sessionRole: session.role)
+    }
+}
+
+/// iOS 27 traps an app that never adopts the scene lifecycle, so the window comes from the scene
+/// rather than from the application delegate.
+@objc(SceneDelegate)
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    var window: UIWindow?
+
+    func scene(
+        _ scene: UIScene,
+        willConnectTo session: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) {
+        guard let windowScene = scene as? UIWindowScene else { return }
+        let window = UIWindow(windowScene: windowScene)
         window.rootViewController = ViewController()
         window.makeKeyAndVisible()
         self.window = window
-        return true
     }
 }
 
