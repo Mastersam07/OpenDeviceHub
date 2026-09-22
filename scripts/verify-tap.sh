@@ -32,7 +32,7 @@ fi
 
 if [ ! -x "${binary}" ]; then
   echo "Building..."
-  swift build --package-path "${repo_root}/engine" >/dev/null
+  "${repo_root}/scripts/build.sh" >/dev/null
 fi
 
 echo "Device:      ${udid}"
