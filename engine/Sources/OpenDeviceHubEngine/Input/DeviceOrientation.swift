@@ -43,7 +43,9 @@ public enum DeviceOrientation: String, Sendable, Hashable, CaseIterable, Codable
 }
 
 extension DeviceOrientation {
-    /// The value the guest's workspace port expects. Verified on Xcode 26.5 (17F42).
+    /// The value the guest's workspace port expects. Verified on Xcode 26.5 (17F42) and
+    /// Xcode 27 (27A266a), all four on an iPad and all but upside down on a Face ID phone, which
+    /// refuses that orientation itself.
     var gsEventValue: UInt32 {
         switch self {
         case .portrait: 1

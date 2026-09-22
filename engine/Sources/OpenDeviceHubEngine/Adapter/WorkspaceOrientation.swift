@@ -11,7 +11,8 @@ import Foundation
 /// does not see simulators there, so this is the only route.
 ///
 /// The message layout is adapted from Siniulator (MIT), which documents it from idb's notes.
-/// Verified on Xcode 26.5 (17F42): the guest reported the new orientation afterwards.
+/// Verified on Xcode 26.5 (17F42) and Xcode 27 (27A266a): the guest reported the new
+/// orientation afterwards.
 enum WorkspaceOrientation {
     static let portName = "PurpleWorkspacePort"
 
@@ -19,7 +20,7 @@ enum WorkspaceOrientation {
     private static let bufferSize = 112
     private static let sendTimeoutMilliseconds: mach_msg_timeout_t = 2000
 
-    /// Offsets inside the message, all verified on 17F42.
+    /// Offsets inside the message, all verified on 17F42 and 27A266a.
     private enum Offset {
         static let bits = 0
         static let size = 4

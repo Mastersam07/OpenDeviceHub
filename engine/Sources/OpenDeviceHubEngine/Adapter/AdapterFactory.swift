@@ -1,35 +1,37 @@
 import Foundation
 
 public enum AdapterKind: String, Sendable, Hashable {
-    case xcode26
+    case coreSimulator
 }
 
 public enum AdapterFactory {
-    public static let supportedMajors = "26"
+    public static let supportedMajors = "26 and 27"
+    public static let newestVerifiedMajor = 27
+    public static let oldestSupportedMajor = 26
 
     public static func make(for install: XcodeInstall) throws -> any SimulatorAdapter {
         switch try kind(for: install.version) {
-        case .xcode26:
-            return try Xcode26Adapter(xcode: install)
+        case .coreSimulator:
+            return try CoreSimulatorAdapter(xcode: install)
         }
     }
 
     static func kind(for version: XcodeVersion) throws -> AdapterKind {
-        switch version.major {
-        case 26:
-            return .xcode26
-        case 27...:
+        guard version.major >= oldestSupportedMajor else {
             throw EngineError.unsupportedXcode(
                 version: version.description,
                 supported: supportedMajors,
-                note: "Xcode 27 support is in progress."
-            )
-        default:
-            throw EngineError.unsupportedXcode(
-                version: version.description,
-                supported: supportedMajors,
-                note: "Xcode 26 is the oldest supported release."
+                note: "Xcode \(oldestSupportedMajor) is the oldest supported release."
             )
         }
+        return .coreSimulator
+    }
+
+    /// An unverified major runs rather than being refused, since CoreSimulator has kept the same
+    /// surface so far, but doctor has to say it is unverified.
+    public static func advisory(for version: XcodeVersion) -> String? {
+        guard version.major > newestVerifiedMajor else { return nil }
+        return "Xcode \(version.major) has not been verified. "
+            + "The adapter is the one checked against Xcode \(newestVerifiedMajor)."
     }
 }

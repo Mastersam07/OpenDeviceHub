@@ -15,6 +15,9 @@ struct Doctor: ParsableCommand {
         print("  version:       \(install.version) (\(install.build))")
         print("  developer dir: \(display(install.developerDir))")
         print("  app root:      \(display(install.appRoot))")
+        if let advisory = AdapterFactory.advisory(for: install.version) {
+            print("  warning:       \(advisory)")
+        }
 
         var loadFailed = false
         for framework in PrivateFramework.allCases {

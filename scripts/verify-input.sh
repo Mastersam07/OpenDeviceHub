@@ -1,6 +1,6 @@
 #!/bin/bash
-# Checks that input still reaches the guest after an Xcode update, by tapping known coordinates and
-# reading back what the device actually received.
+# Checks that input and rotation still reach the guest after an Xcode update, by tapping known
+# coordinates and turning the device, then reading back what it actually received.
 #
 # This reads the test host app's own event log rather than comparing screenshots. Screenshot
 # comparison proved fragile: the clock changes every minute, and a crop that includes the status bar
@@ -67,10 +67,62 @@ PY
   fi
 done
 
+# Upside down is refused by Face ID iPhones, which is the phone's own behaviour rather than a
+# fault: SpringBoard has never rotated to it there. iPads take all four, and so do the Home button
+# iPhones, which the chrome identifies by listing a home button.
+device_type="$(xcrun simctl list devices -j | python3 -c "
+import json, sys
+want = sys.argv[1]
+for devices in json.load(sys.stdin)['devices'].values():
+    for device in devices:
+        if device['udid'] == want:
+            print(device.get('deviceTypeIdentifier', '')); raise SystemExit
+" "${udid}")"
+
+if [[ "${device_type}" == *iPad* ]] || "${odhub}" doctor 2>/dev/null | grep -q "buttons:.*home"; then
+  upside_down_expected="UPSIDEDOWN"
+else
+  upside_down_expected="refused"
+fi
+
+last_orientation() {
+  grep '^ORIENTATION' "${events}" | tail -1 | awk '{ print $2 }'
+}
+
+check_orientation() {
+  local sent="$1" want="$2" before
+  before="$(last_orientation)"
+  "${odhub}" rotate "${udid}" "${sent}" >/dev/null
+  sleep 3
+  local got
+  got="$(last_orientation)"
+  if [ "${want}" = "refused" ]; then
+    if [ "${got}" = "UPSIDEDOWN" ]; then
+      echo "  UNEXPECTED ${sent} was obeyed, which this device is not supposed to do"
+      return 1
+    fi
+    echo "  ok      ${sent} refused, as a Face ID phone should"
+    return 0
+  fi
+  if [ "${got}" = "${want}" ]; then
+    echo "  ok      ${sent} reported as ${got}"
+    return 0
+  fi
+  echo "  WRONG   ${sent} reported as ${got:-nothing}, wanted ${want} (was ${before:-nothing})"
+  return 1
+}
+
+echo "Orientation (${device_type##*SimDeviceType.}):"
+check_orientation landscapeLeft LANDSCAPELEFT || failures=$((failures + 1))
+check_orientation landscapeRight LANDSCAPERIGHT || failures=$((failures + 1))
+check_orientation portrait PORTRAIT || failures=$((failures + 1))
+check_orientation portraitUpsideDown "${upside_down_expected}" || failures=$((failures + 1))
+"${odhub}" rotate "${udid}" portrait >/dev/null 2>&1 || true
+
 if [ "${failures}" -eq 0 ]; then
-  echo "PASS: every tap reached the device at the coordinates it was sent to."
+  echo "PASS: every tap arrived where it was sent, and the device turned as expected."
   exit 0
 fi
-echo "FAIL: ${failures} tap(s) did not arrive. Event log:"
+echo "FAIL: ${failures} check(s) did not pass. Event log:"
 cat "${events}" 2>/dev/null | tail -20
 exit 1
