@@ -78,7 +78,19 @@ public final class DeviceScreenView: MTKView, NSDraggingSource {
             beginDraggingOut(file, with: event)
             return
         }
-        onContact?(convert(event.locationInWindow, from: nil), .moved, style(for: event))
+        onContact?(contactPoint(for: event), .moved, style(for: event))
+    }
+
+    /// A contact that starts or strays off the glass, onto the device body or past the window, is
+    /// held at the nearest edge rather than dropped. A finger sliding off the screen does not stop
+    /// being a finger, and the swipe up from the bottom edge begins below the glass as often as on
+    /// it.
+    private func contactPoint(for event: NSEvent) -> CGPoint {
+        let point = convert(event.locationInWindow, from: nil)
+        return CGPoint(
+            x: min(max(point.x, bounds.minX), bounds.maxX),
+            y: min(max(point.y, bounds.minY), bounds.maxY)
+        )
     }
 
     private func beginDraggingOut(_ file: URL, with event: NSEvent) {
@@ -143,11 +155,11 @@ public final class DeviceScreenView: MTKView, NSDraggingSource {
     }
 
     public override func mouseDown(with event: NSEvent) {
-        onContact?(convert(event.locationInWindow, from: nil), .began, style(for: event))
+        onContact?(contactPoint(for: event), .began, style(for: event))
     }
 
     public override func mouseUp(with event: NSEvent) {
-        onContact?(convert(event.locationInWindow, from: nil), .ended, style(for: event))
+        onContact?(contactPoint(for: event), .ended, style(for: event))
     }
 
     public override func magnify(with event: NSEvent) {
