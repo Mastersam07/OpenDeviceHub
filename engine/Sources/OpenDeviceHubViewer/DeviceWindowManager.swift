@@ -42,6 +42,8 @@ public final class DeviceWindowManager {
         let controller = try DeviceWindowController(
             udid: device.udid,
             title: "\(device.name) (\(device.runtimeName))",
+            deviceName: device.name,
+            runtimeName: device.runtimeName,
             session: session,
             input: input,
             scaleMode: scaleMode,

@@ -12,6 +12,8 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private let renderer: FrameRenderer
     private let screenView: DeviceScreenView
     private let chromeView: DeviceChromeView
+    private let controlBar: DeviceControlBar
+    private let presentationView: DevicePresentationView
     private var chrome: DeviceChrome?
     private var toolbar: DeviceToolbar?
     private let recordingIndicator = RecordingIndicator()
@@ -40,6 +42,8 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     public init(
         udid: String,
         title: String,
+        deviceName: String,
+        runtimeName: String,
         session: any DisplaySession,
         input: (any InputSession)?,
         scaleMode: ScaleMode,
@@ -62,27 +66,45 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         renderer = try FrameRenderer(device: device, pixelFormat: screenView.colorPixelFormat)
         screenView.delegate = renderer
         chromeView = DeviceChromeView(screenView: screenView)
+        controlBar = DeviceControlBar(deviceName: deviceName, runtimeName: runtimeName)
+        presentationView = DevicePresentationView(bar: controlBar, chrome: chromeView)
         self.chrome = chrome
 
         let screenSize = DeviceGeometry.pointSize(
             pixelSize: session.pixelSize,
             pointScale: session.pointScale
         )
-        let contentSize = bezelEnabled && chrome != nil
+        let deviceSize = bezelEnabled && chrome != nil
             ? ChromeGeometry.contentSize(screen: screenSize, chrome: chrome!, orientation: .portrait)
             : screenSize
+        let available = (NSScreen.main?.visibleFrame.size) ?? CGSize(width: 1512, height: 900)
+        // Fit is the mode that lets any size work, so it opens at a size that leaves room for other
+        // windows instead of at whatever the device measures. An explicit scale sizes it below.
+        let contentSize = scaleMode == .fit
+            ? PresentationLayout.defaultContentSize(
+                forDevice: deviceSize,
+                isTablet: deviceName.contains("iPad"),
+                available: available
+            )
+            : PresentationLayout.contentSize(forDevice: deviceSize)
         let window = DeviceWindow(
             contentRect: CGRect(origin: .zero, size: contentSize),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = title
         baseTitle = title
-        window.contentView = chromeView
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.contentView = presentationView
         // Without this the body's buttons never see the pointer, so they cannot rise under it.
         window.acceptsMouseMovedEvents = true
-        window.contentAspectRatio = contentSize
+        // No locked aspect ratio: the bar stops at its minimum width while the device carries on
+        // shrinking, which it cannot do if the window's shape is pinned to the device's.
+        window.minSize = PresentationLayout.minimumWindowSize
         window.center()
         window.collectionBehavior.insert(.fullScreenPrimary)
         super.init(window: window)
@@ -194,34 +216,60 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         // the first turn to hand the chrome the upright size it expects. Swapping twice is the
         // same size back.
         let upright = orientation.displayedSize(portraitNative: screenSize)
-        chromeView.setScreenSize(upright)
-        let size = chromeView.hasChrome && chrome != nil
+        let wanted = chromeView.hasChrome && chrome != nil
             ? ChromeGeometry.contentSize(screen: upright, chrome: chrome!, orientation: orientation)
             : screenSize
+        // The screen the body is built around has to shrink with the window, or the chrome lays the
+        // device out at its full size inside a smaller view and the bottom of it is simply cut off.
+        let visible = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? .zero
+        var factor = PresentationLayout.scale(fitting: wanted, in: visible)
+        var screen = scaled(upright, by: factor)
+        var size = deviceSize(forScreen: screen, fallback: scaled(screenSize, by: factor))
+        // The body's own margins do not scale exactly with the screen inside them, so the first
+        // pass can land a point or two over. One correction against the size actually derived
+        // settles it.
+        let correction = PresentationLayout.scale(fitting: size, in: visible)
+        if correction < 1 {
+            factor *= correction
+            screen = scaled(upright, by: factor)
+            size = deviceSize(forScreen: screen, fallback: scaled(screenSize, by: factor))
+        }
+        chromeView.setScreenSize(screen)
         // Full screen owns the window's size, and a locked ratio collapses it, so only the shape
         // the chrome fits itself into changes there. Turning the device in full screen used to
         // resize the window and lock the new ratio, which fought the transition.
+        // Clamped as well as scaled: the body's margins round, and a window a point over still
+        // hangs off the bottom of the display. The chrome fits the device to whatever bounds it is
+        // given, so losing that point costs nothing.
+        let wholeContent = PresentationLayout.contentSize(forDevice: size)
+        let content = visible == .zero ? wholeContent : CGSize(
+            width: min(wholeContent.width, visible.width),
+            height: min(wholeContent.height, visible.height)
+        )
         if window.styleMask.contains(.fullScreen) {
-            chromeView.needsLayout = true
+            presentationView.needsLayout = true
             chromeView.needsDisplay = true
         } else {
             // The ratio has to be relaxed before the size is set. AppKit applies the old one to
             // the new size otherwise, which shrank the window to the bare screen's shape when the
             // body came back.
             window.contentResizeIncrements = NSSize(width: 1, height: 1)
-            window.setContentSize(size)
-            window.contentAspectRatio = size
+            window.setContentSize(content)
             keepOnScreen()
         }
 
-        let visible = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? .zero
-        let titleBar = window.frame.height - window.contentLayoutRect.height
-        let fits = DeviceGeometry.fitsOnScreen(
-            contentSize: size,
-            visibleSize: visible,
-            titleBarHeight: titleBar
-        )
+        // The content already covers the whole window, so nothing more is reserved for a title bar.
+        let fits = factor >= 1
         return fits ? .applied(size) : .largerThanScreen(size)
+    }
+
+    private func scaled(_ size: CGSize, by factor: CGFloat) -> CGSize {
+        CGSize(width: size.width * factor, height: size.height * factor)
+    }
+
+    private func deviceSize(forScreen screen: CGSize, fallback: CGSize) -> CGSize {
+        guard chromeView.hasChrome, let chrome else { return fallback }
+        return ChromeGeometry.contentSize(screen: screen, chrome: chrome, orientation: orientation)
     }
 
     private func keepOnScreen() {
@@ -365,10 +413,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     public func windowWillEnterFullScreen(_ notification: Notification) {
         (window as? DeviceWindow)?.constrainsToScreen = true
         window?.contentResizeIncrements = NSSize(width: 1, height: 1)
+        presentationView.setFullScreen(true)
     }
 
     public func windowDidExitFullScreen(_ notification: Notification) {
         (window as? DeviceWindow)?.constrainsToScreen = false
+        presentationView.setFullScreen(false)
         // The device may have been turned while full screen, where the window is not resized, so
         // the shape it comes back to is whatever the current orientation asks for.
         applyScaleMode(scaleMode)
