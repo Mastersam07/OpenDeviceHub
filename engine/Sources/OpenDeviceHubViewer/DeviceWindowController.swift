@@ -297,10 +297,33 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         applyScaleMode(scaleMode)
     }
 
+    /// Every send goes through here so a failure is seen. A send used to be `try?`, which made a
+    /// dead session look exactly like a gesture the guest ignored.
+    private func send(_ work: @escaping @Sendable (any InputSession) async throws -> Void) {
+        guard let input else { return }
+        Task { [weak self] in
+            do {
+                try await work(input)
+            } catch {
+                guard InputFailure.endsTheSession(error) else { return }
+                await MainActor.run { self?.inputFailed(error) }
+            }
+        }
+    }
+
+    private func inputFailed(_ error: any Error) {
+        guard !isStopped, !isDetached else { return }
+        detach(reason: .failed(InputFailure.message(for: error)))
+        onSessionLost?()
+    }
+
+    /// Called when the window has given up on its sessions, so the owner can offer a way back.
+    public var onSessionLost: (() -> Void)?
+
     private func installChromeButtons() {
         chromeView.onButton = { [weak self] button, phase in
             guard let self, let input else { return }
-            Task { try? await input.button(button, phase: phase) }
+            send { try await $0.button(button, phase: phase) }
         }
     }
 
@@ -513,7 +536,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             }
             let event = TouchEvent(phase: touchPhase, points: points, edge: self.dragEdge)
             if touchPhase == .ended { self.dragEdge = .none }
-            Task { try? await input.touch(event) }
+            send { try await $0.touch(event) }
         }
 
         screenView.onDrop = { [weak self] urls, text in
@@ -526,7 +549,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
         screenView.onKey = { [weak self] usage, isDown in
             guard let self, let input else { return }
-            Task { try? await input.key(KeyEvent(phase: isDown ? .down : .up, usage: usage)) }
+            send { try await $0.key(KeyEvent(phase: isDown ? .down : .up, usage: usage)) }
         }
 
         screenView.onGesture = { [weak self] phase, spread, angle in
@@ -546,7 +569,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             case .moved: .moved
             case .ended: .ended
             }
-            Task { try? await input.touch(TouchEvent(phase: touchPhase, points: contacts)) }
+            send { try await $0.touch(TouchEvent(phase: touchPhase, points: contacts)) }
         }
     }
 

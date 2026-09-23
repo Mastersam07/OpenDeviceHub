@@ -7,6 +7,7 @@ public enum EngineError: Error, Sendable, Hashable {
     case frameworkNotFound(name: String, searched: [String])
     case symbolNotFound(name: String, framework: String)
     case capabilityUnavailable(name: String)
+    case inputSessionClosed
     case deviceNotFound(udid: String)
     case deviceNotBooted(udid: String)
     case privateCall(symbol: String, message: String)
@@ -26,6 +27,8 @@ extension EngineError: LocalizedError {
             return "\(name) was not found. Searched: \(searched.joined(separator: ", "))"
         case .symbolNotFound(let name, let framework):
             return "\(name) was not found in \(framework) on this Xcode build."
+        case .inputSessionClosed:
+            return "The input session is closed."
         case .capabilityUnavailable(let name):
             return "\(name) is not available on this Xcode build."
         case .deviceNotFound(let udid):
