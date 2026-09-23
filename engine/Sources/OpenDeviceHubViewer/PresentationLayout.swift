@@ -17,6 +17,9 @@ public struct PresentationLayout: Equatable {
     /// The narrowest the bar can be and still hold the window's buttons, a readable name and the
     /// actions. The window stops here; the device carries on shrinking and gains margin around it.
     public static let minimumBarWidth: CGFloat = 300
+    /// What AppKit keeps at a window's edges for resizing. The content view covers it, so it has to
+    /// be left alone for a drag on an edge to reach the window rather than the device.
+    public static let resizeBorder: CGFloat = 5
     /// A window opens at a size that leaves room for other windows, the way the simulator it
     /// replaces does, rather than at whatever the device measures in points.
     public static let defaultPhoneWidth: CGFloat = 440

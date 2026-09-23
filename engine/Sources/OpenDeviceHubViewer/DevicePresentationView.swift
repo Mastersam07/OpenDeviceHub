@@ -34,6 +34,18 @@ public final class DevicePresentationView: NSView {
         PresentationLayout(contentSize: bounds.size, isFullScreen: isFullScreen)
     }
 
+    /// The content covers the whole window, including the few points AppKit keeps at the edges for
+    /// resizing, so the border has to be handed back or the window can only be resized from its
+    /// corners by the window server. Nothing of ours lives out there: the device is inset well
+    /// inside it.
+    public override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        let border = PresentationLayout.resizeBorder
+        let inside = bounds.insetBy(dx: border, dy: border)
+        if !inside.contains(local), !bar.frame.contains(local) { return nil }
+        return super.hitTest(point)
+    }
+
     public override func layout() {
         super.layout()
         let layout = currentLayout
