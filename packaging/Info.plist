@@ -4,7 +4,7 @@
 <dict>
   <key>CFBundleName</key><string>OpenDeviceHub</string>
   <key>CFBundleDisplayName</key><string>OpenDeviceHub</string>
-  <key>CFBundleIdentifier</key><string>io.github.mastersam07.opendevicehub</string>
+  <key>CFBundleIdentifier</key><string>io.github.mastersam07.simviewer</string>
   <key>CFBundleExecutable</key><string>OpenDeviceHub</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -16,5 +16,14 @@
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHumanReadableCopyright</key><string>MIT licensed. Not affiliated with or endorsed by Apple.</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+
+  <!-- Sparkle. The feed and the key are what make this a release build: without both, the updater
+       is never created. Neither may change once a version has shipped. -->
+  <key>SUFeedURL</key><string>https://mastersam07.github.io/appcast/opendevicehub.xml</string>
+  <key>SUPublicEDKey</key><string>ZvBlUJbzcMueAq6HtYF6yq9lRrtb6BCHN+F/FWRJG4M=</string>
+  <key>SUEnableAutomaticChecks</key><true/>
+  <key>SUScheduledCheckInterval</key><integer>86400</integer>
+  <!-- The user decides when to install. Silent installation is off deliberately. -->
+  <key>SUAutomaticallyUpdate</key><false/>
 </dict>
 </plist>

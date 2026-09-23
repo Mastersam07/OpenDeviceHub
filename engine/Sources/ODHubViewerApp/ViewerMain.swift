@@ -78,6 +78,7 @@ struct ODHubViewer: ParsableCommand {
                 print("Skipped \(failure)")
             }
 
+            let updates = UpdateController()
             let menuTarget = ViewerMenu.install(into: application, actions: ViewerMenu.Actions(
                 setScaleMode: { manager.applyScaleMode($0) },
                 toggleBezel: { manager.toggleBezel() },
@@ -183,8 +184,14 @@ struct ODHubViewer: ParsableCommand {
                             print("rotate failed: \(error.localizedDescription)")
                         }
                     }
-                }
+                },
+                checkForUpdates: updates.map { updater in { updater.checkForUpdates() } }
             ), capabilities: adapter.capabilities)
+            if let updates {
+                print("updates: \(updates.feedURL ?? "configured, feed unreadable")")
+            } else {
+                print("updates: off, this build carries no update channel")
+            }
 
             installToolbars(manager: manager, adapter: adapter)
 
@@ -213,7 +220,7 @@ struct ODHubViewer: ParsableCommand {
             // once the run loop starts, so without this ARC releases them and the display sessions
             // die with them: the windows stay up and never draw again.
             application.delegate = delegate
-            withExtendedLifetime((manager, delegate, menuTarget)) {
+            withExtendedLifetime((manager, delegate, menuTarget, updates)) {
                 application.run()
             }
         }
