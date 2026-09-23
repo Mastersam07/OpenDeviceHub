@@ -9,9 +9,9 @@ on:
         type: boolean
         default: false
       xcode:
-        description: "Xcode version on the runner. Needs the macOS 26 SDK or newer."
+        description: "Preferred Xcode major. Falls back to the newest with a macOS 26 SDK or newer."
         type: string
-        default: "26.0"
+        default: "27"
 
 concurrency:
   group: release
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 90
     env:
       ODH_SIGNING_IDENTITY: ${{ secrets.DEVELOPER_ID_IDENTITY }}
@@ -56,25 +56,13 @@ jobs:
       - name: Select Xcode
         run: |
           set -euo pipefail
-          xcode="/Applications/Xcode_${{ inputs.xcode }}.app"
-          if [ ! -d "${xcode}" ]; then
-            echo "::error::${xcode} is not on this runner. Available:"
-            ls -d /Applications/Xcode*.app
-            exit 1
-          fi
-          echo "DEVELOPER_DIR=${xcode}/Contents/Developer" >> "${GITHUB_ENV}"
-
-          # The linked SDK version decides whether AppKit gives the app its current appearance or
-          # its pre macOS 26 one, and scripts/build.sh stamps whatever this Xcode provides. An older
-          # SDK builds and signs perfectly well and ships a window that looks years out of date, so
-          # the floor is checked here rather than discovered by someone looking at a screenshot.
-          sdk="$(DEVELOPER_DIR="${xcode}/Contents/Developer" xcrun --sdk macosx --show-sdk-version)"
-          echo "macOS SDK: ${sdk}"
-          if [ "$(printf '%s\n26.0\n' "${sdk}" | sort -V | head -1)" != "26.0" ]; then
-            echo "::error::macOS SDK ${sdk} is older than 26.0, which would ship the pre macOS 26 toolbar. Available Xcodes:"
-            ls -d /Applications/Xcode*.app
-            exit 1
-          fi
+          echo "Xcodes on this runner:"
+          for app in /Applications/Xcode*.app; do
+            echo "  $(basename "${app}")  SDK $(DEVELOPER_DIR="${app}/Contents/Developer" xcrun --sdk macosx --show-sdk-version 2>/dev/null || echo unknown)"
+          done
+          # Prefers the major built with locally, and refuses anything below the macOS 26 SDK
+          # whatever is installed, because an older one ships the pre macOS 26 toolbar.
+          scripts/select-xcode.sh "${{ inputs.xcode }}" 26.0 | tee -a "${GITHUB_ENV}"
 
       - name: Work out the version
         id: version
