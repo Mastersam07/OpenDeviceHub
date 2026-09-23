@@ -92,7 +92,7 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate, NSToolbarItemValidation 
         controller.view = NSView(frame: CGRect(
             x: 0,
             y: 0,
-            width: PresentationLayout.sideMargin,
+            width: PresentationLayout.barInset + PresentationLayout.actionInset,
             height: 1
         ))
         return controller

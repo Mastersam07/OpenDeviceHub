@@ -165,7 +165,12 @@ public final class DeviceChromeView: NSView {
         drawButtons(chrome, onTop: true)
     }
 
+    public var fillsMargin = false {
+        didSet { needsDisplay = true }
+    }
+
     private func fillMargin(around rect: CGRect) {
+        guard fillsMargin else { return }
         NSColor.black.setFill()
         for margin in ChromeGeometry.margins(around: rect, in: bounds) {
             margin.fill()

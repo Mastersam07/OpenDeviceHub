@@ -7,8 +7,13 @@ final class PresentationLayoutTests: XCTestCase {
     func testTheBarFloatsInsetFromEveryEdgeItTouches() {
         let content = PresentationLayout.contentSize(forDevice: device)
         let layout = PresentationLayout(contentSize: content)
-        XCTAssertEqual(layout.bar.minX, PresentationLayout.sideMargin)
-        XCTAssertEqual(layout.bar.maxX, content.width - PresentationLayout.sideMargin)
+        XCTAssertEqual(layout.bar.minX, PresentationLayout.barInset)
+        XCTAssertEqual(layout.bar.maxX, content.width - PresentationLayout.barInset)
+        XCTAssertLessThan(
+            PresentationLayout.barInset,
+            PresentationLayout.sideMargin,
+            "the bar is a little wider than the device below it"
+        )
         XCTAssertEqual(layout.bar.maxY, content.height - PresentationLayout.sideMargin)
         XCTAssertEqual(layout.bar.height, PresentationLayout.barHeight)
     }

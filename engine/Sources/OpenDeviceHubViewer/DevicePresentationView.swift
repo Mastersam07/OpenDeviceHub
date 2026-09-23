@@ -41,6 +41,7 @@ public final class DevicePresentationView: NSView {
         bar.cornerRadius = layout.cornerRadius
         bar.isCompact = layout.isCompact
         bar.isFullScreen = isFullScreen
+        chrome.fillsMargin = isFullScreen
         chrome.frame = layout.device
     }
 }

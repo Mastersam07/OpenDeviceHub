@@ -12,6 +12,11 @@ public struct PresentationLayout: Equatable {
     /// Two rows, for a window too narrow to put the title beside the actions.
     public static let compactBarHeight: CGFloat = 76
     public static let sideMargin: CGFloat = 12
+    /// The bar is inset less than the device, so it is a little wider than the device below it and
+    /// the window's own buttons sit clear of its rounded end.
+    public static let barInset: CGFloat = 6
+    /// What the actions need between them and the bar's rounded end, on top of the bar's own inset.
+    public static let actionInset: CGFloat = 16
     public static let deviceGap: CGFloat = 10
     /// Below this the title and the actions cannot share a row.
     public static let compactWidth: CGFloat = 340
@@ -28,7 +33,7 @@ public struct PresentationLayout: Equatable {
         let height = max(contentSize.height, 0)
         isCompact = !isFullScreen && width < Self.compactWidth
         let barHeight = isCompact ? Self.compactBarHeight : Self.barHeight
-        let inset = isFullScreen ? 0 : Self.sideMargin
+        let inset = isFullScreen ? 0 : Self.barInset
         let top = isFullScreen ? 0 : Self.sideMargin
 
         bar = CGRect(
@@ -53,9 +58,23 @@ public struct PresentationLayout: Equatable {
         )
     }
 
-    /// The largest device that fits in the space available, keeping its shape. A window taller than
-    /// the display would put the bottom of the device out of reach, and that is where its system
-    /// gestures start.
+    /// How much a device has to be scaled by for the whole window to fit the space available, at
+    /// most 1. A window taller than the display would put the bottom of the device out of reach,
+    /// and that is where its system gestures start.
+    public static func scale(fitting device: CGSize, in available: CGSize) -> CGFloat {
+        guard device.width > 0, device.height > 0, available.width > 0, available.height > 0 else {
+            return 1
+        }
+        // The margins and the bar are fixed, so they come off first and only the device is scaled.
+        let room = CGSize(
+            width: available.width - sideMargin * 2,
+            height: available.height - barHeight - sideMargin - deviceGap
+        )
+        guard room.width > 0, room.height > 0 else { return 1 }
+        return min(1, min(room.width / device.width, room.height / device.height))
+    }
+
+    /// The largest device that fits in the space available, keeping its shape.
     public static func deviceSize(fitting device: CGSize, in available: CGSize) -> CGSize {
         guard device.width > 0, device.height > 0, available.width > 0, available.height > 0 else {
             return device
