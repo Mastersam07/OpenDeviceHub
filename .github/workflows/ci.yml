@@ -14,7 +14,7 @@ jobs:
     # Pinned rather than macos-latest: a runner image that moves under us changes the Swift and
     # Xcode versions without a commit, and the first sign of it is a build that fails for nobody's
     # reason.
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -22,16 +22,9 @@ jobs:
       - name: Select Xcode
         run: |
           set -euo pipefail
-          # The adapter loads simulator frameworks from whichever Xcode is selected, so the version
-          # is part of the build rather than an ambient detail.
-          xcode="/Applications/Xcode_${{ vars.XCODE_VERSION || '16.4' }}.app"
-          if [ ! -d "${xcode}" ]; then
-            echo "::error::${xcode} is not on this runner. Available:"
-            ls -d /Applications/Xcode*.app
-            exit 1
-          fi
-          echo "DEVELOPER_DIR=${xcode}/Contents/Developer" >> "${GITHUB_ENV}"
-          "${xcode}/Contents/Developer/usr/bin/xcodebuild" -version
+          # No SDK floor here: a pull request only has to build and pass its tests. The floor is a
+          # release concern, because that is where the linked SDK reaches a user.
+          scripts/select-xcode.sh "${{ vars.XCODE_VERSION || '27' }}" | tee -a "${GITHUB_ENV}"
 
       - name: Build
         run: scripts/build.sh
