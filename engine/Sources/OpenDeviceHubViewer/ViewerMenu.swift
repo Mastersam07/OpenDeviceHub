@@ -21,6 +21,7 @@ public enum ViewerMenu {
         public var toggleLatencyOverlay: () -> Void
         public var pressButton: (HardwareButton) -> Void
         public var rotate: (Bool) -> Void
+        public var checkForUpdates: (() -> Void)?
 
         public init(
             setScaleMode: @escaping (ScaleMode) -> Void,
@@ -38,7 +39,8 @@ public enum ViewerMenu {
             toggleSlowAnimations: @escaping () -> Void,
             toggleLatencyOverlay: @escaping () -> Void,
             pressButton: @escaping (HardwareButton) -> Void,
-            rotate: @escaping (Bool) -> Void
+            rotate: @escaping (Bool) -> Void,
+            checkForUpdates: (() -> Void)? = nil
         ) {
             self.setScaleMode = setScaleMode
             self.toggleBezel = toggleBezel
@@ -56,6 +58,7 @@ public enum ViewerMenu {
             self.toggleLatencyOverlay = toggleLatencyOverlay
             self.pressButton = pressButton
             self.rotate = rotate
+            self.checkForUpdates = checkForUpdates
         }
     }
 
@@ -69,6 +72,10 @@ public enum ViewerMenu {
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
+        if actions.checkForUpdates != nil {
+            appMenu.addItem(target.item("Check for Updates\u{2026}", #selector(MenuTarget.checkForUpdates), "", []))
+            appMenu.addItem(.separator())
+        }
         appMenu.addItem(withTitle: "Quit \(Brand.productName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         bar.addItem(appItem)
@@ -201,6 +208,7 @@ public final class MenuTarget: NSObject {
     @objc func volumeDown() { actions.pressButton(.volumeDown) }
     @objc func rotateLeft() { actions.rotate(true) }
     @objc func rotateRight() { actions.rotate(false) }
+    @objc func checkForUpdates() { actions.checkForUpdates?() }
 
     @objc func latency(_ sender: NSMenuItem) {
         isLatencyVisible.toggle()

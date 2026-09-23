@@ -48,16 +48,35 @@ binaries="$("${repo_root}/scripts/build.sh" --configuration "${configuration}" \
   "${architectures[@]}" --show-bin-path)"
 
 rm -rf "${app}"
-mkdir -p "${contents}/MacOS" "${contents}/Resources"
+mkdir -p "${contents}/MacOS" "${contents}/Resources" "${contents}/Frameworks"
 
 # The viewer is installed under the app's own name so the process is called OpenDeviceHub
 # everywhere, including Activity Monitor. The CLI keeps its name, because that is what is typed.
 cp "${binaries}/odhub-viewer" "${contents}/MacOS/OpenDeviceHub"
 cp "${binaries}/odhub" "${contents}/MacOS/odhub"
 
+# Sparkle ships nested helpers of its own, an Autoupdate binary, an Updater.app and two XPC
+# services, which is why it is copied with ditto rather than cp: the symlinks in a framework's
+# Versions layout have to survive, and every one of those helpers has to be signed separately
+# before the app is sealed.
+sparkle="${binaries}/Sparkle.framework"
+if [ ! -d "${sparkle}" ]; then
+  sparkle="$(find "${repo_root}/engine/.build/artifacts" -name Sparkle.framework -type d | head -1)"
+fi
+[ -d "${sparkle}" ] || { echo "Sparkle.framework was not found" >&2; exit 1; }
+ditto "${sparkle}" "${contents}/Frameworks/Sparkle.framework"
+
 sed -e "s/__MARKETING_VERSION__/${marketing_version}/" \
     -e "s/__BUILD_NUMBER__/${build_number}/" \
     "${repo_root}/packaging/Info.plist" > "${contents}/Info.plist"
+
+if [ "${configuration}" != "release" ]; then
+  # A build from source has no business on the release channel. Without these two keys the updater
+  # is never created, so a development copy cannot be offered the released version as an "update".
+  /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "${contents}/Info.plist" >/dev/null 2>&1 || true
+  /usr/libexec/PlistBuddy -c "Delete :SUPublicEDKey" "${contents}/Info.plist" >/dev/null 2>&1 || true
+  /usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks false" "${contents}/Info.plist" >/dev/null 2>&1 || true
+fi
 
 iconset="$(mktemp -d)/AppIcon.iconset"
 mkdir -p "${iconset}"
@@ -70,3 +89,7 @@ printf 'APPL????' > "${contents}/PkgInfo"
 echo "Built ${app}"
 lipo -info "${contents}/MacOS/OpenDeviceHub" | sed 's/^/  /'
 lipo -info "${contents}/MacOS/odhub" | sed 's/^/  /'
+echo "  Sparkle: $(ls "${contents}/Frameworks")"
+echo "  nested helpers to sign first:"
+find "${contents}/Frameworks/Sparkle.framework/Versions/B" -maxdepth 2 \
+  \( -name Autoupdate -o -name "Updater.app" -o -name "*.xpc" \) | sed "s|${contents}/Frameworks/|    |"

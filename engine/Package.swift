@@ -12,6 +12,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0"),
     ],
     targets: [
         .target(name: "OpenDeviceHubPrivate"),
@@ -39,6 +40,10 @@ let package = Package(
                 "OpenDeviceHubEngine",
                 "OpenDeviceHubViewer",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
+            linkerSettings: [
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
             ]
         ),
         .testTarget(
