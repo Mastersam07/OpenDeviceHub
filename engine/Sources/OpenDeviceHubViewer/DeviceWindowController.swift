@@ -77,7 +77,16 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         let deviceSize = bezelEnabled && chrome != nil
             ? ChromeGeometry.contentSize(screen: screenSize, chrome: chrome!, orientation: .portrait)
             : screenSize
-        let contentSize = PresentationLayout.contentSize(forDevice: deviceSize)
+        let available = (NSScreen.main?.visibleFrame.size) ?? CGSize(width: 1512, height: 900)
+        // Fit is the mode that lets any size work, so it opens at a size that leaves room for other
+        // windows instead of at whatever the device measures. An explicit scale sizes it below.
+        let contentSize = scaleMode == .fit
+            ? PresentationLayout.defaultContentSize(
+                forDevice: deviceSize,
+                isTablet: deviceName.contains("iPad"),
+                available: available
+            )
+            : PresentationLayout.contentSize(forDevice: deviceSize)
         let window = DeviceWindow(
             contentRect: CGRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -93,7 +102,9 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         window.contentView = presentationView
         // Without this the body's buttons never see the pointer, so they cannot rise under it.
         window.acceptsMouseMovedEvents = true
-        window.contentAspectRatio = contentSize
+        // No locked aspect ratio: the bar stops at its minimum width while the device carries on
+        // shrinking, which it cannot do if the window's shape is pinned to the device's.
+        window.minSize = PresentationLayout.minimumWindowSize
         window.center()
         window.collectionBehavior.insert(.fullScreenPrimary)
         super.init(window: window)
@@ -244,7 +255,6 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             // body came back.
             window.contentResizeIncrements = NSSize(width: 1, height: 1)
             window.setContentSize(content)
-            window.contentAspectRatio = content
             keepOnScreen()
         }
 

@@ -11,17 +11,37 @@ public struct PresentationLayout: Equatable {
     /// The height AppKit gives a unified toolbar, which is the band the native items are laid out
     /// in. The bar has to match it or the items would sit off centre inside it.
     public static let barHeight: CGFloat = 52
-    /// Two rows, for a window too narrow to put the title beside the actions.
-    public static let compactBarHeight: CGFloat = 76
     public static let deviceSideMargin: CGFloat = 12
     public static let deviceTopMargin: CGFloat = 12
     public static let deviceBottomMargin: CGFloat = 24
-    /// Below this the title and the actions cannot share a row.
-    public static let compactWidth: CGFloat = 340
+    /// The narrowest the bar can be and still hold the window's buttons, a readable name and the
+    /// actions. The window stops here; the device carries on shrinking and gains margin around it.
+    public static let minimumBarWidth: CGFloat = 300
+    /// A window opens at a size that leaves room for other windows, the way the simulator it
+    /// replaces does, rather than at whatever the device measures in points.
+    public static let defaultPhoneWidth: CGFloat = 440
+    public static let defaultTabletWidth: CGFloat = 560
+    public static let defaultMaximumHeight: CGFloat = 900
+
+    public static var minimumWindowSize: CGSize {
+        CGSize(width: minimumBarWidth + deviceSideMargin * 2, height: 360)
+    }
+
+    /// The size a window opens at before anything asks for a particular scale.
+    public static func defaultContentSize(
+        forDevice device: CGSize,
+        isTablet: Bool,
+        available: CGSize
+    ) -> CGSize {
+        let box = CGSize(
+            width: isTablet ? defaultTabletWidth : defaultPhoneWidth,
+            height: min(defaultMaximumHeight, available.height)
+        )
+        return contentSize(forDevice: deviceSize(fitting: device, in: box))
+    }
 
     public let bar: CGRect
     public let device: CGRect
-    public let isCompact: Bool
     public let cornerRadius: CGFloat
 
     /// Full screen hands the window to AppKit, which puts its own chrome at the top, so the bar
@@ -29,16 +49,13 @@ public struct PresentationLayout: Equatable {
     public init(contentSize: CGSize, isFullScreen: Bool = false) {
         let width = max(contentSize.width, 0)
         let height = max(contentSize.height, 0)
-        isCompact = !isFullScreen && width < Self.compactWidth
-        let barHeight = isCompact ? Self.compactBarHeight : Self.barHeight
-
         bar = CGRect(
             x: 0,
-            y: max(height - barHeight, 0),
+            y: max(height - Self.barHeight, 0),
             width: width,
-            height: min(barHeight, height)
+            height: min(Self.barHeight, height)
         )
-        cornerRadius = isFullScreen ? 0 : barHeight / 2
+        cornerRadius = isFullScreen ? 0 : Self.barHeight / 2
 
         let side = isFullScreen ? 0 : Self.deviceSideMargin
         let top = isFullScreen ? 0 : Self.deviceTopMargin
@@ -53,9 +70,8 @@ public struct PresentationLayout: Equatable {
 
     /// What a window has to be, in content points, to show a device of this size with the bar above
     /// it and the margins around it.
-    public static func contentSize(forDevice device: CGSize, isCompact: Bool = false) -> CGSize {
-        let barHeight = isCompact ? compactBarHeight : barHeight
-        return CGSize(
+    public static func contentSize(forDevice device: CGSize) -> CGSize {
+        CGSize(
             width: device.width + deviceSideMargin * 2,
             height: device.height + barHeight + deviceTopMargin + deviceBottomMargin
         )

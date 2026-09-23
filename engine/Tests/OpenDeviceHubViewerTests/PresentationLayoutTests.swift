@@ -30,12 +30,25 @@ final class PresentationLayoutTests: XCTestCase {
         XCTAssertEqual(layout.cornerRadius, PresentationLayout.barHeight / 2)
     }
 
-    func testANarrowWindowStacksTheBarIntoTwoRows() {
-        let wide = PresentationLayout(contentSize: CGSize(width: 500, height: 900))
-        let narrow = PresentationLayout(contentSize: CGSize(width: 280, height: 900))
-        XCTAssertFalse(wide.isCompact)
-        XCTAssertTrue(narrow.isCompact)
-        XCTAssertEqual(narrow.bar.height, PresentationLayout.compactBarHeight)
+    /// AppKit lays its toolbar items out in one 52 point band and will not restack them, so the bar
+    /// keeps that height at every width and the device is what gives way.
+    func testTheBarKeepsItsHeightHoweverNarrowTheWindowIs() {
+        for width in [PresentationLayout.minimumWindowSize.width, 500, 1200] {
+            let layout = PresentationLayout(contentSize: CGSize(width: width, height: 900))
+            XCTAssertEqual(layout.bar.height, PresentationLayout.barHeight)
+            XCTAssertEqual(layout.bar.width, width)
+        }
+    }
+
+    /// The window stops at the bar's minimum while the device carries on shrinking, so a short
+    /// window leaves the device smaller with space around it rather than refusing to resize.
+    func testAShortWindowAtTheMinimumWidthStillShrinksTheDevice() {
+        let minimum = PresentationLayout.minimumWindowSize
+        let tall = PresentationLayout(contentSize: CGSize(width: minimum.width, height: 800))
+        let short = PresentationLayout(contentSize: CGSize(width: minimum.width, height: 420))
+        XCTAssertEqual(tall.bar.size, short.bar.size)
+        XCTAssertLessThan(short.device.height, tall.device.height)
+        XCTAssertGreaterThan(short.device.height, 0)
     }
 
     /// Full screen is AppKit's, and it puts its own chrome at the top, so the bar stops floating.
@@ -44,7 +57,6 @@ final class PresentationLayoutTests: XCTestCase {
         XCTAssertEqual(layout.bar.minX, 0)
         XCTAssertEqual(layout.bar.width, 1512)
         XCTAssertEqual(layout.cornerRadius, 0)
-        XCTAssertFalse(layout.isCompact, "a full screen window is never treated as narrow")
         XCTAssertEqual(layout.bar.minY, layout.device.maxY, "no gap to show the desktop through")
         XCTAssertEqual(layout.device.minX, 0)
     }

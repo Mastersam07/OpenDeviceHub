@@ -43,12 +43,6 @@ public final class DeviceControlBar: NSVisualEffectView {
         didSet { layer?.cornerRadius = cornerRadius }
     }
 
-    /// Two rows stack the title above the actions, so the title starts at the window's edge rather
-    /// than beside the buttons.
-    public var isCompact = false {
-        didSet { needsLayout = true }
-    }
-
     /// Full screen takes the window's buttons away, so the title has no reason to stand clear of
     /// them any more.
     public var isFullScreen = false {
@@ -59,9 +53,9 @@ public final class DeviceControlBar: NSVisualEffectView {
 
     public override func layout() {
         super.layout()
-        let leading = isCompact || isFullScreen ? 12 : titleLeading
+        let leading = isFullScreen ? 12 : titleLeading
         let width = max(bounds.width - leading - 12, 0)
-        let top = isCompact ? 8.0 : (bounds.height - 30) / 2
+        let top = (bounds.height - 30) / 2
         name.frame = CGRect(x: leading, y: top, width: width, height: 16)
         runtime.frame = CGRect(x: leading, y: top + 15, width: width, height: 14)
     }
