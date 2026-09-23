@@ -83,7 +83,20 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate, NSToolbarItemValidation 
         window.toolbar = toolbar
         window.toolbarStyle = .unified
         window.titlebarSeparatorStyle = .none
+        window.addTitlebarAccessoryViewController(trailingInset)
     }
+
+    private let trailingInset: NSTitlebarAccessoryViewController = {
+        let controller = NSTitlebarAccessoryViewController()
+        controller.layoutAttribute = .right
+        controller.view = NSView(frame: CGRect(
+            x: 0,
+            y: 0,
+            width: PresentationLayout.sideMargin,
+            height: 1
+        ))
+        return controller
+    }()
 
     /// While a recording runs the camera becomes the way to stop it, so one button covers both
     /// rather than taking a second slot.
