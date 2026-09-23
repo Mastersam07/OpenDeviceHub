@@ -37,6 +37,10 @@ echo "== notarize and staple the disk image =="
 "${repo_root}/scripts/notarize.sh" "${dmg}"
 
 echo
+echo "== checksums, from the stapled artifacts =="
+"${repo_root}/scripts/checksums.sh"
+
+echo
 echo "== what Gatekeeper makes of them =="
 spctl -a -vv "${app}" 2>&1 | sed 's/^/  app: /'
 spctl -a -vv -t open --context context:primary-signature "${dmg}" 2>&1 | sed 's/^/  dmg: /'
