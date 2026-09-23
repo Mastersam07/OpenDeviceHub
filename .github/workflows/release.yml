@@ -12,6 +12,10 @@ on:
         description: "Preferred Xcode major. Falls back to the newest with a macOS 26 SDK or newer."
         type: string
         default: "27"
+      runner:
+        description: "Runner image. xcode-27 is public preview; macos-26 is GA if it breaks."
+        type: string
+        default: "xcode-27"
 
 concurrency:
   group: release
@@ -19,7 +23,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 90
     env:
       ODH_SIGNING_IDENTITY: ${{ secrets.DEVELOPER_ID_IDENTITY }}
