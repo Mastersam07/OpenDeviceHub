@@ -41,6 +41,10 @@ echo "== checksums, from the stapled artifacts =="
 "${repo_root}/scripts/checksums.sh"
 
 echo
+echo "== the update feed, signed over the final bytes =="
+"${repo_root}/scripts/appcast.sh" "${dmg}"
+
+echo
 echo "== what Gatekeeper makes of them =="
 spctl -a -vv "${app}" 2>&1 | sed 's/^/  app: /'
 spctl -a -vv -t open --context context:primary-signature "${dmg}" 2>&1 | sed 's/^/  dmg: /'
