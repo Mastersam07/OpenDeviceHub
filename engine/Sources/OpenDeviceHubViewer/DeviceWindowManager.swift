@@ -10,6 +10,7 @@ public final class DeviceWindowManager {
     // Held because a notifier closes itself when it goes, which would end the stream silently.
     private var notifier: (any DeviceNotifier)?
     private var boot: ((String) throws -> Void)?
+    private var mirror: ((String) throws -> Void)?
     private var report: (String) -> Void = { _ in }
     private let frameStore: WindowFrameStore
     private let placementGap: CGFloat = 12
@@ -22,6 +23,10 @@ public final class DeviceWindowManager {
 
     public func isOpen(_ udid: String) -> Bool {
         controllers[udid] != nil
+    }
+
+    public func bringToFront(_ udid: String) {
+        controllers[udid]?.window?.makeKeyAndOrderFront(nil)
     }
 
     @discardableResult
@@ -90,10 +95,12 @@ public final class DeviceWindowManager {
         _ notifier: any DeviceNotifier,
         attach: @escaping (String) throws -> DeviceAttachment,
         boot: @escaping (String) throws -> Void,
+        mirror: ((String) throws -> Void)? = nil,
         report: @escaping (String) -> Void = { _ in }
     ) {
         self.report = report
         self.boot = boot
+        self.mirror = mirror
         self.notifier = notifier
         followTask?.cancel()
         followTask = Task { [weak self] in
@@ -105,7 +112,17 @@ public final class DeviceWindowManager {
     }
 
     private func apply(_ change: DeviceStateChange, attach: (String) throws -> DeviceAttachment) {
-        guard let controller = controller(for: change.udid) else { return }
+        guard let controller = controller(for: change.udid) else {
+            // A device that boots with no window of its own gets one, so booting from the chooser,
+            // from simctl or from Xcode all end the same way: a window appears.
+            guard change.state == .booted, let mirror else { return }
+            do {
+                try mirror(change.udid)
+            } catch {
+                report("\(change.udid) booted but could not be shown: \(error.localizedDescription)")
+            }
+            return
+        }
         switch DeviceWindowTransition.forState(change.state, isDetached: controller.isDetached) {
         case .ignore:
             return

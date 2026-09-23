@@ -65,7 +65,8 @@ public enum ViewerMenu {
     public static func install(
         into application: NSApplication,
         actions: Actions,
-        capabilities: Capabilities
+        capabilities: Capabilities,
+        openSimulatorMenu: NSMenu? = nil
     ) -> MenuTarget {
         let target = MenuTarget(actions: actions)
         let bar = NSMenu()
@@ -79,6 +80,18 @@ public enum ViewerMenu {
         appMenu.addItem(withTitle: "Quit \(Brand.productName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         bar.addItem(appItem)
+
+        if let openSimulatorMenu {
+            let fileItem = NSMenuItem()
+            let fileMenu = NSMenu(title: "File")
+            let open = NSMenuItem(title: "Open Simulator", action: nil, keyEquivalent: "")
+            open.submenu = openSimulatorMenu
+            fileMenu.addItem(open)
+            fileMenu.addItem(.separator())
+            fileMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+            fileItem.submenu = fileMenu
+            bar.addItem(fileItem)
+        }
 
         let editItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
