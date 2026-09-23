@@ -71,7 +71,9 @@ for component in \
   "${app}"; do
   printf '  %-56s ' "${component#"${app}/Contents/"}"
   if codesign --verify --strict "${component}" 2>/dev/null; then
-    authority="$(codesign -dvv "${component}" 2>&1 | awk -F= '/^Authority=/ { print $2; exit }')"
+    # No early exit in awk: it would close the pipe while codesign is still writing, and the
+    # SIGPIPE that follows takes the whole script down with it.
+    authority="$(codesign -dvv "${component}" 2>&1 | awk -F= '/^Authority=/ && !seen { print $2; seen = 1 }')"
     runtime="$(codesign -dv "${component}" 2>&1 | grep -c "runtime" || true)"
     printf 'ok   %s   hardened:%s\n' "${authority}" "$([ "${runtime}" != "0" ] && echo yes || echo no)"
   else
