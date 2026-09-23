@@ -3,21 +3,19 @@ import CoreGraphics
 /// Where the control bar and the device sit inside a window. Pure geometry, so the arrangement is
 /// settled without a window, a screen or a device.
 ///
-/// The bar floats: it is inset from the window's sides rather than spanning them, and the device
-/// hangs below it with a gap, so the window's own background shows between and around the two.
+/// The bar spans the window and sits exactly where AppKit puts the title bar, so the window's own
+/// buttons and the toolbar items land on it without being moved. The float comes from the device,
+/// which is inset inside the window: the background is clear, so the desktop shows around the
+/// device and along the bar's rounded ends.
 public struct PresentationLayout: Equatable {
     /// The height AppKit gives a unified toolbar, which is the band the native items are laid out
     /// in. The bar has to match it or the items would sit off centre inside it.
     public static let barHeight: CGFloat = 52
     /// Two rows, for a window too narrow to put the title beside the actions.
     public static let compactBarHeight: CGFloat = 76
-    public static let sideMargin: CGFloat = 12
-    /// The bar is inset less than the device, so it is a little wider than the device below it and
-    /// the window's own buttons sit clear of its rounded end.
-    public static let barInset: CGFloat = 6
-    /// What the actions need between them and the bar's rounded end, on top of the bar's own inset.
-    public static let actionInset: CGFloat = 16
-    public static let deviceGap: CGFloat = 10
+    public static let deviceSideMargin: CGFloat = 12
+    public static let deviceTopMargin: CGFloat = 12
+    public static let deviceBottomMargin: CGFloat = 24
     /// Below this the title and the actions cannot share a row.
     public static let compactWidth: CGFloat = 340
 
@@ -27,25 +25,30 @@ public struct PresentationLayout: Equatable {
     public let cornerRadius: CGFloat
 
     /// Full screen hands the window to AppKit, which puts its own chrome at the top, so the bar
-    /// squares off and stops floating.
+    /// squares off and the device takes the rest.
     public init(contentSize: CGSize, isFullScreen: Bool = false) {
         let width = max(contentSize.width, 0)
         let height = max(contentSize.height, 0)
         isCompact = !isFullScreen && width < Self.compactWidth
         let barHeight = isCompact ? Self.compactBarHeight : Self.barHeight
-        let inset = isFullScreen ? 0 : Self.barInset
-        let top = isFullScreen ? 0 : Self.sideMargin
 
         bar = CGRect(
-            x: inset,
-            y: max(height - barHeight - top, 0),
-            width: max(width - inset * 2, 0),
+            x: 0,
+            y: max(height - barHeight, 0),
+            width: width,
             height: min(barHeight, height)
         )
         cornerRadius = isFullScreen ? 0 : barHeight / 2
 
-        let deviceTop = bar.minY - (isFullScreen ? 0 : Self.deviceGap)
-        device = CGRect(x: 0, y: 0, width: width, height: max(deviceTop, 0))
+        let side = isFullScreen ? 0 : Self.deviceSideMargin
+        let top = isFullScreen ? 0 : Self.deviceTopMargin
+        let bottom = isFullScreen ? 0 : Self.deviceBottomMargin
+        device = CGRect(
+            x: side,
+            y: bottom,
+            width: max(width - side * 2, 0),
+            height: max(bar.minY - top - bottom, 0)
+        )
     }
 
     /// What a window has to be, in content points, to show a device of this size with the bar above
@@ -53,8 +56,8 @@ public struct PresentationLayout: Equatable {
     public static func contentSize(forDevice device: CGSize, isCompact: Bool = false) -> CGSize {
         let barHeight = isCompact ? compactBarHeight : barHeight
         return CGSize(
-            width: device.width + sideMargin * 2,
-            height: device.height + barHeight + sideMargin + deviceGap
+            width: device.width + deviceSideMargin * 2,
+            height: device.height + barHeight + deviceTopMargin + deviceBottomMargin
         )
     }
 
@@ -67,8 +70,8 @@ public struct PresentationLayout: Equatable {
         }
         // The margins and the bar are fixed, so they come off first and only the device is scaled.
         let room = CGSize(
-            width: available.width - sideMargin * 2,
-            height: available.height - barHeight - sideMargin - deviceGap
+            width: available.width - deviceSideMargin * 2,
+            height: available.height - barHeight - deviceTopMargin - deviceBottomMargin
         )
         guard room.width > 0, room.height > 0 else { return 1 }
         return min(1, min(room.width / device.width, room.height / device.height))
@@ -76,22 +79,11 @@ public struct PresentationLayout: Equatable {
 
     /// The largest device that fits in the space available, keeping its shape.
     public static func deviceSize(fitting device: CGSize, in available: CGSize) -> CGSize {
-        guard device.width > 0, device.height > 0, available.width > 0, available.height > 0 else {
-            return device
-        }
-        // The margins and the bar are fixed, so they come off first and only the device is scaled.
-        // Scaling the whole content instead leaves it a point or two too big once the margins are
-        // added back to a rounded device.
-        let room = CGSize(
-            width: available.width - sideMargin * 2,
-            height: available.height - barHeight - sideMargin - deviceGap
-        )
-        guard room.width > 0, room.height > 0 else { return device }
-        let scale = min(room.width / device.width, room.height / device.height)
-        guard scale < 1 else { return device }
+        let factor = scale(fitting: device, in: available)
+        guard factor < 1 else { return device }
         return CGSize(
-            width: (device.width * scale).rounded(.down),
-            height: (device.height * scale).rounded(.down)
+            width: (device.width * factor).rounded(.down),
+            height: (device.height * factor).rounded(.down)
         )
     }
 }

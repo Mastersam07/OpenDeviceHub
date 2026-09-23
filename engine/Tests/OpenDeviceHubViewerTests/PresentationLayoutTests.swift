@@ -7,22 +7,22 @@ final class PresentationLayoutTests: XCTestCase {
     func testTheBarFloatsInsetFromEveryEdgeItTouches() {
         let content = PresentationLayout.contentSize(forDevice: device)
         let layout = PresentationLayout(contentSize: content)
-        XCTAssertEqual(layout.bar.minX, PresentationLayout.barInset)
-        XCTAssertEqual(layout.bar.maxX, content.width - PresentationLayout.barInset)
-        XCTAssertLessThan(
-            PresentationLayout.barInset,
-            PresentationLayout.sideMargin,
-            "the bar is a little wider than the device below it"
-        )
-        XCTAssertEqual(layout.bar.maxY, content.height - PresentationLayout.sideMargin)
+        // The bar sits exactly where AppKit puts the title bar, so the window's own buttons and the
+        // toolbar items land on it without being moved.
+        XCTAssertEqual(layout.bar.minX, 0)
+        XCTAssertEqual(layout.bar.width, content.width)
+        XCTAssertEqual(layout.bar.maxY, content.height)
         XCTAssertEqual(layout.bar.height, PresentationLayout.barHeight)
     }
 
-    func testTheDeviceHangsBelowTheBarWithAGap() {
+    /// The device is what is inset, not the bar, so the window's clear background shows around it.
+    func testTheDeviceIsInsetInsideTheWindow() {
         let content = PresentationLayout.contentSize(forDevice: device)
         let layout = PresentationLayout(contentSize: content)
-        XCTAssertEqual(layout.bar.minY - layout.device.maxY, PresentationLayout.deviceGap)
-        XCTAssertEqual(layout.device.height, device.height)
+        XCTAssertEqual(layout.bar.minY - layout.device.maxY, PresentationLayout.deviceTopMargin)
+        XCTAssertEqual(layout.device.minY, PresentationLayout.deviceBottomMargin)
+        XCTAssertEqual(layout.device.minX, PresentationLayout.deviceSideMargin)
+        XCTAssertEqual(layout.device.size, device)
     }
 
     func testTheBarIsAPill() {
@@ -46,6 +46,7 @@ final class PresentationLayoutTests: XCTestCase {
         XCTAssertEqual(layout.cornerRadius, 0)
         XCTAssertFalse(layout.isCompact, "a full screen window is never treated as narrow")
         XCTAssertEqual(layout.bar.minY, layout.device.maxY, "no gap to show the desktop through")
+        XCTAssertEqual(layout.device.minX, 0)
     }
 
     func testAWindowThatFitsLeavesTheDeviceAlone() {
@@ -71,11 +72,11 @@ final class PresentationLayoutTests: XCTestCase {
     }
 
     func testADeviceThatJustFitsIsNotScaled() {
-        // 949 less the bar, the top margin and the gap leaves exactly 875 points for the device.
+        // 949 less the bar and the margins above and below leaves exactly 861 points for the device.
         let available = CGSize(width: 1512, height: 949)
         XCTAssertEqual(
-            PresentationLayout.deviceSize(fitting: CGSize(width: 402, height: 875), in: available),
-            CGSize(width: 402, height: 875)
+            PresentationLayout.deviceSize(fitting: CGSize(width: 402, height: 861), in: available),
+            CGSize(width: 402, height: 861)
         )
     }
 

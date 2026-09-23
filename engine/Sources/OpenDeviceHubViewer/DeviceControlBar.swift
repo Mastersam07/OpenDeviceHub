@@ -10,8 +10,8 @@ import AppKit
 public final class DeviceControlBar: NSVisualEffectView {
     private let name = NSTextField(labelWithString: "")
     private let runtime = NSTextField(labelWithString: "")
-    /// Clear of the window's close, minimise and zoom buttons.
-    private let titleLeading: CGFloat = 76
+    /// Clear of the window's close, minimise and zoom buttons, the last of which ends at 80.
+    private let titleLeading: CGFloat = 96
 
     public init(deviceName: String, runtimeName: String) {
         super.init(frame: .zero)
