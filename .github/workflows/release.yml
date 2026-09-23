@@ -9,9 +9,9 @@ on:
         type: boolean
         default: false
       xcode:
-        description: "Xcode version on the runner."
+        description: "Xcode version on the runner. Needs the macOS 26 SDK or newer."
         type: string
-        default: "16.4"
+        default: "26.0"
 
 concurrency:
   group: release
@@ -63,6 +63,18 @@ jobs:
             exit 1
           fi
           echo "DEVELOPER_DIR=${xcode}/Contents/Developer" >> "${GITHUB_ENV}"
+
+          # The linked SDK version decides whether AppKit gives the app its current appearance or
+          # its pre macOS 26 one, and scripts/build.sh stamps whatever this Xcode provides. An older
+          # SDK builds and signs perfectly well and ships a window that looks years out of date, so
+          # the floor is checked here rather than discovered by someone looking at a screenshot.
+          sdk="$(DEVELOPER_DIR="${xcode}/Contents/Developer" xcrun --sdk macosx --show-sdk-version)"
+          echo "macOS SDK: ${sdk}"
+          if [ "$(printf '%s\n26.0\n' "${sdk}" | sort -V | head -1)" != "26.0" ]; then
+            echo "::error::macOS SDK ${sdk} is older than 26.0, which would ship the pre macOS 26 toolbar. Available Xcodes:"
+            ls -d /Applications/Xcode*.app
+            exit 1
+          fi
 
       - name: Work out the version
         id: version
