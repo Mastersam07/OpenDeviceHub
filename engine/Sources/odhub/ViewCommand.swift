@@ -42,9 +42,14 @@ struct View: AsyncParsableCommand {
         guard let running = ExecutableLocator.runningExecutableURL() else {
             throw ViewLaunchError.couldNotLocateSelf
         }
-        let viewer = ExecutableLocator.siblingURL(of: running, named: Brand.viewerExecutableName)
-        guard FileManager.default.isExecutableFile(atPath: viewer.path(percentEncoded: false)) else {
-            throw ViewLaunchError.viewerMissing(path: viewer.path(percentEncoded: false))
+        let candidates = [Brand.bundledViewerExecutableName, Brand.viewerExecutableName]
+            .map { ExecutableLocator.siblingURL(of: running, named: $0) }
+        guard let viewer = candidates.first(where: {
+            FileManager.default.isExecutableFile(atPath: $0.path(percentEncoded: false))
+        }) else {
+            throw ViewLaunchError.viewerMissing(
+                path: candidates[0].deletingLastPathComponent().path(percentEncoded: false)
+            )
         }
 
         var arguments = udids
@@ -84,7 +89,7 @@ enum ViewLaunchError: Error, LocalizedError {
         case .couldNotLocateSelf:
             "Could not work out where this executable lives, so the viewer could not be found."
         case .viewerMissing(let path):
-            "\(Brand.viewerExecutableName) was not found at \(path)."
+            "The viewer was not found in \(path)."
         }
     }
 }

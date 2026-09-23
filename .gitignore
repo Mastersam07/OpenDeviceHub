@@ -6,8 +6,15 @@ DerivedData/
 *.xcuserdatad
 *.xcworkspace/xcuserdata/
 
-# Private header dumps from the local Xcode.
+# Private header dumps from the local Xcode, and the built app bundle.
 build/
+
+# Apple credentials and signing keys. Never commit these.
+key/
+*.p8
+*.p12
+*.cer
+*.certSigningRequest
 
 # Flutter
 app/.dart_tool/
