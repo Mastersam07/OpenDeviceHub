@@ -14,8 +14,10 @@ struct ODHubViewer: ParsableCommand {
         version: Brand.version
     )
 
-    @Argument(help: "The UDIDs of the simulators to show.")
-    var udids: [String]
+    /// Optional because the app is opened from the Dock and the Finder as often as from a terminal,
+    /// and a click passes no arguments at all.
+    @Argument(help: "The UDIDs of the simulators to show. Defaults to whatever is running.")
+    var udids: [String] = []
 
     @Flag(help: "Boot a simulator first if it is not already booted.")
     var boot = false
@@ -36,9 +38,6 @@ struct ODHubViewer: ParsableCommand {
     var resetWindowPosition = false
 
     func validate() throws {
-        guard !udids.isEmpty else {
-            throw ValidationError("Pass at least one simulator UDID.")
-        }
         guard Set(udids.map { $0.lowercased() }).count == udids.count else {
             throw ValidationError("The same UDID was passed more than once.")
         }
@@ -49,6 +48,11 @@ struct ODHubViewer: ParsableCommand {
 
         let adapter = try AdapterFactory.make(for: XcodeLocator.locate())
         let devices = try adapter.devices()
+        let recent = RecentDeviceStore()
+        let launchedFromAnIcon = udids.isEmpty
+        let plan = launchedFromAnIcon
+            ? StartupDevices.plan(devices: devices, remembered: recent.udid)
+            : StartupDevices.Plan(udids: udids, boot: boot)
 
         // Valid because a synchronous `run()` executes on the process's main thread.
         try MainActor.assumeIsolated {
@@ -58,25 +62,70 @@ struct ODHubViewer: ParsableCommand {
             var slowAnimations = false
             let store = WindowFrameStore()
             if resetWindowPosition {
-                udids.forEach(store.forget)
+                plan.udids.forEach(store.forget)
             }
             let manager = DeviceWindowManager(frameStore: store)
             var failures: [String] = []
 
-            for udid in udids {
+            let show: @MainActor (String, Bool) throws -> Void = { udid, allowBoot in
+                let current = try adapter.devices()
+                try self.open(
+                    udid: udid,
+                    from: current,
+                    adapter: adapter,
+                    manager: manager,
+                    allowBoot: allowBoot
+                )
+                recent.remember(udid)
+            }
+
+            for udid in plan.udids {
                 do {
-                    try open(udid: udid, from: devices, adapter: adapter, manager: manager)
+                    try show(udid, plan.boot)
                 } catch {
                     failures.append("\(udid): \(error.localizedDescription)")
                 }
             }
 
-            guard manager.openCount > 0 else {
+            guard manager.openCount > 0 || launchedFromAnIcon else {
                 throw ViewerStartupError.nothingOpened(reasons: failures)
             }
             for failure in failures {
                 print("Skipped \(failure)")
             }
+
+            // Booting blocks for several seconds, so it runs off the main thread and the window
+            // follows once the device is up.
+            let bootThenShow: @MainActor (String) -> Void = { udid in
+                Task {
+                    let simctl = SimctlService()
+                    do {
+                        try await Task.detached {
+                            try simctl.boot(udid: udid)
+                            try simctl.waitForBoot(udid: udid)
+                        }.value
+                    } catch {
+                        print("\(udid) could not be started: \(error.localizedDescription)")
+                        return
+                    }
+                    guard !manager.isOpen(udid) else { return }
+                    do { try show(udid, false) } catch {
+                        print("\(udid) started but could not be shown: \(error.localizedDescription)")
+                    }
+                }
+            }
+
+            let chooser = DeviceChooser(
+                devices: { (try? adapter.devices()) ?? [] },
+                open: { udid in
+                    if manager.isOpen(udid) {
+                        manager.bringToFront(udid)
+                        NSApp.activate(ignoringOtherApps: true)
+                        return
+                    }
+                    bootThenShow(udid)
+                }
+            )
 
             let updates = UpdateController()
             let menuTarget = ViewerMenu.install(into: application, actions: ViewerMenu.Actions(
@@ -186,14 +235,12 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 checkForUpdates: updates.map { updater in { updater.checkForUpdates() } }
-            ), capabilities: adapter.capabilities)
+            ), capabilities: adapter.capabilities, openSimulatorMenu: chooser.menu)
             if let updates {
                 print("updates: \(updates.feedURL ?? "configured, feed unreadable")")
             } else {
                 print("updates: off, this build carries no update channel")
             }
-
-            installToolbars(manager: manager, adapter: adapter)
 
             do {
                 let notifier = try adapter.watchDeviceStates()
@@ -208,19 +255,35 @@ struct ODHubViewer: ParsableCommand {
                         )
                     },
                     boot: { udid in try SimctlService().boot(udid: udid) },
+                    // Only when no simulator was named. `odhub view <udid>` asked for one window and
+                    // should not sprout others because something else booted.
+                    mirror: launchedFromAnIcon ? { try show($0, false) } : nil,
                     report: { print($0) }
                 )
             } catch {
                 print("device state changes will not be followed: \(error.localizedDescription)")
             }
 
+            if manager.openCount == 0 {
+                NothingToShow.present(reasons: failures, deviceCount: devices.count)
+            }
+
             application.activate(ignoringOtherApps: true)
-            let delegate = ViewerAppDelegate { manager.closeAll() }
+            let delegate = ViewerAppDelegate(
+                quitsWithLastWindow: !launchedFromAnIcon,
+                dockMenu: { chooser.dockMenu() },
+                reopen: { bootThenShow($0) },
+                deviceToReopen: { recent.udid ?? StartupDevices.plan(
+                    devices: (try? adapter.devices()) ?? [],
+                    remembered: nil
+                ).udids.first },
+                onTerminate: { manager.closeAll() }
+            )
             // NSApplication holds its delegate weakly, and nothing else refers to these objects
             // once the run loop starts, so without this ARC releases them and the display sessions
             // die with them: the windows stay up and never draw again.
             application.delegate = delegate
-            withExtendedLifetime((manager, delegate, menuTarget, updates)) {
+            withExtendedLifetime((manager, delegate, menuTarget, chooser, updates)) {
                 application.run()
             }
         }
@@ -231,7 +294,8 @@ struct ODHubViewer: ParsableCommand {
         udid: String,
         from devices: [DeviceInfo],
         adapter: any SimulatorAdapter,
-        manager: DeviceWindowManager
+        manager: DeviceWindowManager,
+        allowBoot: Bool
     ) throws {
         guard var device = devices.first(where: {
             $0.udid.caseInsensitiveCompare(udid) == .orderedSame
@@ -240,7 +304,7 @@ struct ODHubViewer: ParsableCommand {
         }
 
         if device.state != .booted {
-            guard boot else { throw EngineError.deviceNotBooted(udid: device.udid) }
+            guard allowBoot else { throw EngineError.deviceNotBooted(udid: device.udid) }
             let simctl = SimctlService()
             print("Booting \(device.name)...")
             try simctl.boot(udid: device.udid)
@@ -267,6 +331,7 @@ struct ODHubViewer: ParsableCommand {
             keepOnTop: keepOnTop,
             showFPS: fps
         )
+        installToolbar(udid: device.udid, manager: manager, adapter: adapter)
         if case .largerThanScreen(let size) = controller.applyScaleMode(scale) {
             print("\(device.name): \(scale.displayName) needs \(Int(size.width))x\(Int(size.height)) points, which is larger than this display.")
         }
@@ -287,15 +352,42 @@ enum ViewerStartupError: Error, LocalizedError {
     }
 }
 
+@MainActor
 private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
+    private let quitsWithLastWindow: Bool
+    private let dockMenu: () -> NSMenu
+    private let reopen: (String) -> Void
+    private let deviceToReopen: () -> String?
     private let onTerminate: () -> Void
 
-    init(onTerminate: @escaping () -> Void) {
+    init(
+        quitsWithLastWindow: Bool,
+        dockMenu: @escaping () -> NSMenu,
+        reopen: @escaping (String) -> Void,
+        deviceToReopen: @escaping () -> String?,
+        onTerminate: @escaping () -> Void
+    ) {
+        self.quitsWithLastWindow = quitsWithLastWindow
+        self.dockMenu = dockMenu
+        self.reopen = reopen
+        self.deviceToReopen = deviceToReopen
         self.onTerminate = onTerminate
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        quitsWithLastWindow
+    }
+
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        dockMenu()
+    }
+
+    /// A click on the icon of an app that is already running but showing nothing. Without this the
+    /// click looks like it did nothing at all.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !flag, let udid = deviceToReopen() else { return true }
+        reopen(udid)
+        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -306,54 +398,56 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
 /// The buttons above each device. Unlike the menu bar these act on one device, the one whose
 /// window they sit on.
 @MainActor
-private func installToolbars(manager: DeviceWindowManager, adapter: any SimulatorAdapter) {
-    for udid in manager.openUDIDs {
-        guard let controller = manager.controller(for: udid) else { continue }
-        controller.setToolbarActions(DeviceToolbarActions(
-            goHome: { [weak controller] in
-                guard let controller else { return }
-                Task {
-                    do {
-                        let session = try adapter.openInput(udid)
-                        defer { session.close() }
-                        if controller.hasHomeButton {
-                            try await session.button(.home, phase: .down)
-                            try await Task.sleep(for: .milliseconds(15))
-                            try await session.button(.home, phase: .up)
-                        } else {
-                            // A Face ID device has no Home button, so it goes home the way a hand
-                            // would, by swiping up from the bottom edge.
-                            try await swipeHome(session)
-                        }
-                    } catch {
-                        print("home failed: \(error.localizedDescription)")
-                    }
-                }
-            },
-            saveScreenshot: {
-                for url in manager.saveScreenshots(into: recordingDirectory(), only: udid) {
-                    print("saved \(url.path(percentEncoded: false))")
-                }
-            },
-            stopRecording: {
-                for url in manager.toggleRecording(into: recordingDirectory()) {
-                    print("recorded \(url.path(percentEncoded: false))")
-                }
-            },
-            rotate: { [weak controller] toLeft in
-                guard let controller else { return }
-                let next = toLeft
-                    ? controller.currentOrientation.rotatedLeft
-                    : controller.currentOrientation.rotatedRight
+private func installToolbar(
+    udid: String,
+    manager: DeviceWindowManager,
+    adapter: any SimulatorAdapter
+) {
+    guard let controller = manager.controller(for: udid) else { return }
+    controller.setToolbarActions(DeviceToolbarActions(
+        goHome: { [weak controller] in
+            guard let controller else { return }
+            Task {
                 do {
-                    try adapter.setOrientation(next, udid: udid)
-                    controller.setOrientation(next)
+                    let session = try adapter.openInput(udid)
+                    defer { session.close() }
+                    if controller.hasHomeButton {
+                        try await session.button(.home, phase: .down)
+                        try await Task.sleep(for: .milliseconds(15))
+                        try await session.button(.home, phase: .up)
+                    } else {
+                        // A Face ID device has no Home button, so it goes home the way a hand
+                        // would, by swiping up from the bottom edge.
+                        try await swipeHome(session)
+                    }
                 } catch {
-                    print("rotate failed: \(error.localizedDescription)")
+                    print("home failed: \(error.localizedDescription)")
                 }
             }
-        ))
-    }
+        },
+        saveScreenshot: {
+            for url in manager.saveScreenshots(into: recordingDirectory(), only: udid) {
+                print("saved \(url.path(percentEncoded: false))")
+            }
+        },
+        stopRecording: {
+            for url in manager.toggleRecording(into: recordingDirectory()) {
+                print("recorded \(url.path(percentEncoded: false))")
+            }
+        },
+        rotate: { [weak controller] toLeft in
+            guard let controller else { return }
+            let next = toLeft
+                ? controller.currentOrientation.rotatedLeft
+                : controller.currentOrientation.rotatedRight
+            do {
+                try adapter.setOrientation(next, udid: udid)
+                controller.setOrientation(next)
+            } catch {
+                print("rotate failed: \(error.localizedDescription)")
+            }
+        }
+    ))
 }
 
 private func swipeHome(_ session: any InputSession) async throws {
