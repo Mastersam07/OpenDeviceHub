@@ -56,6 +56,12 @@ public final class DeviceWindowManager {
         controller.onClose = { [weak self] udid in
             self?.controllers.removeValue(forKey: udid)
         }
+        // A window that has lost its sessions offers the same way back as one whose device shut
+        // down, since a wedged device usually needs the same thing.
+        controller.onReboot = { [weak self] in self?.reboot(device.udid) }
+        controller.onSessionLost = { [weak self] in
+            self?.report("\(device.name) stopped taking input")
+        }
         controllers[device.udid] = controller
 
         // Only place the window when nothing was remembered for this device, so a window the user

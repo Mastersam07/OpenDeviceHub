@@ -86,7 +86,7 @@ final class InputSessionTests: XCTestCase {
         do {
             try await session.touch(TouchEvent(phase: .began, points: [CGPoint(x: 0.5, y: 0.5)]))
             XCTFail("a closed session should not send")
-        } catch EngineError.capabilityUnavailable {
+        } catch EngineError.inputSessionClosed {
         }
     }
 }

@@ -210,7 +210,7 @@ final class LegacyHIDInputSession: InputSession, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard !isClosed else {
-            throw EngineError.capabilityUnavailable(name: "closed input session")
+            throw EngineError.inputSessionClosed
         }
     }
 
