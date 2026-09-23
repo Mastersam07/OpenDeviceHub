@@ -27,10 +27,21 @@ meets_floor() {
   [ "$(printf '%s\n%s\n' "${sdk}" "${minimum}" | sort -V | head -1)" = "${minimum}" ]
 }
 
-candidates=()
+is_beta() {
+  case "$(basename "$1")" in
+    *beta*|*Beta*|*BETA*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+released=()
+betas=()
 while IFS= read -r app; do
-  candidates+=("${app}")
+  if is_beta "${app}"; then betas+=("${app}"); else released+=("${app}"); fi
 done < <(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V -r)
+# Both arrays can be empty, and bash 3.2, which is what macOS ships, treats an empty array under
+# set -u as unbound rather than as nothing.
+candidates=(${released[@]+"${released[@]}"} ${betas[@]+"${betas[@]}"})
 
 [ "${#candidates[@]}" -gt 0 ] || { echo "No Xcode in /Applications." >&2; exit 1; }
 
@@ -62,5 +73,10 @@ if [ -z "${chosen}" ]; then
   exit 1
 fi
 
+if is_beta "${chosen}"; then
+  echo "Chose $(basename "${chosen}"), a beta, because no released Xcode met the floor." >&2
+fi
+
 echo "DEVELOPER_DIR=${chosen}/Contents/Developer"
 echo "MACOS_SDK=$(sdk_of "${chosen}")"
+echo "XCODE_APP=$(basename "${chosen}")"

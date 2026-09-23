@@ -67,6 +67,7 @@ jobs:
           # Prefers the major built with locally, and refuses anything below the macOS 26 SDK
           # whatever is installed, because an older one ships the pre macOS 26 toolbar.
           scripts/select-xcode.sh "${{ inputs.xcode }}" 26.0 | tee -a "${GITHUB_ENV}"
+          echo "Building with ${XCODE_APP:-the selection above}"
 
       - name: Work out the version
         id: version
