@@ -33,7 +33,13 @@ fi
 sign_update="$(find "${repo_root}/engine/.build/artifacts" -path "*/bin/sign_update" -not -path "*old_dsa*" | head -1)"
 [ -x "${sign_update}" ] || { echo "sign_update was not found. Run swift package resolve." >&2; exit 1; }
 
-signed="$("${sign_update}" "${artifact}")"
+# The key lives in the login keychain on a developer's machine and arrives as a file in CI, where
+# there is no keychain to hold it.
+if [ -n "${ODH_SPARKLE_KEY_PATH:-}" ]; then
+  signed="$("${sign_update}" -f "${ODH_SPARKLE_KEY_PATH}" "${artifact}")"
+else
+  signed="$("${sign_update}" "${artifact}")"
+fi
 signature="$(printf '%s' "${signed}" | sed -n 's/.*edSignature="\([^"]*\)".*/\1/p')"
 length="$(printf '%s' "${signed}" | sed -n 's/.*length="\([^"]*\)".*/\1/p')"
 [ -n "${signature}" ] && [ -n "${length}" ] || { echo "sign_update gave: ${signed}" >&2; exit 1; }
