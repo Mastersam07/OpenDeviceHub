@@ -16,16 +16,16 @@ enum WindowFrameCodec {
     }
 }
 
-/// Where remembered window frames are kept. The seam exists so tests never touch the user's
+/// Where the viewer's remembered settings are kept. The seam exists so tests never touch the user's
 /// preferences, which otherwise leave a plist behind for every run.
-public protocol WindowFrameStorage: Sendable {
+public protocol PreferenceStorage: Sendable {
     func text(forKey key: String) -> String?
     func setText(_ text: String, forKey key: String)
     func removeText(forKey key: String)
 }
 
 /// `UserDefaults` is thread safe but not marked `Sendable`, hence the unchecked conformance.
-public struct UserDefaultsFrameStorage: WindowFrameStorage, @unchecked Sendable {
+public struct UserDefaultsPreferenceStorage: PreferenceStorage, @unchecked Sendable {
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -47,11 +47,11 @@ public struct UserDefaultsFrameStorage: WindowFrameStorage, @unchecked Sendable 
 
 /// Remembers where each device's window was, keyed by UDID, so reopening a device puts it back.
 public struct WindowFrameStore: Sendable {
-    private let storage: any WindowFrameStorage
+    private let storage: any PreferenceStorage
     private let prefix: String
 
     public init(
-        storage: any WindowFrameStorage = UserDefaultsFrameStorage(),
+        storage: any PreferenceStorage = UserDefaultsPreferenceStorage(),
         prefix: String = "\(Brand.identifierPrefix).window."
     ) {
         self.storage = storage
