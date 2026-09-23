@@ -24,7 +24,7 @@ struct ODHubViewer: ParsableCommand {
     var fps = false
 
     @Option(help: "Window sizing: fit, point-accurate, pixel-accurate or physical-size.")
-    var scale: ScaleMode = .pointAccurate
+    var scale: ScaleMode = .fit
 
     @Flag(name: .long, inversion: .prefixedNo, help: "Draw the device bezel, its rounded corners and any cutout.")
     var bezel = true
