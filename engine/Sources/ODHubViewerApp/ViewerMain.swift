@@ -46,7 +46,21 @@ struct ODHubViewer: ParsableCommand {
     func run() throws {
         setvbuf(stdout, nil, _IONBF, 0)
 
-        let adapter = try AdapterFactory.make(for: XcodeLocator.locate())
+        // Anything that stops the app before its first window is the one failure a person cannot
+        // see, because a click in the Dock has no terminal behind it. It gets a dialog instead.
+        do {
+            try start()
+        } catch {
+            guard MainActor.assumeIsolated({ StartupFailure.hasNoTerminal }) else { throw error }
+            MainActor.assumeIsolated { StartupFailure.present(error) }
+            throw ExitCode(1)
+        }
+    }
+
+    private func start() throws {
+        let install = try XcodeLocator.locate()
+        let adapter = try AdapterFactory.make(for: install)
+        MainActor.assumeIsolated { StartupFailure.reportUnverifiedXcode(install) }
         let devices = try adapter.devices()
         let recent = RecentDeviceStore()
         let launchedFromAnIcon = udids.isEmpty
