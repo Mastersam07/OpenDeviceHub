@@ -35,15 +35,29 @@ public final class DevicePresentationView: NSView {
     }
 
     /// The content covers the whole window, including the few points AppKit keeps at the edges for
-    /// resizing, so the border has to be handed back or the window can only be resized from its
-    /// corners by the window server. Nothing of ours lives out there: the device is inset well
-    /// inside it.
+    /// resizing, so the border has to be handed back or an edge drag never reaches the window.
     public override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
         let border = PresentationLayout.resizeBorder
         let inside = bounds.insetBy(dx: border, dy: border)
         if !inside.contains(local), !bar.frame.contains(local) { return nil }
         return super.hitTest(point)
+    }
+
+    /// Which corner of the device, if any, is under this point. The device is easier to grab than
+    /// the window's edges, and it is the thing being sized.
+    public func resizeCorner(at point: CGPoint) -> DeviceResizeCorner? {
+        let device = deviceBodyRect
+        guard !device.isEmpty else { return nil }
+        return DeviceResizeCorner.allCases.first {
+            $0.hitRect(in: device, cornerRadius: chrome.bodyCornerRadius).contains(point)
+        }
+    }
+
+    /// Where the device is actually drawn, which is inside the chrome's frame once the body has
+    /// been fitted and centred.
+    public var deviceBodyRect: CGRect {
+        chrome.convert(chrome.bodyRect, to: self)
     }
 
     public override func layout() {

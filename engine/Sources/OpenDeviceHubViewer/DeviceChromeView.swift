@@ -91,6 +91,14 @@ public final class DeviceChromeView: NSView {
 
     /// Everything the device occupies, which is the body when there is one and the bare screen
     /// otherwise. Anything outside it is margin.
+    public var bodyRect: CGRect { occupiedRect }
+
+    /// Roughly where the body's corners curve, which is where a resize handle belongs. Taken from
+    /// the screen's own corner rounding rather than measured from the artwork.
+    public var bodyCornerRadius: CGFloat {
+        max(12, min(occupiedRect.width, occupiedRect.height) * 0.09)
+    }
+
     private var occupiedRect: CGRect {
         guard let chrome, hasChrome, screenSize.width > 0 else { return screenRect }
         return ChromeGeometry.deviceRect(
