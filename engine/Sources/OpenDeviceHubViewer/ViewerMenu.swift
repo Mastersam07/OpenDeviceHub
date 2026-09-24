@@ -44,6 +44,7 @@ public enum ViewerMenu {
         public var stopRecording: () -> Void
         public var isRecording: () -> Bool
         public var checkForUpdates: (() -> Void)?
+        public var showSettings: (() -> Void)?
 
         public init(
             setScaleMode: @escaping (ScaleMode) -> Void,
@@ -66,7 +67,8 @@ public enum ViewerMenu {
             appSwitcher: @escaping () -> Void,
             stopRecording: @escaping () -> Void,
             isRecording: @escaping () -> Bool,
-            checkForUpdates: (() -> Void)? = nil
+            checkForUpdates: (() -> Void)? = nil,
+            showSettings: (() -> Void)? = nil
         ) {
             self.setScaleMode = setScaleMode
             self.toggleBezel = toggleBezel
@@ -89,6 +91,7 @@ public enum ViewerMenu {
             self.stopRecording = stopRecording
             self.isRecording = isRecording
             self.checkForUpdates = checkForUpdates
+            self.showSettings = showSettings
         }
     }
 
@@ -124,6 +127,12 @@ public enum ViewerMenu {
         if commandLineTool != nil {
             let item = target.item("", #selector(MenuTarget.commandLineTool(_:)), "", [])
             target.trackCommandLineToolItem(item, in: appMenu)
+            appMenu.addItem(item)
+            appMenu.addItem(.separator())
+        }
+        if actions.showSettings != nil {
+            let item = target.item("Settings\u{2026}", #selector(MenuTarget.settings), ",", [])
+            item.icon("gear")
             appMenu.addItem(item)
             appMenu.addItem(.separator())
         }
@@ -447,6 +456,7 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     }
     @objc func rotateRight() { actions.rotate(false) }
     @objc func checkForUpdates() { actions.checkForUpdates?() }
+    @objc func settings() { actions.showSettings?() }
     @objc func help() { ControlsHelp.show() }
 
     @objc func latency(_ sender: NSMenuItem) {

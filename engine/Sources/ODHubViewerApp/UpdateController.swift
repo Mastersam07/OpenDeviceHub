@@ -47,6 +47,19 @@ final class UpdateController {
         controller.checkForUpdates(nil)
     }
 
+    /// Sparkle's own background schedule. Exposed so Settings can turn it off without the window
+    /// needing to know Sparkle exists.
+    /// Checking and downloading move together, because "install updates automatically" that only
+    /// checks would be a switch that does half of what it says. Installing still waits for the
+    /// person, which is Sparkle's `SUAutomaticallyUpdate`, left off deliberately.
+    var checksAutomatically: Bool {
+        get { controller.updater.automaticallyChecksForUpdates }
+        set {
+            controller.updater.automaticallyChecksForUpdates = newValue
+            controller.updater.automaticallyDownloadsUpdates = newValue
+        }
+    }
+
     /// Whether the updater found the feed usable, for reporting rather than for control flow.
     var feedURL: String? {
         controller.updater.feedURL?.absoluteString

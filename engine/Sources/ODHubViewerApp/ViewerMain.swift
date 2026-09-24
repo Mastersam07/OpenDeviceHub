@@ -64,8 +64,13 @@ struct ODHubViewer: ParsableCommand {
         let devices = try adapter.devices()
         let recent = RecentDeviceStore()
         let launchedFromAnIcon = udids.isEmpty
+        let settings = ViewerSettings()
         let plan = launchedFromAnIcon
-            ? StartupDevices.plan(devices: devices, remembered: recent.udid)
+            ? StartupDevices.plan(
+                devices: devices,
+                remembered: recent.udid,
+                bootsMostRecent: settings.bootsMostRecentOnStart
+            )
             : StartupDevices.Plan(udids: udids, boot: boot)
 
         // Valid because a synchronous `run()` executes on the process's main thread.
@@ -141,6 +146,7 @@ struct ODHubViewer: ParsableCommand {
                 }
             )
 
+            let deviceLinks = DefaultDeviceApplication()
             let updates = UpdateController()
             let menuTarget = ViewerMenu.install(into: application, actions: ViewerMenu.Actions(
                 setScaleMode: { manager.applyScaleMode($0) },
@@ -160,8 +166,7 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 saveScreenshot: {
-                    let directory = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-                        ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                    let directory = recordingDirectory(settings)
                     for url in manager.saveScreenshots(into: directory) {
                         print("saved \(url.path(percentEncoded: false))")
                     }
@@ -170,8 +175,7 @@ struct ODHubViewer: ParsableCommand {
                     print(manager.copyScreenshotToClipboard() ? "screenshot copied" : "nothing to copy")
                 },
                 toggleRecording: {
-                    let directory = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-                        ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                    let directory = recordingDirectory(settings)
                     let finished = manager.toggleRecording(into: directory)
                     if finished.isEmpty {
                         print("recording started")
@@ -273,12 +277,22 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 stopRecording: {
-                    for url in manager.toggleRecording(into: recordingDirectory()) {
+                    for url in manager.toggleRecording(into: recordingDirectory(settings)) {
                         print("recorded \(url.path(percentEncoded: false))")
                     }
                 },
                 isRecording: { manager.isRecording },
-                checkForUpdates: updates.map { updater in { updater.checkForUpdates() } }
+                checkForUpdates: updates.map { updater in { updater.checkForUpdates() } },
+                showSettings: {
+                    SettingsWindow.show(settings: settings, actions: SettingsActions(
+                        automaticUpdates: updates.map { updater in { updater.checksAutomatically } },
+                        setAutomaticUpdates: updates.map { updater in { updater.checksAutomatically = $0 } },
+                        checkForUpdates: updates.map { updater in { updater.checkForUpdates() } },
+                        forgetWindowPositions: { store.forgetAll() },
+                        rememberedWindowCount: { store.rememberedCount },
+                        openLinks: deviceLinks
+                    ))
+                }
             ), capabilities: adapter.capabilities, openSimulatorMenu: chooser.menu,
                commandLineTool: CommandLineToolInstaller.bundledTool == nil ? nil : CommandLineToolMenu(
                    state: { CommandLineToolInstaller.state() },
@@ -322,6 +336,14 @@ struct ODHubViewer: ParsableCommand {
                 quitsWithLastWindow: !launchedFromAnIcon,
                 dockMenu: { chooser.dockMenu() },
                 reopen: { bootThenShow($0) },
+                openLink: { udid in
+                    if manager.isOpen(udid) {
+                        manager.bringToFront(udid)
+                        NSApp.activate(ignoringOtherApps: true)
+                    } else {
+                        bootThenShow(udid)
+                    }
+                },
                 deviceToReopen: { recent.udid ?? StartupDevices.plan(
                     devices: (try? adapter.devices()) ?? [],
                     remembered: nil
@@ -406,6 +428,7 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
     private let quitsWithLastWindow: Bool
     private let dockMenu: () -> NSMenu
     private let reopen: (String) -> Void
+    private let openLink: (String) -> Void
     private let deviceToReopen: () -> String?
     private let onTerminate: () -> Void
 
@@ -413,12 +436,14 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
         quitsWithLastWindow: Bool,
         dockMenu: @escaping () -> NSMenu,
         reopen: @escaping (String) -> Void,
+        openLink: @escaping (String) -> Void,
         deviceToReopen: @escaping () -> String?,
         onTerminate: @escaping () -> Void
     ) {
         self.quitsWithLastWindow = quitsWithLastWindow
         self.dockMenu = dockMenu
         self.reopen = reopen
+        self.openLink = openLink
         self.deviceToReopen = deviceToReopen
         self.onTerminate = onTerminate
     }
@@ -441,6 +466,32 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         onTerminate()
+    }
+
+    /// A devices:// link only reaches this app if someone chose it in Settings. One that names a
+    /// simulator opens here; anything else goes back to Device Hub whole, rather than being dropped
+    /// because this app did not understand it.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            switch DeviceLink.destination(for: url) {
+            case .simulator(let udid):
+                openLink(udid)
+            case .deviceHub:
+                forwardToDeviceHub(url)
+            case .notADeviceLink:
+                continue
+            }
+        }
+    }
+
+    private func forwardToDeviceHub(_ url: URL) {
+        guard let deviceHub = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.apple.dt.Devices"
+        ) else {
+            print("no Device Hub to pass \(url) to")
+            return
+        }
+        NSWorkspace.shared.open([url], withApplicationAt: deviceHub, configuration: NSWorkspace.OpenConfiguration())
     }
 }
 
@@ -530,7 +581,13 @@ private func swipeHome(_ session: any InputSession) async throws {
 
 /// Recordings and screenshots land on the Desktop, falling back to a temporary folder on a machine
 /// that has none.
-private func recordingDirectory() -> URL {
-    FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+private func recordingDirectory(_ settings: ViewerSettings = ViewerSettings()) -> URL {
+    if let chosen = settings.captureDirectory,
+       FileManager.default.fileExists(atPath: chosen.path(percentEncoded: false)) {
+        return chosen
+    }
+    // A folder that has been moved or unplugged since it was chosen falls back rather than losing
+    // the capture.
+    return FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
         ?? URL(fileURLWithPath: NSTemporaryDirectory())
 }

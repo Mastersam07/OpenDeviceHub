@@ -34,11 +34,17 @@ public enum StartupDevices {
         }
     }
 
-    public static func plan(devices: [DeviceInfo], remembered: String?) -> Plan {
+    public static func plan(
+        devices: [DeviceInfo],
+        remembered: String?,
+        bootsMostRecent: Bool = true
+    ) -> Plan {
         let booted = devices.filter { $0.state == .booted }.map(\.udid)
         if !booted.isEmpty {
             return Plan(udids: booted, boot: false)
         }
+        // Whatever is already running is always shown. This only governs starting one that is not.
+        guard bootsMostRecent else { return Plan(udids: [], boot: false) }
 
         let usable = devices.filter(\.isAvailable)
         if let remembered,
