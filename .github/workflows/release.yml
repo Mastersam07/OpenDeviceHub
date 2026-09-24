@@ -1,0 +1,192 @@
+name: Release
+
+# Manual only. A release is a decision, not a consequence of pushing.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Create a tag and a GitHub Release. Leave false for a dry run."
+        type: boolean
+        default: false
+      xcode:
+        description: "Preferred Xcode major. Falls back to the newest with a macOS 26 SDK or newer."
+        type: string
+        default: "27"
+      runner:
+        description: "Runner image. xcode-27 is public preview; macos-26 is GA if it breaks."
+        type: string
+        default: "xcode-27"
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 90
+    env:
+      ODH_SIGNING_IDENTITY: ${{ secrets.DEVELOPER_ID_IDENTITY }}
+      ODH_ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ODH_ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the secrets are all present
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in DEVELOPER_ID_P12 DEVELOPER_ID_P12_PASSWORD DEVELOPER_ID_IDENTITY \
+                      ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 SPARKLE_PRIVATE_KEY; do
+            value="${!name:-}"
+            [ -n "${value}" ] || missing+=("${name}")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing secrets: ${missing[*]}"
+            exit 1
+          fi
+          echo "All release secrets are present."
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          DEVELOPER_ID_IDENTITY: ${{ secrets.DEVELOPER_ID_IDENTITY }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          echo "Xcodes on this runner:"
+          for app in /Applications/Xcode*.app; do
+            echo "  $(basename "${app}")  SDK $(DEVELOPER_DIR="${app}/Contents/Developer" xcrun --sdk macosx --show-sdk-version 2>/dev/null || echo unknown)"
+          done
+          # Prefers the major built with locally, and refuses anything below the macOS 26 SDK
+          # whatever is installed, because an older one ships the pre macOS 26 toolbar.
+          scripts/select-xcode.sh "${{ inputs.xcode }}" 26.0 | tee -a "${GITHUB_ENV}"
+          echo "Building with ${XCODE_APP:-the selection above}"
+
+      - name: Work out the version
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          # Monotonic, and derived rather than remembered: Sparkle compares the build number, so a
+          # repeated one hides the update from everyone already installed.
+          echo "ODH_BUILD_NUMBER=$(git rev-list --count HEAD)" >> "${GITHUB_ENV}"
+          if [ "${{ inputs.publish }}" = "true" ]; then
+            if gh release view "v${version}" >/dev/null 2>&1; then
+              echo "::error::v${version} already exists. Raise the version in VERSION first."
+              exit 1
+            fi
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Set up a temporary keychain
+        run: |
+          set -euo pipefail
+          keychain="${RUNNER_TEMP}/release.keychain-db"
+          password="$(uuidgen)"
+          echo "ODH_KEYCHAIN=${keychain}" >> "${GITHUB_ENV}"
+
+          security create-keychain -p "${password}" "${keychain}"
+          # Without a timeout the keychain relocks partway through a long notarization wait and
+          # codesign starts failing in the middle of the run.
+          security set-keychain-settings -lut 21600 "${keychain}"
+          security unlock-keychain -p "${password}" "${keychain}"
+
+          p12="${RUNNER_TEMP}/developer-id.p12"
+          ( umask 077 && : > "${p12}" )
+          printf '%s' "${DEVELOPER_ID_P12}" | base64 --decode > "${p12}"
+          security import "${p12}" -k "${keychain}" -P "${DEVELOPER_ID_P12_PASSWORD}" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "${p12}"
+
+          # The search list has to include it or codesign cannot find the identity at all.
+          security list-keychains -d user -s "${keychain}" $(security list-keychains -d user | tr -d '"')
+          # The partition list is what stops codesign stopping to ask for permission. Without it the
+          # run hangs on a prompt nobody can answer.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${password}" "${keychain}"
+
+          echo "Identities available:"
+          security find-identity -v -p codesigning "${keychain}"
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+
+      - name: Write the notarization key
+        run: |
+          set -euo pipefail
+          key="${RUNNER_TEMP}/asc.p8"
+          ( umask 077 && : > "${key}" )
+          printf '%s' "${ASC_KEY_P8}" > "${key}"
+          echo "ODH_ASC_KEY_PATH=${key}" >> "${GITHUB_ENV}"
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+
+      - name: Import the Sparkle signing key
+        run: |
+          set -euo pipefail
+          key="${RUNNER_TEMP}/sparkle-private-key.txt"
+          ( umask 077 && : > "${key}" )
+          printf '%s' "${SPARKLE_PRIVATE_KEY}" > "${key}"
+          echo "ODH_SPARKLE_KEY_PATH=${key}" >> "${GITHUB_ENV}"
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+
+      - name: Test
+        run: swift test --package-path engine
+
+      - name: Build, sign, notarize, staple, package, checksum, appcast
+        run: scripts/sign-and-notarize.sh
+
+      - name: Release candidate artifacts
+        if: ${{ inputs.publish != true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-${{ steps.version.outputs.version }}-${{ github.run_id }}
+          path: |
+            build/*.dmg
+            build/SHA256SUMS
+            build/appcast.xml
+            build/notarization/*.json
+          retention-days: 3
+
+      - name: Publish
+        if: ${{ inputs.publish == true }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          gh release create "v${version}" \
+            --title "${version}" \
+            --notes-file <(python3 scripts/changelog-section.py "${version}") \
+            --prerelease \
+            build/OpenDeviceHub-${version}.dmg build/SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Published artifacts
+        if: ${{ inputs.publish == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ steps.version.outputs.version }}
+          path: |
+            build/*.dmg
+            build/SHA256SUMS
+            build/appcast.xml
+          retention-days: 90
+
+      - name: Clean up
+        if: always()
+        run: |
+          rm -f "${RUNNER_TEMP}/asc.p8" "${RUNNER_TEMP}/developer-id.p12" \
+                "${RUNNER_TEMP}/sparkle-private-key.txt" || true
+          if [ -n "${ODH_KEYCHAIN:-}" ]; then
+            security delete-keychain "${ODH_KEYCHAIN}" || true
+          fi
+          security list-keychains -d user -s login.keychain-db || true

@@ -73,7 +73,7 @@ final class WindowFrameCodecTests: XCTestCase {
     }
 }
 
-private final class InMemoryFrameStorage: WindowFrameStorage, @unchecked Sendable {
+private final class InMemoryFrameStorage: PreferenceStorage, @unchecked Sendable {
     private let lock = NSLock()
     private var values: [String: String] = [:]
 

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    # Pinned rather than macos-latest: a runner image that moves under us changes the Swift and
+    # Xcode versions without a commit, and the first sign of it is a build that fails for nobody's
+    # reason.
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          # No SDK floor here: a pull request only has to build and pass its tests. The floor is a
+          # release concern, because that is where the linked SDK reaches a user.
+          scripts/select-xcode.sh "${{ vars.XCODE_VERSION || '27' }}" | tee -a "${GITHUB_ENV}"
+
+      - name: Build
+        run: scripts/build.sh
+
+      - name: Test
+        # The integration tests need a booted simulator and are gated behind ODH_INTEGRATION, which
+        # is deliberately not set here: they would skip anyway, and a skip that looks like a pass is
+        # worse than an honest absence.
+        run: swift test --package-path engine

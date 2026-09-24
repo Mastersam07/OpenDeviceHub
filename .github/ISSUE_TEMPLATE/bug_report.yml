@@ -1,0 +1,91 @@
+name: Bug report
+description: Something does not work the way it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `odhub doctor` prints almost everything asked for below. If the command is not on your
+        PATH yet, use **OpenDeviceHub → Install Command Line Tool**, or run it straight out of the
+        bundle:
+
+        ```sh
+        /Applications/OpenDeviceHub.app/Contents/MacOS/odhub doctor
+        ```
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+      placeholder: |
+        1. Booted an iPhone 17 on iOS 27.0
+        2. Clicked in the middle of the screen
+        3. Expected the tap to land. Nothing happened, and no error appeared.
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: OpenDeviceHub version
+      description: From the app menu, or `odhub --version`. Say "built from source" if it is.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "26.1"
+    validations:
+      required: true
+
+  - type: input
+    id: xcode
+    attributes:
+      label: Xcode version and build
+      description: The first lines of `odhub doctor`, or Xcode → About Xcode.
+      placeholder: "27.0 (27A266a)"
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Simulator device
+      placeholder: "iPhone 17 Pro"
+    validations:
+      required: true
+
+  - type: input
+    id: runtime
+    attributes:
+      label: Simulator runtime
+      placeholder: "iOS 27.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mac
+    attributes:
+      label: Mac
+      options:
+        - Apple silicon
+        - Intel
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: odhub doctor output
+      description: Optional, and the single most useful thing you can attach.
+      render: text
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else
+      description: Screenshots, a recording, or what you had already been doing when it started.
