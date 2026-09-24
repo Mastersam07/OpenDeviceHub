@@ -22,6 +22,27 @@ enum SimctlModels {
         let devices: [String: [SimctlDevice]]
     }
 
+    struct DeviceTypeList: Decodable {
+        let devicetypes: [SimctlDeviceType]
+    }
+
+    /// The same list as `RuntimeList` with the supported device types kept, which the plain runtime
+    /// model drops.
+    struct RuntimeSupportList: Decodable {
+        struct Runtime: Decodable {
+            struct DeviceType: Decodable {
+                let identifier: String
+            }
+            let identifier: String
+            let name: String
+            let version: String
+            let buildversion: String
+            let isAvailable: Bool
+            let supportedDeviceTypes: [DeviceType]?
+        }
+        let runtimes: [Runtime]
+    }
+
     struct RuntimeList: Decodable {
         let runtimes: [SimctlRuntime]
     }

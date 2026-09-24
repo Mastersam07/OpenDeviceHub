@@ -402,3 +402,53 @@ extension SimctlService {
         }
     }
 }
+
+/// Creating a simulator, and the lists a person picks from to do it.
+extension SimctlService {
+    static func listDeviceTypesArguments() -> [String] {
+        ["simctl", "list", "devicetypes", "-j"]
+    }
+
+    static func createArguments(name: String, deviceType: String, runtime: String) -> [String] {
+        ["simctl", "create", name, deviceType, runtime]
+    }
+
+    public func listDeviceTypes() throws -> [SimctlDeviceType] {
+        let data = try run(Self.listDeviceTypesArguments())
+        return try JSONDecoder().decode(SimctlModels.DeviceTypeList.self, from: data).devicetypes
+    }
+
+    /// Which device types each runtime can run, which `simctl` only reports here rather than on the
+    /// device types themselves.
+    public func listRuntimeSupport() throws -> [SimctlRuntimeSupport] {
+        let data = try run(Self.listRuntimesArguments())
+        let decoded = try JSONDecoder().decode(SimctlModels.RuntimeSupportList.self, from: data)
+        return decoded.runtimes.map { runtime in
+            SimctlRuntimeSupport(
+                runtime: SimctlRuntime(
+                    identifier: runtime.identifier,
+                    name: runtime.name,
+                    version: runtime.version,
+                    buildversion: runtime.buildversion,
+                    isAvailable: runtime.isAvailable
+                ),
+                deviceTypeIdentifiers: Set((runtime.supportedDeviceTypes ?? []).map(\.identifier))
+            )
+        }
+    }
+
+    /// Returns the new device's UDID, which is all `simctl create` prints.
+    @discardableResult
+    public func createDevice(name: String, deviceType: String, runtime: String) throws -> String {
+        let arguments = Self.createArguments(name: name, deviceType: deviceType, runtime: runtime)
+        let result = try ProcessRunner.run("/usr/bin/xcrun", arguments)
+        guard result.status == 0 else {
+            throw EngineError.simctl(
+                args: Array(arguments.dropFirst()),
+                code: result.status,
+                stderr: result.standardError
+            )
+        }
+        return result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}

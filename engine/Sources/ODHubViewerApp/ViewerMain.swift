@@ -346,6 +346,24 @@ struct ODHubViewer: ParsableCommand {
                         }
                     }
                 },
+                newSimulator: {
+                    let simctl = SimctlService()
+                    NewSimulatorPanel.show(actions: NewSimulatorActions(
+                        deviceTypes: { (try? simctl.listDeviceTypes()) ?? [] },
+                        runtimeSupport: { (try? simctl.listRuntimeSupport()) ?? [] },
+                        existingNames: { ((try? adapter.devices()) ?? []).map(\.name) },
+                        create: { name, type, runtime in
+                            try simctl.createDevice(
+                                name: name,
+                                deviceType: type.identifier,
+                                runtime: runtime.identifier
+                            )
+                        },
+                        // A simulator created and then not shown would be a puzzle, so it opens,
+                        // which boots it the same way the chooser does.
+                        created: { udid in bootThenShow(udid) }
+                    ), settings: settings)
+                },
                 setOrientation: { orientation in
                     for udid in manager.openUDIDs {
                         guard let controller = manager.controller(for: udid) else { continue }
