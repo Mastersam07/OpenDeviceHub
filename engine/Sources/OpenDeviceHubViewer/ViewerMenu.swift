@@ -261,10 +261,16 @@ public enum ViewerMenu {
 /// Only the standard commands get one. Our own commands stay bare, which is Simulator.app's own
 /// seam: `Copy Screen` sits between two icon bearing rows with nothing, and the whole of Device,
 /// I/O, Features and Debug has none.
+/// Setting `image` is not enough on macOS 27. `preferredImageVisibility` is new there and defaults
+/// to `.automatic`, which for a menu built in code resolves to hidden: the image is present,
+/// template and correctly sized, and simply is not drawn.
 private extension NSMenuItem {
     @discardableResult
     func icon(_ symbol: String) -> NSMenuItem {
         image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        if #available(macOS 27.0, *) {
+            preferredImageVisibility = .visible
+        }
         return self
     }
 }
