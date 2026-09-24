@@ -85,6 +85,34 @@ final class StartupDevicesTests: XCTestCase {
         XCTAssertEqual(plan.udids, ["plain"])
     }
 
+    func testWithBootingTurnedOffNothingIsStarted() {
+        let plan = StartupDevices.plan(
+            devices: [
+                device("a", name: "iPhone 17", runtime: "iOS 27.0", state: .shutdown),
+                device("b", name: "iPhone 16", runtime: "iOS 26.5", state: .shutdown),
+            ],
+            remembered: "b",
+            bootsMostRecent: false
+        )
+        XCTAssertTrue(plan.udids.isEmpty)
+        XCTAssertFalse(plan.boot)
+    }
+
+    /// The setting governs starting a simulator, not hiding one. Anything already running is still
+    /// shown, which is the difference between "do not boot for me" and "show me nothing".
+    func testWhatIsAlreadyRunningIsShownEvenWithBootingTurnedOff() {
+        let plan = StartupDevices.plan(
+            devices: [
+                device("a", name: "iPhone 17", runtime: "iOS 27.0", state: .booted),
+                device("b", name: "iPhone 16", runtime: "iOS 26.5", state: .shutdown),
+            ],
+            remembered: "b",
+            bootsMostRecent: false
+        )
+        XCTAssertEqual(plan.udids, ["a"])
+        XCTAssertFalse(plan.boot)
+    }
+
     func testAnEmptyMachineAsksForNothing() {
         let plan = StartupDevices.plan(devices: [], remembered: "a")
         XCTAssertTrue(plan.udids.isEmpty)

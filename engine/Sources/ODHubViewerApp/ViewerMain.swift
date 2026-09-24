@@ -64,8 +64,13 @@ struct ODHubViewer: ParsableCommand {
         let devices = try adapter.devices()
         let recent = RecentDeviceStore()
         let launchedFromAnIcon = udids.isEmpty
+        let settings = ViewerSettings()
         let plan = launchedFromAnIcon
-            ? StartupDevices.plan(devices: devices, remembered: recent.udid)
+            ? StartupDevices.plan(
+                devices: devices,
+                remembered: recent.udid,
+                bootsMostRecent: settings.bootsMostRecentOnStart
+            )
             : StartupDevices.Plan(udids: udids, boot: boot)
 
         // Valid because a synchronous `run()` executes on the process's main thread.
