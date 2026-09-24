@@ -81,4 +81,9 @@ final class InMemoryPreferences: PreferenceStorage, @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         values.removeValue(forKey: key)
     }
+
+    func keys(withPrefix prefix: String) -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return values.keys.filter { $0.hasPrefix(prefix) }
+    }
 }

@@ -10,17 +10,20 @@ public struct SettingsActions {
     public var setAutomaticUpdates: ((Bool) -> Void)?
     public var checkForUpdates: (() -> Void)?
     public var forgetWindowPositions: () -> Void
+    public var rememberedWindowCount: () -> Int
 
     public init(
         automaticUpdates: (() -> Bool)? = nil,
         setAutomaticUpdates: ((Bool) -> Void)? = nil,
         checkForUpdates: (() -> Void)? = nil,
-        forgetWindowPositions: @escaping () -> Void
+        forgetWindowPositions: @escaping () -> Void,
+        rememberedWindowCount: @escaping () -> Int
     ) {
         self.automaticUpdates = automaticUpdates
         self.setAutomaticUpdates = setAutomaticUpdates
         self.checkForUpdates = checkForUpdates
         self.forgetWindowPositions = forgetWindowPositions
+        self.rememberedWindowCount = rememberedWindowCount
     }
 }
 
@@ -64,6 +67,7 @@ private struct SettingsView: View {
     @State private var bootsMostRecentOnStart: Bool
     @State private var automaticUpdates: Bool
     @State private var captureDirectory: URL?
+    @State private var rememberedWindows: Int
 
     init(settings: ViewerSettings, actions: SettingsActions) {
         self.settings = settings
@@ -72,6 +76,7 @@ private struct SettingsView: View {
         _bootsMostRecentOnStart = State(initialValue: settings.bootsMostRecentOnStart)
         _automaticUpdates = State(initialValue: actions.automaticUpdates?() ?? false)
         _captureDirectory = State(initialValue: settings.captureDirectory)
+        _rememberedWindows = State(initialValue: actions.rememberedWindowCount())
     }
 
     var body: some View {
@@ -121,11 +126,17 @@ private struct SettingsView: View {
 
             Section("Windows") {
                 LabeledContent {
-                    Button("Forget", action: actions.forgetWindowPositions)
+                    Button("Forget") {
+                        actions.forgetWindowPositions()
+                        rememberedWindows = actions.rememberedWindowCount()
+                    }
+                    .disabled(rememberedWindows == 0)
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Remembered positions")
-                        Text("Each device's window reopens where you last put it.")
+                        // The count is the feedback. Pressing Forget takes it to none and greys the
+                        // button, so nothing has to announce that it worked.
+                        Text(rememberedDescription)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -170,6 +181,14 @@ private struct SettingsView: View {
         .scrollDisabled(true)
         .frame(width: 520, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var rememberedDescription: String {
+        switch rememberedWindows {
+        case 0: "No window positions are remembered."
+        case 1: "One device's window reopens where you left it."
+        default: "\(rememberedWindows) devices' windows reopen where you left them."
+        }
     }
 
     private var version: String {

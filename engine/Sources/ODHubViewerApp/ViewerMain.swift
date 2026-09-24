@@ -287,9 +287,8 @@ struct ODHubViewer: ParsableCommand {
                         automaticUpdates: updates.map { updater in { updater.checksAutomatically } },
                         setAutomaticUpdates: updates.map { updater in { updater.checksAutomatically = $0 } },
                         checkForUpdates: updates.map { updater in { updater.checkForUpdates() } },
-                        forgetWindowPositions: {
-                            ((try? adapter.devices()) ?? []).map(\.udid).forEach(store.forget)
-                        }
+                        forgetWindowPositions: { store.forgetAll() },
+                        rememberedWindowCount: { store.rememberedCount }
                     ))
                 }
             ), capabilities: adapter.capabilities, openSimulatorMenu: chooser.menu,

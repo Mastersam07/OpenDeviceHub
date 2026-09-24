@@ -91,11 +91,45 @@ private final class InMemoryFrameStorage: PreferenceStorage, @unchecked Sendable
         lock.lock(); defer { lock.unlock() }
         values[key] = nil
     }
+
+    func keys(withPrefix prefix: String) -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return values.keys.filter { $0.hasPrefix(prefix) }
+    }
 }
 
 final class WindowFrameStoreTests: XCTestCase {
     private func makeStore() -> WindowFrameStore {
         WindowFrameStore(storage: InMemoryFrameStorage(), prefix: "t.")
+    }
+
+    func testItCountsWhatItRemembers() {
+        let store = makeStore()
+        XCTAssertEqual(store.rememberedCount, 0)
+        store.save(CGRect(x: 0, y: 0, width: 400, height: 900), for: "a")
+        store.save(CGRect(x: 10, y: 10, width: 400, height: 900), for: "b")
+        XCTAssertEqual(store.rememberedCount, 2)
+    }
+
+    /// By prefix rather than by asking the adapter which devices exist, because a device deleted
+    /// since its window was placed still has a key and would otherwise be left behind for ever.
+    func testForgettingEverythingLeavesNothingBehind() {
+        let store = makeStore()
+        store.save(CGRect(x: 0, y: 0, width: 400, height: 900), for: "a")
+        store.save(CGRect(x: 10, y: 10, width: 400, height: 900), for: "deleted-device")
+        store.forgetAll()
+        XCTAssertEqual(store.rememberedCount, 0)
+        XCTAssertNil(store.frame(for: "a"))
+        XCTAssertNil(store.frame(for: "deleted-device"))
+    }
+
+    func testForgettingEverythingLeavesOtherSettingsAlone() {
+        let storage = InMemoryFrameStorage()
+        storage.setText("keep me", forKey: "other.thing")
+        let store = WindowFrameStore(storage: storage, prefix: "t.")
+        store.save(CGRect(x: 0, y: 0, width: 400, height: 900), for: "a")
+        store.forgetAll()
+        XCTAssertEqual(storage.text(forKey: "other.thing"), "keep me")
     }
 
     func testRemembersAFramePerDevice() {

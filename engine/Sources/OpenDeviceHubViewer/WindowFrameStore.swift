@@ -22,6 +22,9 @@ public protocol PreferenceStorage: Sendable {
     func text(forKey key: String) -> String?
     func setText(_ text: String, forKey key: String)
     func removeText(forKey key: String)
+    /// Needed to count and clear remembered frames without being told which devices to look for. A
+    /// device deleted since its window was placed still has a key, and only enumeration finds it.
+    func keys(withPrefix prefix: String) -> [String]
 }
 
 /// `UserDefaults` is thread safe but not marked `Sendable`, hence the unchecked conformance.
@@ -42,6 +45,10 @@ public struct UserDefaultsPreferenceStorage: PreferenceStorage, @unchecked Senda
 
     public func removeText(forKey key: String) {
         defaults.removeObject(forKey: key)
+    }
+
+    public func keys(withPrefix prefix: String) -> [String] {
+        defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix(prefix) }
     }
 }
 
@@ -68,5 +75,16 @@ public struct WindowFrameStore: Sendable {
 
     public func forget(_ udid: String) {
         storage.removeText(forKey: prefix + udid)
+    }
+
+    /// How many windows would reopen where they were left.
+    public var rememberedCount: Int {
+        storage.keys(withPrefix: prefix).count
+    }
+
+    public func forgetAll() {
+        for key in storage.keys(withPrefix: prefix) {
+            storage.removeText(forKey: key)
+        }
     }
 }
