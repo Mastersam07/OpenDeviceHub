@@ -4,8 +4,8 @@ import OpenDeviceHubEngine
 /// The handful of choices worth remembering between launches.
 ///
 /// Stored through the same seam as the window frames, so tests never leave a plist behind. Each
-/// default is the behaviour the app already had, except `shutdownOnWindowClose`, which is called out
-/// in `docs/DECISIONS.md`.
+/// default is the behaviour the app already had, except `shutdownOnWindowClose`, which deliberately
+/// changed it to match the simulator this replaces.
 public struct ViewerSettings: Sendable {
     private let storage: any PreferenceStorage
     private let prefix: String

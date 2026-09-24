@@ -324,6 +324,28 @@ struct ODHubViewer: ParsableCommand {
                         }
                     }
                 },
+                toggleKeyboardInput: { enabled in
+                    for udid in manager.openUDIDs {
+                        manager.controller(for: udid)?.sendsKeyboardInput = enabled
+                    }
+                },
+                toggleHardwareKeyboard: { enabled in
+                    for udid in manager.openUDIDs {
+                        runOnEveryDevice("hardware keyboard", udid) {
+                            try adapter.setHardwareKeyboardEnabled(enabled, udid: $0)
+                        }
+                    }
+                },
+                matchKeyboardLanguage: { matching in
+                    // Off leaves the guest on whatever it had: there is no "stop matching" call, so
+                    // turning it back on is what re-applies the Mac's language.
+                    guard matching, let language = KeyboardLanguage.current() else { return }
+                    for udid in manager.openUDIDs {
+                        runOnEveryDevice("keyboard language", udid) {
+                            try adapter.setKeyboardLanguage(language, udid: $0)
+                        }
+                    }
+                },
                 setOrientation: { orientation in
                     for udid in manager.openUDIDs {
                         guard let controller = manager.controller(for: udid) else { continue }

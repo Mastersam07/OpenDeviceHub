@@ -46,6 +46,9 @@ public enum ViewerMenu {
         public var triggerICloudSync: () -> Void
         public var setLocation: (SimctlService.LocationScenario?) -> Void
         public var setCustomLocation: () -> Void
+        public var toggleKeyboardInput: (Bool) -> Void
+        public var toggleHardwareKeyboard: (Bool) -> Void
+        public var matchKeyboardLanguage: (Bool) -> Void
         public var setOrientation: (DeviceOrientation) -> Void
         public var appSwitcher: () -> Void
         public var stopRecording: () -> Void
@@ -77,6 +80,9 @@ public enum ViewerMenu {
             triggerICloudSync: @escaping () -> Void,
             setLocation: @escaping (SimctlService.LocationScenario?) -> Void,
             setCustomLocation: @escaping () -> Void,
+            toggleKeyboardInput: @escaping (Bool) -> Void,
+            toggleHardwareKeyboard: @escaping (Bool) -> Void,
+            matchKeyboardLanguage: @escaping (Bool) -> Void,
             setOrientation: @escaping (DeviceOrientation) -> Void,
             appSwitcher: @escaping () -> Void,
             stopRecording: @escaping () -> Void,
@@ -107,6 +113,9 @@ public enum ViewerMenu {
             self.triggerICloudSync = triggerICloudSync
             self.setLocation = setLocation
             self.setCustomLocation = setCustomLocation
+            self.toggleKeyboardInput = toggleKeyboardInput
+            self.toggleHardwareKeyboard = toggleHardwareKeyboard
+            self.matchKeyboardLanguage = matchKeyboardLanguage
             self.setOrientation = setOrientation
             self.appSwitcher = appSwitcher
             self.stopRecording = stopRecording
@@ -260,6 +269,44 @@ public enum ViewerMenu {
 
         let ioItem = NSMenuItem()
         let ioMenu = NSMenu(title: "I/O")
+
+        let inputItem = NSMenuItem(title: "Input", action: nil, keyEquivalent: "")
+        let inputMenu = NSMenu(title: "Input")
+        let sendKeys = target.item(
+            "Send Keyboard Input to Device",
+            #selector(MenuTarget.keyboardInput(_:)),
+            "k",
+            [.command, .option]
+        )
+        sendKeys.state = .on
+        inputMenu.addItem(sendKeys)
+        inputItem.submenu = inputMenu
+        ioMenu.addItem(inputItem)
+
+        let keyboardItem = NSMenuItem(title: "Keyboard", action: nil, keyEquivalent: "")
+        let keyboardMenu = NSMenu(title: "Keyboard")
+        let hardware = target.item(
+            "Connect Hardware Keyboard",
+            #selector(MenuTarget.hardwareKeyboard(_:)),
+            "k",
+            [.command, .shift]
+        )
+        hardware.state = .on
+        disable(hardware, unless: capabilities.contains(.hardwareKeyboard), reason: "not available on this Xcode")
+        let sameLanguage = target.item(
+            "Use the Same Keyboard Language as macOS",
+            #selector(MenuTarget.matchKeyboardLanguage(_:)),
+            "",
+            []
+        )
+        sameLanguage.state = .on
+        disable(sameLanguage, unless: capabilities.contains(.hardwareKeyboard), reason: "not available on this Xcode")
+        keyboardMenu.addItem(sameLanguage)
+        keyboardMenu.addItem(hardware)
+        keyboardItem.submenu = keyboardMenu
+        ioMenu.addItem(keyboardItem)
+        ioMenu.addItem(.separator())
+
         ioMenu.addItem(target.item("Increase Volume", #selector(MenuTarget.volumeUp), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.command]))
         ioMenu.addItem(target.item("Decrease Volume", #selector(MenuTarget.volumeDown), String(UnicodeScalar(NSDownArrowFunctionKey)!), [.command]))
         ioItem.submenu = ioMenu
@@ -401,6 +448,9 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private var isSlowAnimations = false
     private var isLatencyVisible = false
     private var isIncreasedContrast = false
+    private var sendsKeyboardInput = true
+    private var hasHardwareKeyboard = true
+    private var matchesKeyboardLanguage = true
 
     init(actions: ViewerMenu.Actions, commandLineTool: CommandLineToolMenu? = nil) {
         self.actions = actions
@@ -496,6 +546,25 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     @objc func iCloudSync() { actions.triggerICloudSync() }
     @objc func clearLocation() { actions.setLocation(nil) }
     @objc func customLocation() { actions.setCustomLocation() }
+
+    /// Both start on, because that is what the app does before anyone touches the menu.
+    @objc func keyboardInput(_ sender: NSMenuItem) {
+        sendsKeyboardInput.toggle()
+        sender.state = sendsKeyboardInput ? .on : .off
+        actions.toggleKeyboardInput(sendsKeyboardInput)
+    }
+
+    @objc func matchKeyboardLanguage(_ sender: NSMenuItem) {
+        matchesKeyboardLanguage.toggle()
+        sender.state = matchesKeyboardLanguage ? .on : .off
+        actions.matchKeyboardLanguage(matchesKeyboardLanguage)
+    }
+
+    @objc func hardwareKeyboard(_ sender: NSMenuItem) {
+        hasHardwareKeyboard.toggle()
+        sender.state = hasHardwareKeyboard ? .on : .off
+        actions.toggleHardwareKeyboard(hasHardwareKeyboard)
+    }
 
     @objc func locationScenario(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,

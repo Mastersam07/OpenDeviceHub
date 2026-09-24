@@ -46,6 +46,14 @@
 /// Returns a mach port for a service in the device's own namespace, or 0. Used to reach the
 /// guest's workspace port, which is what carries orientation.
 - (unsigned int)lookup:(NSString *_Nonnull)service error:(NSError *_Nullable *_Nullable)error;
+/// Connects or disconnects the Mac's keyboard as the device's hardware keyboard. `keyboardType`
+/// comes from `IndigoHIDGetKeyboardType`. Verified present on Xcode 27 (27A266a).
+- (BOOL)setHardwareKeyboardEnabled:(BOOL)enabled
+                      keyboardType:(unsigned char)keyboardType
+                             error:(NSError *_Nullable *_Nullable)error;
+/// Sets the guest's keyboard language, for example "en-US". Verified present on Xcode 27 (27A266a).
+- (BOOL)setKeyboardLanguage:(NSString *_Nonnull)language
+                      error:(NSError *_Nullable *_Nullable)error;
 @end
 
 @protocol ODHSimDeviceSet <NSObject>
