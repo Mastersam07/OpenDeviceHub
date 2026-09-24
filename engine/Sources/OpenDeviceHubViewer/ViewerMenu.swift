@@ -92,6 +92,8 @@ public enum ViewerMenu {
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
+        appMenu.addItem(target.item("About \(Brand.productName)", #selector(MenuTarget.about), "", []))
+        appMenu.addItem(.separator())
         if actions.checkForUpdates != nil {
             appMenu.addItem(target.item("Check for Updates\u{2026}", #selector(MenuTarget.checkForUpdates), "", []))
             appMenu.addItem(.separator())
@@ -102,6 +104,19 @@ public enum ViewerMenu {
             appMenu.addItem(item)
             appMenu.addItem(.separator())
         }
+        let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        let servicesMenu = NSMenu(title: "Services")
+        servicesItem.submenu = servicesMenu
+        application.servicesMenu = servicesMenu
+        appMenu.addItem(servicesItem)
+        appMenu.addItem(.separator())
+
+        appMenu.addItem(withTitle: "Hide \(Brand.productName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+            .keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+
         appMenu.addItem(withTitle: "Quit \(Brand.productName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         bar.addItem(appItem)
@@ -120,22 +135,20 @@ public enum ViewerMenu {
 
         let editItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(target.item("Copy Screenshot", #selector(MenuTarget.copyScreenshot), "c", []))
-        editMenu.addItem(target.item("Paste to Device", #selector(MenuTarget.paste), "v", []))
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(target.item("Copy Screen", #selector(MenuTarget.copyScreenshot), "c", [.command, .control]))
+        editMenu.addItem(target.item("Paste", #selector(MenuTarget.paste), "v", []))
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = editMenu
         bar.addItem(editItem)
 
         let viewItem = NSMenuItem()
         let viewMenu = NSMenu(title: "View")
-        let scaleShortcuts: [(ScaleMode, String)] = [
-            (.pointAccurate, "1"), (.pixelAccurate, "2"), (.physicalSize, "3"), (.fit, "4"),
-        ]
-        for (mode, key) in scaleShortcuts {
-            let item = target.item(mode.displayName, #selector(MenuTarget.scale(_:)), key, [])
-            item.representedObject = mode.rawValue
-            viewMenu.addItem(item)
-        }
-        viewMenu.addItem(.separator())
         viewMenu.addItem(target.item("Show Device Bezel", #selector(MenuTarget.bezel), "b", []))
         viewMenu.addItem(target.item("Keep on Top", #selector(MenuTarget.keepOnTop), "t", []))
         viewMenu.addItem(.separator())
@@ -172,7 +185,7 @@ public enum ViewerMenu {
 
         let debugItem = NSMenuItem()
         let debugMenu = NSMenu(title: "Debug")
-        let memoryWarning = target.item("Simulate Memory Warning", #selector(MenuTarget.memoryWarning), "", [])
+        let memoryWarning = target.item("Simulate Memory Warning", #selector(MenuTarget.memoryWarning), "m", [.command, .shift])
         // Unavailable items stay visible but disabled, with the reason in a tooltip, rather than
         // disappearing and leaving the menu looking arbitrary.
         disable(memoryWarning, unless: capabilities.contains(.memoryWarning), reason: "not available on this Xcode")
@@ -187,12 +200,37 @@ public enum ViewerMenu {
         debugMenu.addItem(shake)
 
         debugMenu.addItem(.separator())
-        debugMenu.addItem(target.item("Open System Log", #selector(MenuTarget.systemLog), "", []))
+        debugMenu.addItem(target.item("Open System Log\u{2026}", #selector(MenuTarget.systemLog), "/", []))
         debugMenu.addItem(target.item("Open App Data in Finder", #selector(MenuTarget.appData), "", []))
         debugMenu.addItem(.separator())
         debugMenu.addItem(target.item("Show Click to Frame Latency", #selector(MenuTarget.latency(_:)), "l", [.command, .shift]))
         debugItem.submenu = debugMenu
         bar.addItem(debugItem)
+
+        let windowItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        windowMenu.addItem(.separator())
+        let scaleShortcuts: [(ScaleMode, String)] = [
+            (.physicalSize, "1"), (.pointAccurate, "2"), (.pixelAccurate, "3"), (.fit, "4"),
+        ]
+        for (mode, key) in scaleShortcuts {
+            let item = target.item(mode.displayName, #selector(MenuTarget.scale(_:)), key, [])
+            item.representedObject = mode.rawValue
+            windowMenu.addItem(item)
+        }
+        windowMenu.addItem(.separator())
+        windowMenu.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
+        windowItem.submenu = windowMenu
+        bar.addItem(windowItem)
+        application.windowsMenu = windowMenu
+
+        let helpItem = NSMenuItem()
+        let helpMenu = NSMenu(title: "Help")
+        helpItem.submenu = helpMenu
+        bar.addItem(helpItem)
+        application.helpMenu = helpMenu
 
         application.mainMenu = bar
         return target
@@ -270,6 +308,14 @@ public final class MenuTarget: NSObject, NSMenuDelegate {
     @objc func scale(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let mode = ScaleMode(rawValue: raw) else { return }
         actions.setScaleMode(mode)
+    }
+
+    @objc func about() {
+        NSApplication.shared.orderFrontStandardAboutPanel(options: [
+            .applicationName: Brand.productName,
+            .applicationVersion: Brand.version,
+            .version: Brand.buildNumber,
+        ])
     }
 
     @objc func bezel() { actions.toggleBezel() }
