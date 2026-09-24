@@ -55,11 +55,17 @@ public enum PrivateSymbolProbe {
         (.classSymbol, "SimHIDCaptureManager"),
     ]
 
+    public static let simPasteboardPlusSymbols: [(PrivateSymbolKind, String)] = [
+        (.classSymbol, "SimPasteboardInterface"),
+        (.classSymbol, "SimPasteboardInterfaceListener"),
+    ]
+
     public static func symbols(for framework: PrivateFramework) -> [(PrivateSymbolKind, String)] {
         switch framework {
         case .coreSimulator: coreSimulatorSymbols
         case .coreSimDeviceIO: coreSimDeviceIOSymbols
         case .simulatorKit: simulatorKitSymbols
+        case .simPasteboardPlus: simPasteboardPlusSymbols
         }
     }
 

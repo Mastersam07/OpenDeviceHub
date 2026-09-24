@@ -4,6 +4,7 @@ public enum PrivateFramework: String, Sendable, Hashable, CaseIterable {
     case coreSimulator = "CoreSimulator"
     case coreSimDeviceIO = "CoreSimDeviceIO"
     case simulatorKit = "SimulatorKit"
+    case simPasteboardPlus = "SimPasteboardPlus"
 
     /// Probed in order. CoreSimulator lives outside Xcode; SimulatorKit moved from the developer
     /// directory into the app bundle's SharedFrameworks in Xcode 27.
@@ -18,6 +19,16 @@ public enum PrivateFramework: String, Sendable, Hashable, CaseIterable {
             ]
         case .coreSimDeviceIO:
             let suffix = "CoreSimulator.framework/Frameworks/CoreSimDeviceIO.framework/CoreSimDeviceIO"
+            return [
+                "/Library/Developer/PrivateFrameworks/\(suffix)",
+                install.developerDir
+                    .appending(path: "Library/PrivateFrameworks/\(suffix)")
+                    .path(percentEncoded: false),
+            ]
+        case .simPasteboardPlus:
+            // Inside CoreSimulator's own bundle rather than beside it, which is why it is not a
+            // variation of the two paths above.
+            let suffix = "CoreSimulator.framework/Frameworks/SimPasteboardPlus.framework/SimPasteboardPlus"
             return [
                 "/Library/Developer/PrivateFrameworks/\(suffix)",
                 install.developerDir

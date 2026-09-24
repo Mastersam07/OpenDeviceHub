@@ -130,6 +130,21 @@ public protocol InputSession: AnyObject, Sendable {
     func close()
 }
 
+/// A live connection that keeps a device's clipboard and the Mac's in step.
+///
+/// Held for as long as the device is on screen: the automatic syncing runs on the connection, so
+/// letting go of it stops the syncing.
+public protocol PasteboardSession: Sendable {
+    var isAutomatic: Bool { get }
+    func setAutomatic(_ enabled: Bool)
+    /// The Mac's clipboard to the device.
+    func send()
+    /// The device's clipboard to the Mac.
+    func get()
+    /// Brings the device's clipboard back to the Mac, unless the Mac's is the newer of the two.
+    func reconcile()
+}
+
 public protocol SimulatorAdapter: Sendable {
     var xcode: XcodeInstall { get }
     var capabilities: Capabilities { get }
@@ -144,6 +159,8 @@ public protocol SimulatorAdapter: Sendable {
     func setHardwareKeyboardEnabled(_ enabled: Bool, udid: String) throws
     /// Points the guest's keyboard at a language, for example "en-US".
     func setKeyboardLanguage(_ language: String, udid: String) throws
+    /// Opens the clipboard link to a booted device.
+    func openPasteboard(_ udid: String) throws -> any PasteboardSession
     /// Watches every device in the set, so a window learns that its device has gone or come back
     /// without asking.
     func watchDeviceStates() throws -> any DeviceNotifier
