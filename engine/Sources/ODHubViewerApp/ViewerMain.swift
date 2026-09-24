@@ -165,8 +165,7 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 saveScreenshot: {
-                    let directory = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-                        ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                    let directory = recordingDirectory(settings)
                     for url in manager.saveScreenshots(into: directory) {
                         print("saved \(url.path(percentEncoded: false))")
                     }
@@ -175,8 +174,7 @@ struct ODHubViewer: ParsableCommand {
                     print(manager.copyScreenshotToClipboard() ? "screenshot copied" : "nothing to copy")
                 },
                 toggleRecording: {
-                    let directory = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-                        ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                    let directory = recordingDirectory(settings)
                     let finished = manager.toggleRecording(into: directory)
                     if finished.isEmpty {
                         print("recording started")
@@ -278,12 +276,22 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 stopRecording: {
-                    for url in manager.toggleRecording(into: recordingDirectory()) {
+                    for url in manager.toggleRecording(into: recordingDirectory(settings)) {
                         print("recorded \(url.path(percentEncoded: false))")
                     }
                 },
                 isRecording: { manager.isRecording },
-                checkForUpdates: updates.map { updater in { updater.checkForUpdates() } }
+                checkForUpdates: updates.map { updater in { updater.checkForUpdates() } },
+                showSettings: {
+                    SettingsWindow.show(settings: settings, actions: SettingsActions(
+                        automaticUpdates: updates.map { updater in { updater.checksAutomatically } },
+                        setAutomaticUpdates: updates.map { updater in { updater.checksAutomatically = $0 } },
+                        checkForUpdates: updates.map { updater in { updater.checkForUpdates() } },
+                        forgetWindowPositions: {
+                            ((try? adapter.devices()) ?? []).map(\.udid).forEach(store.forget)
+                        }
+                    ))
+                }
             ), capabilities: adapter.capabilities, openSimulatorMenu: chooser.menu,
                commandLineTool: CommandLineToolInstaller.bundledTool == nil ? nil : CommandLineToolMenu(
                    state: { CommandLineToolInstaller.state() },
@@ -535,7 +543,13 @@ private func swipeHome(_ session: any InputSession) async throws {
 
 /// Recordings and screenshots land on the Desktop, falling back to a temporary folder on a machine
 /// that has none.
-private func recordingDirectory() -> URL {
-    FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+private func recordingDirectory(_ settings: ViewerSettings = ViewerSettings()) -> URL {
+    if let chosen = settings.captureDirectory,
+       FileManager.default.fileExists(atPath: chosen.path(percentEncoded: false)) {
+        return chosen
+    }
+    // A folder that has been moved or unplugged since it was chosen falls back rather than losing
+    // the capture.
+    return FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
         ?? URL(fileURLWithPath: NSTemporaryDirectory())
 }

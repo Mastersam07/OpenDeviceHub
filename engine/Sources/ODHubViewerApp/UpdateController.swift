@@ -47,6 +47,13 @@ final class UpdateController {
         controller.checkForUpdates(nil)
     }
 
+    /// Sparkle's own background schedule. Exposed so Settings can turn it off without the window
+    /// needing to know Sparkle exists.
+    var checksAutomatically: Bool {
+        get { controller.updater.automaticallyChecksForUpdates }
+        set { controller.updater.automaticallyChecksForUpdates = newValue }
+    }
+
     /// Whether the updater found the feed usable, for reporting rather than for control flow.
     var feedURL: String? {
         controller.updater.feedURL?.absoluteString
