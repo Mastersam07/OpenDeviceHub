@@ -1,6 +1,24 @@
 import AppKit
 import OpenDeviceHubEngine
 
+/// The one menu item whose wording depends on what is on disk, so it is asked rather than told.
+@MainActor
+public struct CommandLineToolMenu {
+    public var state: () -> CommandLineToolState
+    public var install: () -> Void
+    public var remove: () -> Void
+
+    public init(
+        state: @escaping () -> CommandLineToolState,
+        install: @escaping () -> Void,
+        remove: @escaping () -> Void
+    ) {
+        self.state = state
+        self.install = install
+        self.remove = remove
+    }
+}
+
 /// Builds the application menu. Shortcuts follow the classic Simulator where the action exists.
 @MainActor
 public enum ViewerMenu {
@@ -66,15 +84,22 @@ public enum ViewerMenu {
         into application: NSApplication,
         actions: Actions,
         capabilities: Capabilities,
-        openSimulatorMenu: NSMenu? = nil
+        openSimulatorMenu: NSMenu? = nil,
+        commandLineTool: CommandLineToolMenu? = nil
     ) -> MenuTarget {
-        let target = MenuTarget(actions: actions)
+        let target = MenuTarget(actions: actions, commandLineTool: commandLineTool)
         let bar = NSMenu()
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         if actions.checkForUpdates != nil {
             appMenu.addItem(target.item("Check for Updates\u{2026}", #selector(MenuTarget.checkForUpdates), "", []))
+            appMenu.addItem(.separator())
+        }
+        if commandLineTool != nil {
+            let item = target.item("", #selector(MenuTarget.commandLineTool(_:)), "", [])
+            target.trackCommandLineToolItem(item, in: appMenu)
+            appMenu.addItem(item)
             appMenu.addItem(.separator())
         }
         appMenu.addItem(withTitle: "Quit \(Brand.productName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -183,14 +208,54 @@ private func disable(_ item: NSMenuItem, unless available: Bool, reason: String)
 
 /// Holds the menu actions. AppKit keeps menu targets weakly, so the caller retains this.
 @MainActor
-public final class MenuTarget: NSObject {
+public final class MenuTarget: NSObject, NSMenuDelegate {
     private let actions: ViewerMenu.Actions
+    private let commandLineTool: CommandLineToolMenu?
+    private weak var commandLineToolItem: NSMenuItem?
     private var isDark = false
     private var isSlowAnimations = false
     private var isLatencyVisible = false
 
-    init(actions: ViewerMenu.Actions) {
+    init(actions: ViewerMenu.Actions, commandLineTool: CommandLineToolMenu? = nil) {
         self.actions = actions
+        self.commandLineTool = commandLineTool
+    }
+
+    /// The title has to be read off the disk each time the menu opens, because the link can be
+    /// removed, or repointed by installing another copy of the app, while this one is running.
+    func trackCommandLineToolItem(_ item: NSMenuItem, in menu: NSMenu) {
+        commandLineToolItem = item
+        menu.delegate = self
+        retitleCommandLineToolItem()
+    }
+
+    public func menuNeedsUpdate(_ menu: NSMenu) {
+        retitleCommandLineToolItem()
+    }
+
+    private func retitleCommandLineToolItem() {
+        guard let commandLineToolItem, let commandLineTool else { return }
+        switch commandLineTool.state() {
+        case .installed(let link):
+            commandLineToolItem.title = "Remove Command Line Tool"
+            commandLineToolItem.toolTip = "Deletes the \(link) link."
+        case .pointsElsewhere(let link, let destination):
+            commandLineToolItem.title = "Repair Command Line Tool\u{2026}"
+            commandLineToolItem.toolTip = "\(link) points at \(destination)."
+        case .missing:
+            commandLineToolItem.title = "Install Command Line Tool\u{2026}"
+            commandLineToolItem.toolTip = "Puts \(Brand.commandName) on your PATH."
+        }
+    }
+
+    @objc func commandLineTool(_ sender: NSMenuItem) {
+        guard let commandLineTool else { return }
+        if case .installed = commandLineTool.state() {
+            commandLineTool.remove()
+        } else {
+            commandLineTool.install()
+        }
+        retitleCommandLineToolItem()
     }
 
     func item(_ title: String, _ action: Selector, _ key: String, _ modifiers: NSEvent.ModifierFlags) -> NSMenuItem {

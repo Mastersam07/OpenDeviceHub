@@ -16,14 +16,12 @@ Download the DMG from [Releases](https://github.com/Mastersam07/OpenDeviceHub/re
 OpenDeviceHub to Applications and launch it. The app is signed with a Developer ID certificate and
 notarized, so there is no Gatekeeper warning, and it updates itself from the app menu.
 
-The `odhub` command line tool ships inside the bundle. To use it from a terminal, put it on your
-`PATH`:
+The `odhub` command line tool ships inside the bundle. Choose **OpenDeviceHub → Install Command Line
+Tool** and it links `odhub` into a folder already on your `PATH`, asking for your password only if
+every such folder belongs to the system. **Remove Command Line Tool** takes it away again.
 
-```sh
-echo 'export PATH="/Applications/OpenDeviceHub.app/Contents/MacOS:$PATH"' >> ~/.zshrc
-```
-
-Then `odhub doctor` reports what it found and `odhub list` shows your simulators.
+Then, in a new terminal, `odhub doctor` reports what it found and `odhub list` shows your
+simulators.
 
 ## Features
 
@@ -45,7 +43,7 @@ Then `odhub doctor` reports what it found and `odhub list` shows your simulators
 - **Debug helpers** — slow animations, shake, simulated memory warning, the system log and app data
   in the Finder, and a click to frame latency overlay.
 - **A command line tool** — `odhub` drives a simulator from a script: tap, swipe, pinch, type,
-  buttons, rotation.
+  buttons, rotation. One menu item puts it on your `PATH`.
 
 <details>
 <summary>Keyboard shortcuts</summary>
