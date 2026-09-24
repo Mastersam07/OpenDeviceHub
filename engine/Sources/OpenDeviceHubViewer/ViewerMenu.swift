@@ -39,6 +39,13 @@ public enum ViewerMenu {
         public var toggleLatencyOverlay: () -> Void
         public var pressButton: (HardwareButton) -> Void
         public var rotate: (Bool) -> Void
+        public var restart: () -> Void
+        public var erase: () -> Void
+        public var stepTextSize: (SimctlService.ContentSizeStep) -> Void
+        public var toggleIncreaseContrast: () -> Void
+        public var triggerICloudSync: () -> Void
+        public var setLocation: (SimctlService.LocationScenario?) -> Void
+        public var setCustomLocation: () -> Void
         public var setOrientation: (DeviceOrientation) -> Void
         public var appSwitcher: () -> Void
         public var stopRecording: () -> Void
@@ -63,6 +70,13 @@ public enum ViewerMenu {
             toggleLatencyOverlay: @escaping () -> Void,
             pressButton: @escaping (HardwareButton) -> Void,
             rotate: @escaping (Bool) -> Void,
+            restart: @escaping () -> Void,
+            erase: @escaping () -> Void,
+            stepTextSize: @escaping (SimctlService.ContentSizeStep) -> Void,
+            toggleIncreaseContrast: @escaping () -> Void,
+            triggerICloudSync: @escaping () -> Void,
+            setLocation: @escaping (SimctlService.LocationScenario?) -> Void,
+            setCustomLocation: @escaping () -> Void,
             setOrientation: @escaping (DeviceOrientation) -> Void,
             appSwitcher: @escaping () -> Void,
             stopRecording: @escaping () -> Void,
@@ -86,6 +100,13 @@ public enum ViewerMenu {
             self.toggleLatencyOverlay = toggleLatencyOverlay
             self.pressButton = pressButton
             self.rotate = rotate
+            self.restart = restart
+            self.erase = erase
+            self.stepTextSize = stepTextSize
+            self.toggleIncreaseContrast = toggleIncreaseContrast
+            self.triggerICloudSync = triggerICloudSync
+            self.setLocation = setLocation
+            self.setCustomLocation = setCustomLocation
             self.setOrientation = setOrientation
             self.appSwitcher = appSwitcher
             self.stopRecording = stopRecording
@@ -196,6 +217,9 @@ public enum ViewerMenu {
 
         let deviceItem = NSMenuItem()
         let deviceMenu = NSMenu(title: "Device")
+        deviceMenu.addItem(target.item("Restart", #selector(MenuTarget.restart), "", []))
+        deviceMenu.addItem(target.item("Erase All Content and Settings\u{2026}", #selector(MenuTarget.erase), "", []))
+        deviceMenu.addItem(.separator())
         let rotateLeft = target.item("Rotate Left", #selector(MenuTarget.rotateLeft), String(UnicodeScalar(NSLeftArrowFunctionKey)!), [.command])
         let rotateRight = target.item("Rotate Right", #selector(MenuTarget.rotateRight), String(UnicodeScalar(NSRightArrowFunctionKey)!), [.command])
         for item in [rotateLeft, rotateRight] {
@@ -244,6 +268,26 @@ public enum ViewerMenu {
         let featuresItem = NSMenuItem()
         let featuresMenu = NSMenu(title: "Features")
         featuresMenu.addItem(target.item("Toggle Appearance", #selector(MenuTarget.appearance), "a", [.command, .shift]))
+        featuresMenu.addItem(target.item("Toggle Increase Contrast", #selector(MenuTarget.increaseContrast(_:)), "", []))
+        featuresMenu.addItem(.separator())
+        featuresMenu.addItem(target.item("Increase Preferred Text Size", #selector(MenuTarget.textSizeUp), "+", [.command, .option]))
+        featuresMenu.addItem(target.item("Decrease Preferred Text Size", #selector(MenuTarget.textSizeDown), "-", [.command, .option]))
+        featuresMenu.addItem(.separator())
+        featuresMenu.addItem(target.item("Trigger iCloud Sync", #selector(MenuTarget.iCloudSync), "i", [.command, .shift]))
+        featuresMenu.addItem(.separator())
+
+        let locationItem = NSMenuItem(title: "Location", action: nil, keyEquivalent: "")
+        let locationMenu = NSMenu(title: "Location")
+        locationMenu.addItem(target.item("None", #selector(MenuTarget.clearLocation), "", []))
+        locationMenu.addItem(target.item("Custom Location\u{2026}", #selector(MenuTarget.customLocation), "", []))
+        locationMenu.addItem(.separator())
+        for scenario in SimctlService.LocationScenario.allCases {
+            let item = target.item(scenario.rawValue, #selector(MenuTarget.locationScenario(_:)), "", [])
+            item.representedObject = scenario.rawValue
+            locationMenu.addItem(item)
+        }
+        locationItem.submenu = locationMenu
+        featuresMenu.addItem(locationItem)
         featuresItem.submenu = featuresMenu
         bar.addItem(featuresItem)
 
@@ -356,6 +400,7 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private var isDark = false
     private var isSlowAnimations = false
     private var isLatencyVisible = false
+    private var isIncreasedContrast = false
 
     init(actions: ViewerMenu.Actions, commandLineTool: CommandLineToolMenu? = nil) {
         self.actions = actions
@@ -444,6 +489,25 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     @objc func siri() { actions.pressButton(.siri) }
     @objc func actionButton() { actions.pressButton(.actionButton) }
     @objc func appSwitcher() { actions.appSwitcher() }
+    @objc func restart() { actions.restart() }
+    @objc func erase() { actions.erase() }
+    @objc func textSizeUp() { actions.stepTextSize(.increment) }
+    @objc func textSizeDown() { actions.stepTextSize(.decrement) }
+    @objc func iCloudSync() { actions.triggerICloudSync() }
+    @objc func clearLocation() { actions.setLocation(nil) }
+    @objc func customLocation() { actions.setCustomLocation() }
+
+    @objc func locationScenario(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let scenario = SimctlService.LocationScenario(rawValue: raw) else { return }
+        actions.setLocation(scenario)
+    }
+
+    @objc func increaseContrast(_ sender: NSMenuItem) {
+        isIncreasedContrast.toggle()
+        sender.state = isIncreasedContrast ? .on : .off
+        actions.toggleIncreaseContrast()
+    }
     @objc func stopRecording() { actions.stopRecording() }
 
     func trackStopRecordingItem(_ item: NSMenuItem) {
