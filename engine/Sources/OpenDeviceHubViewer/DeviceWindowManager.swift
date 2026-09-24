@@ -13,10 +13,18 @@ public final class DeviceWindowManager {
     private var mirror: ((String) throws -> Void)?
     private var report: (String) -> Void = { _ in }
     private let frameStore: WindowFrameStore
+    private let settings: ViewerSettings
+    private let shutdownDevice: @Sendable (String) throws -> Void
     private let placementGap: CGFloat = 12
 
-    public init(frameStore: WindowFrameStore = WindowFrameStore()) {
+    public init(
+        frameStore: WindowFrameStore = WindowFrameStore(),
+        settings: ViewerSettings = ViewerSettings(),
+        shutdown: @escaping @Sendable (String) throws -> Void = { try SimctlService().shutdown(udid: $0) }
+    ) {
         self.frameStore = frameStore
+        self.settings = settings
+        self.shutdownDevice = shutdown
     }
 
     public var openCount: Int { controllers.count }
@@ -60,6 +68,7 @@ public final class DeviceWindowManager {
         )
         controller.onClose = { [weak self] udid in
             self?.controllers.removeValue(forKey: udid)
+            self?.shutdownIfAsked(udid)
         }
         // A window that has lost its sessions offers the same way back as one whose device shut
         // down, since a wedged device usually needs the same thing.
@@ -159,6 +168,30 @@ public final class DeviceWindowManager {
         controller.onClose = nil
         controller.stop()
         controller.window?.close()
+        shutdownIfAsked(udid)
+    }
+
+    /// Closing a window shuts its device down, which is what Simulator.app does and what someone
+    /// closing a window usually means. Off in Settings for anyone who wants the device to outlive
+    /// the window.
+    ///
+    /// Off the main thread because shutting down blocks for a second or two, and this runs while a
+    /// window is going away.
+    private func shutdownIfAsked(_ udid: String) {
+        guard settings.shutsDownOnWindowClose else { return }
+        let shutdown = shutdownDevice
+        Task { [weak self] in
+            let failure = await Task.detached { () -> String? in
+                do {
+                    try shutdown(udid)
+                    return nil
+                } catch {
+                    return error.localizedDescription
+                }
+            }.value
+            guard let failure else { return }
+            self?.report("\(udid) could not be shut down: \(failure)")
+        }
     }
 
     @discardableResult
