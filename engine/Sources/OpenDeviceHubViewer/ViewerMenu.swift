@@ -310,11 +310,18 @@ public enum ViewerMenu {
 /// to `.automatic`, which for a menu built in code resolves to hidden: the image is present,
 /// template and correctly sized, and simply is not drawn.
 private extension NSMenuItem {
+    static let setPreferredImageVisibility = NSSelectorFromString("setPreferredImageVisibility:")
+    /// `NSMenuItem.ImageVisibility.visible`, read off the enum on macOS 27 rather than assumed.
+    static let imageVisibilityVisible = 1
+
     @discardableResult
     func icon(_ symbol: String) -> NSMenuItem {
         image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-        if #available(macOS 27.0, *) {
-            preferredImageVisibility = .visible
+        // Through the runtime rather than as a property, because `#available` is a runtime test and
+        // the symbol still has to exist when this compiles. It does not on the macOS 26 SDK, which
+        // is what an Xcode 26 build has, and this project supports both.
+        if responds(to: Self.setPreferredImageVisibility) {
+            setValue(Self.imageVisibilityVisible, forKey: "preferredImageVisibility")
         }
         return self
     }
