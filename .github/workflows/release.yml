@@ -145,6 +145,13 @@ jobs:
       - name: Build, sign, notarize, staple, package, checksum, appcast
         run: scripts/sign-and-notarize.sh
 
+      - name: Compose the release notes
+        run: |
+          set -euo pipefail
+          python3 scripts/release-notes.py "${{ steps.version.outputs.version }}" \
+            > build/release-notes.md
+          wc -l build/release-notes.md
+
       - name: Release candidate artifacts
         if: ${{ inputs.publish != true }}
         uses: actions/upload-artifact@v4
@@ -154,6 +161,7 @@ jobs:
             build/*.dmg
             build/SHA256SUMS
             build/appcast.xml
+            build/release-notes.md
             build/notarization/*.json
           retention-days: 3
 
@@ -164,7 +172,7 @@ jobs:
           version="${{ steps.version.outputs.version }}"
           gh release create "v${version}" \
             --title "${version}" \
-            --notes-file <(python3 scripts/changelog-section.py "${version}") \
+            --notes-file build/release-notes.md \
             --prerelease \
             build/OpenDeviceHub-${version}.dmg build/SHA256SUMS
         env:
@@ -179,6 +187,7 @@ jobs:
             build/*.dmg
             build/SHA256SUMS
             build/appcast.xml
+            build/release-notes.md
           retention-days: 90
 
       - name: Clean up

@@ -33,10 +33,22 @@ simulators.
   icon or File → Open Simulator. A device booted anywhere else gets a window here too.
 - **Familiar shortcuts** — the Simulator keys you already know.
 - **Input** — click to tap and drag, pinch and rotate with the trackpad, type with your Mac
-  keyboard, and swipe up from the bottom edge for home or the app switcher.
-- **Device controls** — Home, Lock, volume, rotation, and light or dark appearance, from the menu or
-  by clicking the buttons on the device body.
-- **Screenshots and recordings** — PNGs and MP4s to the Desktop, or a screenshot to the clipboard.
+  keyboard, and swipe up from the bottom edge for home or the app switcher. Send keys to the device or
+  keep them, connect the Mac keyboard as the device's hardware keyboard, and match its language to
+  yours.
+- **Device controls** — Home, Lock, volume, rotation, Siri, the Action button and light or dark
+  appearance, from the menu or by clicking the buttons on the device body. Restart or erase a device,
+  step its text size, turn on increased contrast, trigger an iCloud sync, and set a location from a
+  scenario or your own coordinates.
+- **Create a simulator** — name it, pick a device type and an OS version, and it boots and opens. The
+  two lists follow each other, so a device an installed runtime cannot run is never offered.
+- **Screenshots and recordings** — a capture appears beside the window first, where you can open,
+  copy, save it elsewhere, reveal it in the Finder or throw it away. Left alone it files itself. The
+  folder is yours to choose.
+- **The clipboard stays in step** — copy on the Mac and it is on the device; copy on the device and it
+  is on the Mac when you switch to another app. Or do it by hand from Edit.
+- **Settings** — whether closing a window shuts the device down, whether launching opens the
+  simulator you had last, where captures go, and which app opens device links.
 - **Drag and drop** — drop a file or a link onto a device to open it there.
 - **Follows the device** — shut a simulator down from anywhere and its window says so and offers to
   start it again; boot it and the window reattaches on its own.
@@ -99,8 +111,6 @@ options.
   keystrokes while it still renders and still reports itself booted, with no error anywhere. Not the
   app window: a command line tap fails on the same device at the same moment, while a device booted
   fresh right then is fine. Shut the simulator down and boot it again. Under investigation.
-- **Copying from a device does nothing** on at least one machine, which traces to `simctl pbpaste`
-  returning nothing. Pasting to a device works.
 - **The windows are invisible to accessibility** — VoiceOver, window managers and scripting tools see
   the app and its menus but not its windows.
 - **A device taller than your display** keeps its bottom edge off screen, where the pointer cannot
