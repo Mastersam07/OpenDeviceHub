@@ -11,19 +11,22 @@ public struct SettingsActions {
     public var checkForUpdates: (() -> Void)?
     public var forgetWindowPositions: () -> Void
     public var rememberedWindowCount: () -> Int
+    public var openLinks: DefaultDeviceApplication?
 
     public init(
         automaticUpdates: (() -> Bool)? = nil,
         setAutomaticUpdates: ((Bool) -> Void)? = nil,
         checkForUpdates: (() -> Void)? = nil,
         forgetWindowPositions: @escaping () -> Void,
-        rememberedWindowCount: @escaping () -> Int
+        rememberedWindowCount: @escaping () -> Int,
+        openLinks: DefaultDeviceApplication? = nil
     ) {
         self.automaticUpdates = automaticUpdates
         self.setAutomaticUpdates = setAutomaticUpdates
         self.checkForUpdates = checkForUpdates
         self.forgetWindowPositions = forgetWindowPositions
         self.rememberedWindowCount = rememberedWindowCount
+        self.openLinks = openLinks
     }
 }
 
@@ -68,6 +71,7 @@ private struct SettingsView: View {
     @State private var automaticUpdates: Bool
     @State private var captureDirectory: URL?
     @State private var rememberedWindows: Int
+    @ObservedObject private var links: DefaultDeviceApplication
 
     init(settings: ViewerSettings, actions: SettingsActions) {
         self.settings = settings
@@ -77,6 +81,7 @@ private struct SettingsView: View {
         _automaticUpdates = State(initialValue: actions.automaticUpdates?() ?? false)
         _captureDirectory = State(initialValue: settings.captureDirectory)
         _rememberedWindows = State(initialValue: actions.rememberedWindowCount())
+        links = actions.openLinks ?? DefaultDeviceApplication()
     }
 
     var body: some View {
@@ -143,15 +148,34 @@ private struct SettingsView: View {
                 }
             }
 
+            if actions.openLinks != nil {
+                Section("Links") {
+                    LabeledContent {
+                        Button(links.isOurs ? "Use Device Hub" : "Use \(Brand.productName)") {
+                            if links.isOurs { links.handBackToDeviceHub() } else { links.takeOver() }
+                        }
+                        .disabled(links.isBusy)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Open devices:// links with")
+                            Text(links.failure ?? links.handlerName ?? "Nothing handles these links.")
+                                .font(.footnote)
+                                .foregroundStyle(links.failure == nil ? .secondary : Color.red)
+                        }
+                    }
+                }
+            }
+
             if let setAutomaticUpdates = actions.setAutomaticUpdates {
                 Section("Updates") {
-                    Toggle("Check for updates automatically", isOn: Binding(
+                    Toggle("Install updates automatically", isOn: Binding(
                         get: { automaticUpdates },
                         set: { value in
                             setAutomaticUpdates(value)
                             automaticUpdates = value
                         }
                     ))
+                    .help("Checks and downloads in the background. Installing still waits for you.")
                 }
             }
 
@@ -170,8 +194,13 @@ private struct SettingsView: View {
 
                     Spacer()
 
-                    if let checkForUpdates = actions.checkForUpdates {
-                        Button("Check for Updates\u{2026}", action: checkForUpdates)
+                    VStack(alignment: .trailing, spacing: 8) {
+                        if let checkForUpdates = actions.checkForUpdates {
+                            Button("Check for Updates\u{2026}", action: checkForUpdates)
+                        }
+                        if let repository = URL(string: "https://github.com/Mastersam07/OpenDeviceHub") {
+                            Link("GitHub", destination: repository)
+                        }
                     }
                 }
             }

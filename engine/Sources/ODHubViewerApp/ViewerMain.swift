@@ -146,6 +146,7 @@ struct ODHubViewer: ParsableCommand {
                 }
             )
 
+            let deviceLinks = DefaultDeviceApplication()
             let updates = UpdateController()
             let menuTarget = ViewerMenu.install(into: application, actions: ViewerMenu.Actions(
                 setScaleMode: { manager.applyScaleMode($0) },
@@ -288,7 +289,8 @@ struct ODHubViewer: ParsableCommand {
                         setAutomaticUpdates: updates.map { updater in { updater.checksAutomatically = $0 } },
                         checkForUpdates: updates.map { updater in { updater.checkForUpdates() } },
                         forgetWindowPositions: { store.forgetAll() },
-                        rememberedWindowCount: { store.rememberedCount }
+                        rememberedWindowCount: { store.rememberedCount },
+                        openLinks: deviceLinks
                     ))
                 }
             ), capabilities: adapter.capabilities, openSimulatorMenu: chooser.menu,
@@ -334,6 +336,14 @@ struct ODHubViewer: ParsableCommand {
                 quitsWithLastWindow: !launchedFromAnIcon,
                 dockMenu: { chooser.dockMenu() },
                 reopen: { bootThenShow($0) },
+                openLink: { udid in
+                    if manager.isOpen(udid) {
+                        manager.bringToFront(udid)
+                        NSApp.activate(ignoringOtherApps: true)
+                    } else {
+                        bootThenShow(udid)
+                    }
+                },
                 deviceToReopen: { recent.udid ?? StartupDevices.plan(
                     devices: (try? adapter.devices()) ?? [],
                     remembered: nil
@@ -418,6 +428,7 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
     private let quitsWithLastWindow: Bool
     private let dockMenu: () -> NSMenu
     private let reopen: (String) -> Void
+    private let openLink: (String) -> Void
     private let deviceToReopen: () -> String?
     private let onTerminate: () -> Void
 
@@ -425,12 +436,14 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
         quitsWithLastWindow: Bool,
         dockMenu: @escaping () -> NSMenu,
         reopen: @escaping (String) -> Void,
+        openLink: @escaping (String) -> Void,
         deviceToReopen: @escaping () -> String?,
         onTerminate: @escaping () -> Void
     ) {
         self.quitsWithLastWindow = quitsWithLastWindow
         self.dockMenu = dockMenu
         self.reopen = reopen
+        self.openLink = openLink
         self.deviceToReopen = deviceToReopen
         self.onTerminate = onTerminate
     }
@@ -453,6 +466,32 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         onTerminate()
+    }
+
+    /// A devices:// link only reaches this app if someone chose it in Settings. One that names a
+    /// simulator opens here; anything else goes back to Device Hub whole, rather than being dropped
+    /// because this app did not understand it.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            switch DeviceLink.destination(for: url) {
+            case .simulator(let udid):
+                openLink(udid)
+            case .deviceHub:
+                forwardToDeviceHub(url)
+            case .notADeviceLink:
+                continue
+            }
+        }
+    }
+
+    private func forwardToDeviceHub(_ url: URL) {
+        guard let deviceHub = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.apple.dt.Devices"
+        ) else {
+            print("no Device Hub to pass \(url) to")
+            return
+        }
+        NSWorkspace.shared.open([url], withApplicationAt: deviceHub, configuration: NSWorkspace.OpenConfiguration())
     }
 }
 

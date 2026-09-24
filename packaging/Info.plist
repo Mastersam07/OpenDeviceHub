@@ -17,6 +17,23 @@
   <key>NSHumanReadableCopyright</key><string>MIT licensed. Not affiliated with or endorsed by Apple.</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
 
+  <!-- Links that name a device. `devices` belongs to Device Hub by default; claiming it here only
+       matters once someone chooses this app in Settings, and a link this app does not understand is
+       handed back to Device Hub rather than swallowed. -->
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>io.github.mastersam07.simviewer.open</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>CFBundleURLSchemes</key><array><string>odhub</string></array>
+    </dict>
+    <dict>
+      <key>CFBundleURLName</key><string>io.github.mastersam07.simviewer.devices</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>CFBundleURLSchemes</key><array><string>devices</string></array>
+    </dict>
+  </array>
+
   <!-- Sparkle. The feed and the key are what make this a release build: without both, the updater
        is never created. Neither may change once a version has shipped. -->
   <key>SUFeedURL</key><string>https://mastersam07.github.io/appcast/simviewer.xml</string>

@@ -7,6 +7,9 @@ public enum Brand {
     public static let bundledViewerExecutableName = "OpenDeviceHub"
     public static let identifierPrefix = "opendevicehub"
 
+    /// This app's own URL scheme, for links that name a simulator to open.
+    public static let urlScheme = "odhub"
+
     /// Based on the GitHub handle rather than the product name, so the app can be renamed and the
     /// repository moved without it changing. Changing it after a release makes macOS treat the app
     /// as a different one, orphaning every copy already installed.
