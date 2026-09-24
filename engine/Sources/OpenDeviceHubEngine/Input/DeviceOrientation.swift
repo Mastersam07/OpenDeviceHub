@@ -21,6 +21,15 @@ public enum DeviceOrientation: String, Sendable, Hashable, CaseIterable, Codable
         self == .landscapeLeft || self == .landscapeRight
     }
 
+    public var displayName: String {
+        switch self {
+        case .portrait: "Portrait"
+        case .landscapeRight: "Landscape Right"
+        case .portraitUpsideDown: "Portrait Upside Down"
+        case .landscapeLeft: "Landscape Left"
+        }
+    }
+
     /// The size the viewer draws, which swaps the axes in landscape.
     public func displayedSize(portraitNative: CGSize) -> CGSize {
         isLandscape
