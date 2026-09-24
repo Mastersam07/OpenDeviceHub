@@ -117,20 +117,23 @@ public final class PasteboardBridge: PasteboardSession, @unchecked Sendable {
         lastSeenChangeCount = pasteboard.changeCount
     }
 
-    /// Brings the device's clipboard back to the Mac, unless the Mac's is the newer of the two.
+    /// Brings the device's clipboard back to the Mac without losing a copy made on the Mac.
     ///
     /// Called when the app stops being frontmost, which is when a copy made inside the device is
-    /// about to be pasted somewhere else. The check matters: an unconditional pull would overwrite
-    /// something the user copied on the Mac a moment earlier, before the automatic sync had carried
-    /// it the other way.
+    /// about to be pasted somewhere else.
+    ///
+    /// A Mac copy that has not been carried over yet is pushed first, so the pull that follows cannot
+    /// overwrite it: after the push both sides hold it, and the pull is then a no-op. Whichever side
+    /// was copied on last wins, in either order. The push cannot be skipped by watching the Mac's
+    /// change count alone, because the automatic sync pushes inside the private interface, where
+    /// there is nothing to observe.
     public func reconcile() {
         lock.lock()
         defer { lock.unlock() }
         if pasteboard.changeCount != lastSeenChangeCount {
             interface.push()
-        } else {
-            interface.pull()
         }
+        interface.pull()
         lastSeenChangeCount = pasteboard.changeCount
     }
 }

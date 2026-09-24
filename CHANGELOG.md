@@ -15,8 +15,9 @@ First release.
   where they were.
 - Click to tap, drag, two finger pinch and rotate, keyboard input, hardware buttons, and the swipe
   up from the bottom edge that goes home or opens the app switcher.
-- Rotation, screenshots, screen recording, drag and drop onto a device, and the clipboard shared
-  with the Mac.
+- Rotation, screenshots, screen recording, drag and drop onto a device, and the clipboard kept in
+  step with the Mac: copies carry over on their own, and a copy made inside a device is there when
+  you switch to another app.
 - A window follows its device: it shows when the device has shut down, offers a reboot, and
   reattaches on its own when the device comes back.
 - The menu bar follows the simulator it replaces: the same menus in the same order, the same
