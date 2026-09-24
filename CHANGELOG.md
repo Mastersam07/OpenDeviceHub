@@ -19,6 +19,10 @@ First release.
   with the Mac.
 - A window follows its device: it shows when the device has shut down, offers a reboot, and
   reattaches on its own when the device comes back.
+- The menu bar follows the simulator it replaces: the same menus in the same order, the same
+  shortcuts, and the standard macOS ones that were missing. The zoom shortcuts are Apple's now,
+  ⌘1 Physical Size, ⌘2 Point Accurate, ⌘3 Pixel Accurate, ⌘4 Fit Screen, which changes three of the
+  four this app used before.
 - The `odhub` command line tool beside the app, for listing devices and driving input from a script.
   One menu item puts it on your PATH, without a password on most machines.
 - If Xcode is missing or its simulator frameworks will not load, the app says what is missing and

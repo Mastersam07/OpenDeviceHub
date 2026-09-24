@@ -31,7 +31,7 @@ public enum ScaleMode: String, Sendable, Hashable, Codable, CaseIterable, Expres
 
     public var displayName: String {
         switch self {
-        case .fit: return "Fit"
+        case .fit: return "Fit Screen"
         case .pointAccurate: return "Point Accurate"
         case .pixelAccurate: return "Pixel Accurate"
         case .physicalSize: return "Physical Size"
