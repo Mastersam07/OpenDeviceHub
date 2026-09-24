@@ -17,6 +17,7 @@ public struct Capabilities: OptionSet, Sendable, Hashable {
     public static let pointer = Capabilities(rawValue: 1 << 9)
     public static let rotation = Capabilities(rawValue: 1 << 10)
     public static let deviceNotifications = Capabilities(rawValue: 1 << 11)
+    public static let hardwareKeyboard = Capabilities(rawValue: 1 << 12)
 }
 
 extension Capabilities {
@@ -26,6 +27,7 @@ extension Capabilities {
         ("multiTouch", .multiTouch),
         ("keyboard", .keyboard),
         ("hardwareButtons", .hardwareButtons),
+        ("hardwareKeyboard", .hardwareKeyboard),
         ("memoryWarning", .memoryWarning),
         ("slowAnimations", .slowAnimations),
         ("shake", .shake),

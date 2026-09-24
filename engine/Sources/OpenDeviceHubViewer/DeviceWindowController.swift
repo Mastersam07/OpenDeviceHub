@@ -343,6 +343,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     }
 
     /// The most recent frame as a PNG, matching whatever the window is showing including the bezel.
+    /// Whether the Mac's keystrokes reach this device.
+    public var sendsKeyboardInput: Bool {
+        get { screenView.sendsKeyboardInput }
+        set { screenView.sendsKeyboardInput = newValue }
+    }
+
     public func screenshotPNG() -> Data? {
         guard let surface = renderer.currentSurface else { return nil }
         // With the body shown, a screenshot means the device, not just its screen. Without it, the

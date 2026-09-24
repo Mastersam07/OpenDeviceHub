@@ -119,6 +119,75 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         device.simulateMemoryWarning()
     }
 
+    /// The Mac's keyboard as the device's hardware keyboard.
+    ///
+    /// Two private pieces, both confirmed present on this Xcode before use: the selector on
+    /// `SimDevice`, and `IndigoHIDGetKeyboardType` for the byte it wants. The type is asked for
+    /// rather than guessed, because passing a made up keyboard type is not a safe thing to do to a
+    /// device.
+    public func setHardwareKeyboardEnabled(_ enabled: Bool, udid: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let device = try rawDevice(udid)
+        guard DeviceState.from(state: device.state, stateString: device.stateString ?? "") == .booted else {
+            throw EngineError.deviceNotBooted(udid: udid)
+        }
+        let selector = NSSelectorFromString("setHardwareKeyboardEnabled:keyboardType:error:")
+        guard (device as AnyObject).responds(to: selector) else {
+            throw EngineError.symbolNotFound(
+                name: "-[SimDevice setHardwareKeyboardEnabled:keyboardType:error:]",
+                framework: PrivateFramework.coreSimulator.rawValue
+            )
+        }
+        let simulatorKit = try FrameworkLoader.load(.simulatorKit, from: xcode)
+        guard let symbol = simulatorKit.symbol(named: "IndigoHIDGetKeyboardType") else {
+            throw EngineError.symbolNotFound(
+                name: "IndigoHIDGetKeyboardType",
+                framework: PrivateFramework.simulatorKit.rawValue
+            )
+        }
+        typealias KeyboardType = @convention(c) () -> UInt8
+        let keyboardType = unsafeBitCast(symbol, to: KeyboardType.self)()
+
+        // Returns BOOL with an NSError out parameter, so Swift imports it as throwing. Rewrapped
+        // rather than passed through, so callers see one error type.
+        do {
+            try device.setHardwareKeyboardEnabled(enabled, keyboardType: keyboardType)
+        } catch {
+            throw EngineError.privateCall(
+                symbol: "setHardwareKeyboardEnabled:keyboardType:error:",
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    /// Points the guest's keyboard at a language, for example "en-US".
+    public func setKeyboardLanguage(_ language: String, udid: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let device = try rawDevice(udid)
+        guard DeviceState.from(state: device.state, stateString: device.stateString ?? "") == .booted else {
+            throw EngineError.deviceNotBooted(udid: udid)
+        }
+        let selector = NSSelectorFromString("setKeyboardLanguage:error:")
+        guard (device as AnyObject).responds(to: selector) else {
+            throw EngineError.symbolNotFound(
+                name: "-[SimDevice setKeyboardLanguage:error:]",
+                framework: PrivateFramework.coreSimulator.rawValue
+            )
+        }
+        do {
+            try device.setKeyboardLanguage(language)
+        } catch {
+            throw EngineError.privateCall(
+                symbol: "setKeyboardLanguage:error:",
+                message: error.localizedDescription
+            )
+        }
+    }
+
     public func setOrientation(_ orientation: DeviceOrientation, udid: String) throws {
         lock.lock()
         defer { lock.unlock() }
@@ -231,6 +300,15 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         if let device = NSClassFromString("SimDevice"),
            class_getInstanceMethod(device, NSSelectorFromString("lookup:error:")) != nil {
             capabilities.insert(.rotation)
+        }
+        // Both halves have to be there: the selector that makes the change, and the symbol that
+        // supplies the keyboard type it wants. One without the other is not a working capability.
+        if hasSimulatorKit,
+           let device = NSClassFromString("SimDevice"),
+           class_getInstanceMethod(
+               device, NSSelectorFromString("setHardwareKeyboardEnabled:keyboardType:error:")
+           ) != nil {
+            capabilities.insert(.hardwareKeyboard)
         }
         if let deviceSet = NSClassFromString("SimDeviceSet"),
            class_getInstanceMethod(

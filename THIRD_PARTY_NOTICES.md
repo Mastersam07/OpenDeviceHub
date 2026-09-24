@@ -26,7 +26,7 @@ The hardware button constants in `IndigoHID.swift` come from the same header:
 | `edgeValue`, none `0`, top `1`, left `2`, bottom `3`, right `4` | `IndigoHIDEdgeNone` through `IndigoHIDEdgeRight` |
 
 The eventMask bits idb documents for each edge, and its observation that the guest recognises a
-system edge gesture from those bits, are recorded in `docs/private-api-notes.md`. Only the bottom
+system edge gesture from those bits, were measured on a device rather than taken on trust. Only the bottom
 value was found to change behaviour on Xcode 26.5.
 
 ### Siniulator

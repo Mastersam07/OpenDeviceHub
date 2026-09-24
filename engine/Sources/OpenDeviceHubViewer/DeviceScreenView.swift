@@ -138,8 +138,12 @@ public final class DeviceScreenView: MTKView, NSDraggingSource {
         return false
     }
 
+    /// Off sends keystrokes nowhere, so the Mac keeps them. Useful when typing a shortcut that the
+    /// guest would otherwise swallow.
+    public var sendsKeyboardInput = true
+
     public override func keyDown(with event: NSEvent) {
-        guard let usage = KeyboardMap.usage(forVirtualKeyCode: event.keyCode) else {
+        guard sendsKeyboardInput, let usage = KeyboardMap.usage(forVirtualKeyCode: event.keyCode) else {
             super.keyDown(with: event)
             return
         }
@@ -147,7 +151,7 @@ public final class DeviceScreenView: MTKView, NSDraggingSource {
     }
 
     public override func keyUp(with event: NSEvent) {
-        guard let usage = KeyboardMap.usage(forVirtualKeyCode: event.keyCode) else {
+        guard sendsKeyboardInput, let usage = KeyboardMap.usage(forVirtualKeyCode: event.keyCode) else {
             super.keyUp(with: event)
             return
         }
