@@ -151,8 +151,10 @@ private struct SettingsView: View {
             if actions.openLinks != nil {
                 Section("Links") {
                     LabeledContent {
-                        Button(links.isOurs ? "Use Device Hub" : "Use \(Brand.productName)") {
-                            if links.isOurs { links.handBackToDeviceHub() } else { links.takeOver() }
+                        Button(links.isOurs
+                            ? "Use \(links.previousHandlerName ?? "Device Hub")"
+                            : "Use \(Brand.productName)") {
+                            if links.isOurs { links.handBack() } else { links.takeOver() }
                         }
                         .disabled(links.isBusy)
                     } label: {
