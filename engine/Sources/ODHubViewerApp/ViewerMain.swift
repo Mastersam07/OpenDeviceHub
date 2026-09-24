@@ -249,7 +249,12 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 checkForUpdates: updates.map { updater in { updater.checkForUpdates() } }
-            ), capabilities: adapter.capabilities, openSimulatorMenu: chooser.menu)
+            ), capabilities: adapter.capabilities, openSimulatorMenu: chooser.menu,
+               commandLineTool: CommandLineToolInstaller.bundledTool == nil ? nil : CommandLineToolMenu(
+                   state: { CommandLineToolInstaller.state() },
+                   install: { CommandLineToolInstaller.install() },
+                   remove: { CommandLineToolInstaller.remove() }
+               ))
             if let updates {
                 print("updates: \(updates.feedURL ?? "configured, feed unreadable")")
             } else {
