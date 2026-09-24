@@ -205,7 +205,85 @@ func socialPreview(width: Int = 1280, height: Int = 640) -> Data {
     return data
 }
 
+// The download button on the README. Drawn rather than written as SVG text, because a web font is
+// not guaranteed where the README is rendered and clipped lettering is worse than a picture.
+func downloadButton(scale: CGFloat = 2) -> Data {
+    let label = "Download for macOS"
+    let font = NSFont.systemFont(ofSize: 25 * scale, weight: .semibold)
+    let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
+    let text = label.size(withAttributes: attributes)
+
+    let arrow = 22 * scale
+    let padding = 30 * scale
+    let gap = 14 * scale
+    // Sized to the text it was measured with, so a longer label cannot run off the end.
+    let width = Int((padding * 2 + arrow + gap + text.width).rounded())
+    let height = Int((text.height + 26 * scale).rounded())
+
+    guard let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+    ) else {
+        print("could not make the button bitmap")
+        exit(1)
+    }
+    bitmap.size = NSSize(width: width, height: height)
+
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+
+    let frame = NSRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))
+    let pill = NSBezierPath(roundedRect: frame, xRadius: frame.height / 2, yRadius: frame.height / 2)
+    plateGradient.draw(in: pill, angle: -90)
+
+    let centre = frame.height / 2
+    let arrowX = padding + arrow / 2
+    let stem = NSBezierPath()
+    stem.move(to: NSPoint(x: arrowX, y: centre + arrow * 0.55))
+    stem.line(to: NSPoint(x: arrowX, y: centre - arrow * 0.15))
+    stem.lineWidth = 3 * scale
+    stem.lineCapStyle = .round
+    NSColor.white.setStroke()
+    stem.stroke()
+
+    let head = NSBezierPath()
+    head.move(to: NSPoint(x: arrowX - arrow * 0.42, y: centre - arrow * 0.02))
+    head.line(to: NSPoint(x: arrowX, y: centre - arrow * 0.5))
+    head.line(to: NSPoint(x: arrowX + arrow * 0.42, y: centre - arrow * 0.02))
+    head.lineWidth = 3 * scale
+    head.lineCapStyle = .round
+    head.lineJoinStyle = .round
+    head.stroke()
+
+    let tray = NSBezierPath()
+    tray.move(to: NSPoint(x: arrowX - arrow * 0.5, y: centre - arrow * 0.62))
+    tray.line(to: NSPoint(x: arrowX + arrow * 0.5, y: centre - arrow * 0.62))
+    tray.lineWidth = 3 * scale
+    tray.lineCapStyle = .round
+    tray.stroke()
+
+    label.draw(
+        at: NSPoint(x: padding + arrow + gap, y: (frame.height - text.height) / 2),
+        withAttributes: attributes
+    )
+
+    NSGraphicsContext.restoreGraphicsState()
+
+    guard let data = bitmap.representation(using: .png, properties: [:]) else {
+        print("could not encode the button")
+        exit(1)
+    }
+    return data
+}
+
 let outputDirectory = CommandLine.arguments[1]
+
+if CommandLine.arguments.contains("--button") {
+    try downloadButton().write(to: URL(fileURLWithPath: "\(outputDirectory)/download-button.png"))
+    print("wrote the download button to \(outputDirectory)")
+    exit(0)
+}
 
 if CommandLine.arguments.contains("--social") {
     try socialPreview().write(to: URL(fileURLWithPath: "\(outputDirectory)/social-preview.png"))
