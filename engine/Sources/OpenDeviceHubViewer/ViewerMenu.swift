@@ -39,6 +39,10 @@ public enum ViewerMenu {
         public var toggleLatencyOverlay: () -> Void
         public var pressButton: (HardwareButton) -> Void
         public var rotate: (Bool) -> Void
+        public var setOrientation: (DeviceOrientation) -> Void
+        public var appSwitcher: () -> Void
+        public var stopRecording: () -> Void
+        public var isRecording: () -> Bool
         public var checkForUpdates: (() -> Void)?
 
         public init(
@@ -58,6 +62,10 @@ public enum ViewerMenu {
             toggleLatencyOverlay: @escaping () -> Void,
             pressButton: @escaping (HardwareButton) -> Void,
             rotate: @escaping (Bool) -> Void,
+            setOrientation: @escaping (DeviceOrientation) -> Void,
+            appSwitcher: @escaping () -> Void,
+            stopRecording: @escaping () -> Void,
+            isRecording: @escaping () -> Bool,
             checkForUpdates: (() -> Void)? = nil
         ) {
             self.setScaleMode = setScaleMode
@@ -76,6 +84,10 @@ public enum ViewerMenu {
             self.toggleLatencyOverlay = toggleLatencyOverlay
             self.pressButton = pressButton
             self.rotate = rotate
+            self.setOrientation = setOrientation
+            self.appSwitcher = appSwitcher
+            self.stopRecording = stopRecording
+            self.isRecording = isRecording
             self.checkForUpdates = checkForUpdates
         }
     }
@@ -87,6 +99,15 @@ public enum ViewerMenu {
         openSimulatorMenu: NSMenu? = nil,
         commandLineTool: CommandLineToolMenu? = nil
     ) -> MenuTarget {
+        // AppKit adds Start Dictation and Emoji & Symbols to any Edit menu. Both work, so neither is
+        // a dead item, but there is no text field anywhere in this app to dictate into or to put a
+        // character in, and Simulator.app carries neither. Registered rather than set, so anyone who
+        // has chosen otherwise keeps their choice.
+        UserDefaults.standard.register(defaults: [
+            "NSDisabledDictationMenuItem": true,
+            "NSDisabledCharacterPaletteMenuItem": true,
+        ])
+
         let target = MenuTarget(actions: actions, commandLineTool: commandLineTool)
         let bar = NSMenu()
 
@@ -136,6 +157,12 @@ public enum ViewerMenu {
             open.submenu = openSimulatorMenu
             fileMenu.addItem(open)
             fileMenu.addItem(.separator())
+            fileMenu.addItem(target.item("Save Screen", #selector(MenuTarget.saveScreenshot), "s", []))
+            fileMenu.addItem(target.item("Record Screen", #selector(MenuTarget.record), "r", []))
+            let stop = target.item("Stop Recording", #selector(MenuTarget.stopRecording), "", [])
+            target.trackStopRecordingItem(stop)
+            fileMenu.addItem(stop)
+            fileMenu.addItem(.separator())
             fileMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
                 .icon("xmark")
             fileItem.submenu = fileMenu
@@ -158,41 +185,58 @@ public enum ViewerMenu {
         editItem.submenu = editMenu
         bar.addItem(editItem)
 
-        let viewItem = NSMenuItem()
-        let viewMenu = NSMenu(title: "View")
-        viewMenu.addItem(target.item("Show Device Bezel", #selector(MenuTarget.bezel), "b", []))
-        viewMenu.addItem(target.item("Keep on Top", #selector(MenuTarget.keepOnTop), "t", []))
-        viewMenu.addItem(.separator())
-        viewMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
-            .keyEquivalentModifierMask = [.control, .command]
-        viewItem.submenu = viewMenu
-        bar.addItem(viewItem)
-
         let deviceItem = NSMenuItem()
         let deviceMenu = NSMenu(title: "Device")
-        let home = target.item("Home", #selector(MenuTarget.home), "h", [.command, .shift])
-        disable(home, unless: capabilities.contains(.hardwareButtons), reason: "not available on this Xcode")
-        deviceMenu.addItem(home)
-        let lockItem = target.item("Lock", #selector(MenuTarget.lock), "l", [.command])
-        disable(lockItem, unless: capabilities.contains(.hardwareButtons), reason: "not available on this Xcode")
-        deviceMenu.addItem(lockItem)
-        deviceMenu.addItem(target.item("Volume Up", #selector(MenuTarget.volumeUp), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.command]))
-        deviceMenu.addItem(target.item("Volume Down", #selector(MenuTarget.volumeDown), String(UnicodeScalar(NSDownArrowFunctionKey)!), [.command]))
-        deviceMenu.addItem(.separator())
         let rotateLeft = target.item("Rotate Left", #selector(MenuTarget.rotateLeft), String(UnicodeScalar(NSLeftArrowFunctionKey)!), [.command])
         let rotateRight = target.item("Rotate Right", #selector(MenuTarget.rotateRight), String(UnicodeScalar(NSRightArrowFunctionKey)!), [.command])
         for item in [rotateLeft, rotateRight] {
             disable(item, unless: capabilities.contains(.rotation), reason: "not available on this Xcode")
             deviceMenu.addItem(item)
         }
+
+        let orientationItem = NSMenuItem(title: "Orientation", action: nil, keyEquivalent: "")
+        let orientationMenu = NSMenu(title: "Orientation")
+        // Four, where Simulator.app offers six: Face Up and Face Down have no equivalent in the
+        // engine, and an item that cannot do anything is worse than one that is not there.
+        for orientation in DeviceOrientation.allCases {
+            let item = target.item(orientation.displayName, #selector(MenuTarget.orientation(_:)), "", [])
+            item.representedObject = orientation.rawValue
+            disable(item, unless: capabilities.contains(.rotation), reason: "not available on this Xcode")
+            orientationMenu.addItem(item)
+        }
+        orientationItem.submenu = orientationMenu
+        deviceMenu.addItem(orientationItem)
         deviceMenu.addItem(.separator())
-        deviceMenu.addItem(target.item("Save Screenshot", #selector(MenuTarget.saveScreenshot), "s", []))
-        deviceMenu.addItem(target.item("Record Screen", #selector(MenuTarget.record), "r", []))
-        deviceMenu.addItem(.separator())
-        let appearance = target.item("Toggle Appearance", #selector(MenuTarget.appearance), "a", [.command, .shift])
-        deviceMenu.addItem(appearance)
+
+        let home = target.item("Home", #selector(MenuTarget.home), "h", [.command, .shift])
+        let lockItem = target.item("Lock", #selector(MenuTarget.lock), "l", [.command])
+        let actionButton = target.item("Action Button", #selector(MenuTarget.actionButton), "", [])
+        let siri = target.item("Siri", #selector(MenuTarget.siri), "h", [.command, .shift, .option])
+        for item in [home, lockItem, actionButton, siri] {
+            disable(item, unless: capabilities.contains(.hardwareButtons), reason: "not available on this Xcode")
+            deviceMenu.addItem(item)
+        }
+        let deviceShake = target.item("Shake", #selector(MenuTarget.shake), "z", [.control, .command])
+        disable(deviceShake, unless: capabilities.contains(.shake), reason: "not available on this Xcode")
+        deviceMenu.addItem(deviceShake)
+        let appSwitcher = target.item("App Switcher", #selector(MenuTarget.appSwitcher), "h", [.control, .command, .shift])
+        disable(appSwitcher, unless: capabilities.contains(.touch), reason: "not available on this Xcode")
+        deviceMenu.addItem(appSwitcher)
         deviceItem.submenu = deviceMenu
         bar.addItem(deviceItem)
+
+        let ioItem = NSMenuItem()
+        let ioMenu = NSMenu(title: "I/O")
+        ioMenu.addItem(target.item("Increase Volume", #selector(MenuTarget.volumeUp), String(UnicodeScalar(NSUpArrowFunctionKey)!), [.command]))
+        ioMenu.addItem(target.item("Decrease Volume", #selector(MenuTarget.volumeDown), String(UnicodeScalar(NSDownArrowFunctionKey)!), [.command]))
+        ioItem.submenu = ioMenu
+        bar.addItem(ioItem)
+
+        let featuresItem = NSMenuItem()
+        let featuresMenu = NSMenu(title: "Features")
+        featuresMenu.addItem(target.item("Toggle Appearance", #selector(MenuTarget.appearance), "a", [.command, .shift]))
+        featuresItem.submenu = featuresMenu
+        bar.addItem(featuresItem)
 
         let debugItem = NSMenuItem()
         let debugMenu = NSMenu(title: "Debug")
@@ -205,10 +249,6 @@ public enum ViewerMenu {
         let slowAnimations = target.item("Slow Animations", #selector(MenuTarget.slowAnimations(_:)), "", [])
         disable(slowAnimations, unless: capabilities.contains(.slowAnimations), reason: "not available on this Xcode")
         debugMenu.addItem(slowAnimations)
-
-        let shake = target.item("Shake", #selector(MenuTarget.shake), "z", [.control, .command])
-        disable(shake, unless: capabilities.contains(.shake), reason: "not available on this Xcode")
-        debugMenu.addItem(shake)
 
         debugMenu.addItem(.separator())
         debugMenu.addItem(target.item("Open System Log\u{2026}", #selector(MenuTarget.systemLog), "/", []))
@@ -223,6 +263,11 @@ public enum ViewerMenu {
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
             .icon("minus.rectangle")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        windowMenu.addItem(.separator())
+        windowMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+            .keyEquivalentModifierMask = [.control, .command]
+        windowMenu.addItem(target.item("Show Device Bezels", #selector(MenuTarget.bezel), "b", []))
+        windowMenu.addItem(target.item("Stay On Top", #selector(MenuTarget.keepOnTop), "t", []))
         windowMenu.addItem(.separator())
         let scaleShortcuts: [(ScaleMode, String)] = [
             (.physicalSize, "1"), (.pointAccurate, "2"), (.pixelAccurate, "3"), (.fit, "4"),
@@ -284,10 +329,11 @@ private func disable(_ item: NSMenuItem, unless available: Bool, reason: String)
 
 /// Holds the menu actions. AppKit keeps menu targets weakly, so the caller retains this.
 @MainActor
-public final class MenuTarget: NSObject, NSMenuDelegate {
+public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private let actions: ViewerMenu.Actions
     private let commandLineTool: CommandLineToolMenu?
     private weak var commandLineToolItem: NSMenuItem?
+    private weak var stopRecordingItem: NSMenuItem?
     private var isDark = false
     private var isSlowAnimations = false
     private var isLatencyVisible = false
@@ -369,6 +415,26 @@ public final class MenuTarget: NSObject, NSMenuDelegate {
     @objc func volumeUp() { actions.pressButton(.volumeUp) }
     @objc func volumeDown() { actions.pressButton(.volumeDown) }
     @objc func rotateLeft() { actions.rotate(true) }
+
+    @objc func orientation(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let orientation = DeviceOrientation(rawValue: raw) else { return }
+        actions.setOrientation(orientation)
+    }
+
+    @objc func siri() { actions.pressButton(.siri) }
+    @objc func actionButton() { actions.pressButton(.actionButton) }
+    @objc func appSwitcher() { actions.appSwitcher() }
+    @objc func stopRecording() { actions.stopRecording() }
+
+    func trackStopRecordingItem(_ item: NSMenuItem) {
+        stopRecordingItem = item
+    }
+
+    public func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard item === stopRecordingItem else { return item.action != nil }
+        return actions.isRecording()
+    }
     @objc func rotateRight() { actions.rotate(false) }
     @objc func checkForUpdates() { actions.checkForUpdates?() }
 

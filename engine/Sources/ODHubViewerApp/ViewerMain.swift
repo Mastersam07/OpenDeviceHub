@@ -248,6 +248,36 @@ struct ODHubViewer: ParsableCommand {
                         }
                     }
                 },
+                setOrientation: { orientation in
+                    for udid in manager.openUDIDs {
+                        guard let controller = manager.controller(for: udid) else { continue }
+                        do {
+                            try adapter.setOrientation(orientation, udid: udid)
+                            controller.setOrientation(orientation)
+                        } catch {
+                            print("rotate failed: \(error.localizedDescription)")
+                        }
+                    }
+                },
+                appSwitcher: {
+                    for udid in manager.openUDIDs {
+                        Task {
+                            do {
+                                let session = try adapter.openInput(udid)
+                                defer { session.close() }
+                                try await openAppSwitcher(session)
+                            } catch {
+                                print("app switcher failed: \(error.localizedDescription)")
+                            }
+                        }
+                    }
+                },
+                stopRecording: {
+                    for url in manager.toggleRecording(into: recordingDirectory()) {
+                        print("recorded \(url.path(percentEncoded: false))")
+                    }
+                },
+                isRecording: { manager.isRecording },
                 checkForUpdates: updates.map { updater in { updater.checkForUpdates() } }
             ), capabilities: adapter.capabilities, openSimulatorMenu: chooser.menu,
                commandLineTool: CommandLineToolInstaller.bundledTool == nil ? nil : CommandLineToolMenu(
@@ -467,6 +497,23 @@ private func installToolbar(
             }
         }
     ))
+}
+
+private func openAppSwitcher(_ session: any InputSession) async throws {
+    let path = HomeGesture.appSwitcherPath()
+    try await session.touch(TouchEvent(phase: .began, points: [path[0]], edge: .bottom))
+    for point in path.dropFirst() {
+        try await Task.sleep(for: .milliseconds(10))
+        try await session.touch(TouchEvent(phase: .moved, points: [point], edge: .bottom))
+    }
+    let settle = HomeGesture.settlePath(around: path[path.count - 1])
+    for point in settle {
+        try await Task.sleep(for: .milliseconds(40))
+        try await session.touch(TouchEvent(phase: .moved, points: [point], edge: .bottom))
+    }
+    try await session.touch(
+        TouchEvent(phase: .ended, points: [settle[settle.count - 1]], edge: .bottom)
+    )
 }
 
 private func swipeHome(_ session: any InputSession) async throws {
