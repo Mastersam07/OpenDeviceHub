@@ -92,7 +92,9 @@ public enum ViewerMenu {
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(target.item("About \(Brand.productName)", #selector(MenuTarget.about), "", []))
+        let aboutItem = target.item("About \(Brand.productName)", #selector(MenuTarget.about), "", [])
+        aboutItem.icon("info.circle")
+        appMenu.addItem(aboutItem)
         appMenu.addItem(.separator())
         if actions.checkForUpdates != nil {
             appMenu.addItem(target.item("Check for Updates\u{2026}", #selector(MenuTarget.checkForUpdates), "", []))
@@ -109,12 +111,18 @@ public enum ViewerMenu {
         servicesItem.submenu = servicesMenu
         application.servicesMenu = servicesMenu
         appMenu.addItem(servicesItem)
+        servicesItem.icon("gearshape.2")
         appMenu.addItem(.separator())
 
         appMenu.addItem(withTitle: "Hide \(Brand.productName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
-            .keyEquivalentModifierMask = [.command, .option]
+            .icon("rectangle.dashed")
+        let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        // The closest public symbol. The one macOS draws here has no public equivalent, so this is
+        // deliberately an approximation rather than a match.
+        hideOthers.icon("rectangle.on.rectangle.dashed")
         appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+            .icon("macwindow.on.rectangle")
         appMenu.addItem(.separator())
 
         appMenu.addItem(withTitle: "Quit \(Brand.productName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -129,19 +137,22 @@ public enum ViewerMenu {
             fileMenu.addItem(open)
             fileMenu.addItem(.separator())
             fileMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+                .icon("xmark")
             fileItem.submenu = fileMenu
             bar.addItem(fileItem)
         }
 
         let editItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z").icon("arrow.uturn.backward")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z").icon("arrow.uturn.forward")
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x").icon("scissors")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c").icon("doc.on.doc")
         editMenu.addItem(target.item("Copy Screen", #selector(MenuTarget.copyScreenshot), "c", [.command, .control]))
-        editMenu.addItem(target.item("Paste", #selector(MenuTarget.paste), "v", []))
+        let pasteItem = target.item("Paste", #selector(MenuTarget.paste), "v", [])
+        pasteItem.icon("doc.on.clipboard")
+        editMenu.addItem(pasteItem)
         editMenu.addItem(.separator())
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = editMenu
@@ -210,6 +221,7 @@ public enum ViewerMenu {
         let windowItem = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+            .icon("minus.rectangle")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         windowMenu.addItem(.separator())
         let scaleShortcuts: [(ScaleMode, String)] = [
@@ -222,6 +234,7 @@ public enum ViewerMenu {
         }
         windowMenu.addItem(.separator())
         windowMenu.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
+            .icon("square.3.layers.3d")
         windowItem.submenu = windowMenu
         bar.addItem(windowItem)
         application.windowsMenu = windowMenu
@@ -234,6 +247,25 @@ public enum ViewerMenu {
 
         application.mainMenu = bar
         return target
+    }
+}
+
+/// The icons macOS draws on standard commands, set by hand.
+///
+/// Simulator.app's `MainMenu.nib` carries no images at all, yet its Undo, Cut, Copy and application
+/// menu rows have them, so on macOS 26 AppKit decorates nib loaded items itself. It does not do that
+/// for a menu built in code: measured here, our Undo and Cut came out bare while the three rows
+/// AppKit inserted on its own, AutoFill, Start Dictation and Emoji & Symbols, arrived with icons. So
+/// matching the app we replace means naming the symbols.
+///
+/// Only the standard commands get one. Our own commands stay bare, which is Simulator.app's own
+/// seam: `Copy Screen` sits between two icon bearing rows with nothing, and the whole of Device,
+/// I/O, Features and Debug has none.
+private extension NSMenuItem {
+    @discardableResult
+    func icon(_ symbol: String) -> NSMenuItem {
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        return self
     }
 }
 
