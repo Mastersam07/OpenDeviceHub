@@ -1,0 +1,30 @@
+name: Feature request
+description: Something that should exist and does not.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The README's **Current limitations** lists what is known to be missing. If yours is there,
+        an issue is still welcome: it says someone wants it.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The task, rather than the feature. It often has more than one answer.
+      placeholder: I record a lot of short clips for design review, and renaming each one afterwards is the slow part.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+      description: Optional. How you imagine it working, if you have a picture of it.
+
+  - type: input
+    id: prior-art
+    attributes:
+      label: Where you have seen it work
+      description: Optional. Simulator.app, Device Hub, another tool, or a link.

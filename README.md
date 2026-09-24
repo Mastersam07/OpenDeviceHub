@@ -143,6 +143,10 @@ configured and a source build can never replace itself with a release.
 Bug reports, feature ideas and pull requests are welcome. A bug report is far more useful with the
 output of `odhub doctor`, which names your macOS version, Xcode version, device and runtime.
 
+For a vulnerability, please read [SECURITY.md](SECURITY.md) instead of opening an issue. It also
+describes what the app does to your machine, which is worth knowing given it loads private
+frameworks out of your Xcode. Maintainers cutting a release want [RELEASING.md](RELEASING.md).
+
 ## License
 
 [MIT](LICENSE). The Indigo touch message layout and hardware button constants are adapted from
