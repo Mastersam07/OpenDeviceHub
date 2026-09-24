@@ -124,6 +124,9 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate, NSToolbarItemValidation 
     private func describeCapture(_ item: NSToolbarItem) {
         if isRecording {
             describe(item, symbol: "stop.circle", title: "Stop Recording", tip: "Stop Recording (\u{2318}R)")
+            item.image = item.image?.withSymbolConfiguration(
+                NSImage.SymbolConfiguration(paletteColors: [.systemRed])
+            )
         } else {
             describe(
                 item,

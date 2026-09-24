@@ -16,7 +16,6 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private let presentationView: DevicePresentationView
     private var chrome: DeviceChrome?
     private var toolbar: DeviceToolbar?
-    private let recordingIndicator = RecordingIndicator()
     private var frameTask: Task<Void, Never>?
     private var overlay: ShutdownOverlayView?
     /// Called when the window's Reboot button is pressed. The owner boots the device; the window
@@ -143,7 +142,6 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     public func stop() {
         guard !isStopped else { return }
         isStopped = true
-        recordingIndicator.detach()
         closeSessions()
     }
 
@@ -381,7 +379,6 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     }
 
     public func setRecordingIndicatorVisible(_ visible: Bool) {
-        recordingIndicator.setVisible(visible, on: window)
         updateTitle()
         toolbar?.setRecording(visible)
     }
