@@ -49,6 +49,7 @@ public enum ViewerMenu {
         public var toggleKeyboardInput: (Bool) -> Void
         public var toggleHardwareKeyboard: (Bool) -> Void
         public var matchKeyboardLanguage: (Bool) -> Void
+        public var newSimulator: (() -> Void)?
         public var setOrientation: (DeviceOrientation) -> Void
         public var appSwitcher: () -> Void
         public var stopRecording: () -> Void
@@ -83,6 +84,7 @@ public enum ViewerMenu {
             toggleKeyboardInput: @escaping (Bool) -> Void,
             toggleHardwareKeyboard: @escaping (Bool) -> Void,
             matchKeyboardLanguage: @escaping (Bool) -> Void,
+            newSimulator: (() -> Void)? = nil,
             setOrientation: @escaping (DeviceOrientation) -> Void,
             appSwitcher: @escaping () -> Void,
             stopRecording: @escaping () -> Void,
@@ -116,6 +118,7 @@ public enum ViewerMenu {
             self.toggleKeyboardInput = toggleKeyboardInput
             self.toggleHardwareKeyboard = toggleHardwareKeyboard
             self.matchKeyboardLanguage = matchKeyboardLanguage
+            self.newSimulator = newSimulator
             self.setOrientation = setOrientation
             self.appSwitcher = appSwitcher
             self.stopRecording = stopRecording
@@ -192,6 +195,9 @@ public enum ViewerMenu {
         if let openSimulatorMenu {
             let fileItem = NSMenuItem()
             let fileMenu = NSMenu(title: "File")
+            if actions.newSimulator != nil {
+                fileMenu.addItem(target.item("New Simulator\u{2026}", #selector(MenuTarget.newSimulator), "n", []))
+            }
             let open = NSMenuItem(title: "Open Simulator", action: nil, keyEquivalent: "")
             open.submenu = openSimulatorMenu
             fileMenu.addItem(open)
@@ -546,6 +552,7 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     @objc func iCloudSync() { actions.triggerICloudSync() }
     @objc func clearLocation() { actions.setLocation(nil) }
     @objc func customLocation() { actions.setCustomLocation() }
+    @objc func newSimulator() { actions.newSimulator?() }
 
     /// Both start on, because that is what the app does before anyone touches the menu.
     @objc func keyboardInput(_ sender: NSMenuItem) {

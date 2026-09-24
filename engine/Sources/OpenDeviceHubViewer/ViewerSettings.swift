@@ -54,6 +54,21 @@ public struct ViewerSettings: Sendable {
         }
     }
 
+    /// What Previous fills the New Simulator panel with.
+    public var lastCreatedSimulator: LastCreatedSimulator? {
+        get {
+            guard let stored = storage.text(forKey: prefix + "lastCreatedSimulator") else { return nil }
+            return LastCreatedSimulator(stored: stored)
+        }
+        nonmutating set {
+            guard let newValue else {
+                storage.removeText(forKey: prefix + "lastCreatedSimulator")
+                return
+            }
+            storage.setText(newValue.stored, forKey: prefix + "lastCreatedSimulator")
+        }
+    }
+
     private func flag(_ name: String, default fallback: Bool) -> Bool {
         switch storage.text(forKey: prefix + name) {
         case "true": true
@@ -65,4 +80,29 @@ public struct ViewerSettings: Sendable {
     private func setFlag(_ name: String, _ value: Bool) {
         storage.setText(value ? "true" : "false", forKey: prefix + name)
     }
+}
+
+
+/// The last simulator created here, so the panel can offer it again.
+///
+/// Stored as one tab separated line rather than JSON, because the storage seam is strings and a
+/// name cannot contain a tab.
+public struct LastCreatedSimulator: Equatable, Sendable {
+    public let name: String
+    public let deviceType: String
+    public let runtime: String
+
+    public init(name: String, deviceType: String, runtime: String) {
+        self.name = name
+        self.deviceType = deviceType
+        self.runtime = runtime
+    }
+
+    init?(stored: String) {
+        let parts = stored.split(separator: "\t", omittingEmptySubsequences: false)
+        guard parts.count == 3, !parts.allSatisfy(\.isEmpty) else { return nil }
+        self.init(name: String(parts[0]), deviceType: String(parts[1]), runtime: String(parts[2]))
+    }
+
+    var stored: String { [name, deviceType, runtime].joined(separator: "\t") }
 }
