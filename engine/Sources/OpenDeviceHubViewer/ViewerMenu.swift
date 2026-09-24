@@ -286,6 +286,9 @@ public enum ViewerMenu {
 
         let helpItem = NSMenuItem()
         let helpMenu = NSMenu(title: "Help")
+        let helpEntry = target.item("\(Brand.productName) Help", #selector(MenuTarget.help), "?", [])
+        helpEntry.icon("lightbulb")
+        helpMenu.addItem(helpEntry)
         helpItem.submenu = helpMenu
         bar.addItem(helpItem)
         application.helpMenu = helpMenu
@@ -444,6 +447,7 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     }
     @objc func rotateRight() { actions.rotate(false) }
     @objc func checkForUpdates() { actions.checkForUpdates?() }
+    @objc func help() { ControlsHelp.show() }
 
     @objc func latency(_ sender: NSMenuItem) {
         isLatencyVisible.toggle()
