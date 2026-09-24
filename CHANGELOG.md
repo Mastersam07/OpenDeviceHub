@@ -20,6 +20,16 @@ First release.
   you switch to another app.
 - A window follows its device: it shows when the device has shut down, offers a reboot, and
   reattaches on its own when the device comes back.
+- A capture shows itself beside the window before it is filed, so you can open, copy, save or discard
+  it. Left alone it saves itself, to a folder you choose.
+- Create a simulator without leaving the app: name, device type and OS version, where the two lists
+  follow each other so a device no installed runtime can run is never offered.
+- Device controls beyond the buttons: restart, erase, text size, increased contrast, an iCloud sync,
+  and a location from a scenario or your own coordinates.
+- Keyboard choices: send keys to the device or keep them, connect the Mac keyboard as the device's
+  hardware keyboard, and match the device's keyboard language to the Mac's.
+- Settings for what closing a window does, what launching opens, where captures go, whether device
+  links open here, and updates.
 - The menu bar follows the simulator it replaces: the same menus in the same order, the same
   shortcuts, and the standard macOS ones that were missing. The zoom shortcuts are Apple's now,
   ⌘1 Physical Size, ⌘2 Point Accurate, ⌘3 Pixel Accurate, ⌘4 Fit Screen, which changes three of the
@@ -28,5 +38,3 @@ First release.
   One menu item puts it on your PATH, without a password on most machines.
 - If Xcode is missing or its simulator frameworks will not load, the app says what is missing and
   what to do about it instead of failing silently.
-
-Known gaps are listed in the README.

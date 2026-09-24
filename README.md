@@ -1,14 +1,34 @@
-# OpenDeviceHub
+<p align="center">
+  <img src="icons/icon-256.png" width="116" alt="">
+</p>
 
-**A macOS app that shows your iOS simulators in windows, one window per device, the way
-Simulator.app did.**
+<h1 align="center">OpenDeviceHub</h1>
 
-Xcode 27 replaced Simulator.app with Device Hub, and a decade of habits did not come across with it.
-OpenDeviceHub connects to the same simulators Xcode installs and brings back the familiar window,
-scaling and shortcuts, with a command line tool for driving a device from a script.
+<p align="center">
+  <strong>Your iOS simulators in windows again, one per device.</strong>
+</p>
 
-> **Screenshot goes here.** Placeholder: replace this block with a screenshot or a short GIF of a
-> device window before publishing.
+<p align="center">
+  Xcode 27 replaced Simulator.app with Device Hub, and a decade of habits did not come across with
+  it. OpenDeviceHub connects to the same simulators Xcode installs and brings back the familiar
+  window, scaling and shortcuts, with a command line tool for driving a device from a script.
+</p>
+
+<!-- PLACEHOLDER, deliberate: no screenshot has been captured yet. Replace this block with a
+     screenshot or a short GIF of a device window, and keep the width attribute. -->
+<p align="center">
+  <em>A screenshot goes here.</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Mastersam07/OpenDeviceHub/releases">
+    <img src="icons/download-button.png" width="332" alt="Download for macOS">
+  </a>
+</p>
+
+<p align="center">
+  <sub>Signed, notarized, and it updates itself.</sub>
+</p>
 
 ## Install
 
@@ -25,24 +45,36 @@ simulators.
 
 ## Features
 
-- **A window per device** — several simulators side by side, resizable from any edge or corner, full
+- **A window per device**: several simulators side by side, resizable from any edge or corner, full
   screen, keep on top, and each window remembers where you put it.
-- **Precise scaling** — Point Accurate, Pixel Accurate, Physical Size or Fit, with the device body
+- **Precise scaling**: Point Accurate, Pixel Accurate, Physical Size or Fit, with the device body
   drawn around the screen or hidden.
-- **Opens like an app** — click the icon for whatever is running, or pick a simulator from the Dock
+- **Opens like an app**: click the icon for whatever is running, or pick a simulator from the Dock
   icon or File → Open Simulator. A device booted anywhere else gets a window here too.
-- **Familiar shortcuts** — the Simulator keys you already know.
-- **Input** — click to tap and drag, pinch and rotate with the trackpad, type with your Mac
-  keyboard, and swipe up from the bottom edge for home or the app switcher.
-- **Device controls** — Home, Lock, volume, rotation, and light or dark appearance, from the menu or
-  by clicking the buttons on the device body.
-- **Screenshots and recordings** — PNGs and MP4s to the Desktop, or a screenshot to the clipboard.
-- **Drag and drop** — drop a file or a link onto a device to open it there.
-- **Follows the device** — shut a simulator down from anywhere and its window says so and offers to
+- **Familiar shortcuts**: the Simulator keys you already know.
+- **Input**: click to tap and drag, pinch and rotate with the trackpad, type with your Mac
+  keyboard, and swipe up from the bottom edge for home or the app switcher. Send keys to the device or
+  keep them, connect the Mac keyboard as the device's hardware keyboard, and match its language to
+  yours.
+- **Device controls**: Home, Lock, volume, rotation, Siri, the Action button and light or dark
+  appearance, from the menu or by clicking the buttons on the device body. Restart or erase a device,
+  step its text size, turn on increased contrast, trigger an iCloud sync, and set a location from a
+  scenario or your own coordinates.
+- **Create a simulator**: name it, pick a device type and an OS version, and it boots and opens. The
+  two lists follow each other, so a device an installed runtime cannot run is never offered.
+- **Screenshots and recordings**: a capture appears beside the window first, where you can open,
+  copy, save it elsewhere, reveal it in the Finder or throw it away. Left alone it files itself. The
+  folder is yours to choose.
+- **The clipboard stays in step**: copy on the Mac and it is on the device; copy on the device and it
+  is on the Mac when you switch to another app. Or do it by hand from Edit.
+- **Settings**: whether closing a window shuts the device down, whether launching opens the
+  simulator you had last, where captures go, and which app opens device links.
+- **Drag and drop**: drop a file or a link onto a device to open it there.
+- **Follows the device**: shut a simulator down from anywhere and its window says so and offers to
   start it again; boot it and the window reattaches on its own.
-- **Debug helpers** — slow animations, shake, simulated memory warning, the system log and app data
+- **Debug helpers**: slow animations, shake, simulated memory warning, the system log and app data
   in the Finder, and a click to frame latency overlay.
-- **A command line tool** — `odhub` drives a simulator from a script: tap, swipe, pinch, type,
+- **A command line tool**: `odhub` drives a simulator from a script: tap, swipe, pinch, type,
   buttons, rotation. One menu item puts it on your `PATH`.
 
 <details>
@@ -94,27 +126,43 @@ options.
 </details>
 
 ## Current limitations
-
-- **Input can stop on a running simulator** — a booted device sometimes stops accepting taps and
-  keystrokes while it still renders and still reports itself booted, with no error anywhere. Not the
-  app window: a command line tap fails on the same device at the same moment, while a device booted
-  fresh right then is fine. Shut the simulator down and boot it again. Under investigation.
-- **Copying from a device does nothing** on at least one machine, which traces to `simctl pbpaste`
-  returning nothing. Pasting to a device works.
-- **The windows are invisible to accessibility** — VoiceOver, window managers and scripting tools see
+- **The windows are invisible to accessibility**: VoiceOver, window managers and scripting tools see
   the app and its menus but not its windows.
 - **A device taller than your display** keeps its bottom edge off screen, where the pointer cannot
   reach it. Use Fit.
-- **Simulators shut themselves down when idle** on at least one machine. Not reproduced on demand,
-  and CoreSimulator has no setting for it.
 - **The compact layout below 340 points wide** is written and unit tested but has never been used by
   hand.
-- **No Flutter tooling yet** — it is the reason this project exists, and none of it is built.
-- **Other Apple platforms** — tvOS, watchOS and visionOS simulators are not supported.
+- **Other Apple platforms**: tvOS, watchOS and visionOS simulators are not supported.
 
 Want to help close one of these? Pull requests are welcome. [ROADMAP.md](ROADMAP.md) is where that
 list is going: location, push, biometrics, proxy certificates, device management, and the project
 aware tooling this exists for.
+
+## Working with Device Hub
+
+Xcode 27 opens Device Hub itself when you run an app on a simulator, and other tools may launch it
+too. OpenDeviceHub shows the same devices, so both can be on screen at once. Two of Apple's own
+settings make them share better.
+
+Quitting Device Hub can shut down the simulators it started, which closes their windows here. To stop
+that, quit Device Hub and run:
+
+```sh
+defaults write com.apple.dt.Devices shutdownStartedDevicesOnQuit -bool false
+```
+
+To stop Xcode opening Device Hub at all, quit Xcode and run:
+
+```sh
+defaults write com.apple.dt.Xcode DVTiPhoneSimulatorAlwaysLaunchInCoreSimulatorSession -bool true
+```
+
+Xcode then boots the simulator without a window of its own and yours is the one you use. With this
+on, boot the device here before pressing Run, or Xcode may shut it down when you press Stop.
+
+**OpenDeviceHub → Settings → Links** offers to open `devices://` links here instead. That covers
+links only. Nothing can take over from a tool that launches Device Hub directly, because it is
+launched by name rather than through the link.
 
 ## Requirements
 
