@@ -38,6 +38,59 @@ public enum ScreenshotWriter {
         )
     }
 
+    /// The screen drawn inside the device's body, which is what the window shows and therefore what
+    /// a screenshot of "the device" means. The body is AppKit drawing and comes out of
+    /// `cacheDisplay`; the screen is Metal and does not, so it is composited in afterwards.
+    ///
+    /// Rendered at the device's own pixel scale rather than the window's, so a window scaled down to
+    /// fit still saves a full resolution screenshot.
+    @MainActor
+    public static func pngData(
+        from surface: IOSurfaceRef,
+        inside chrome: NSView,
+        screenRect: CGRect
+    ) -> Data? {
+        guard let screen = image(from: surface),
+              screenRect.width > 0, screenRect.height > 0,
+              chrome.bounds.width > 0, chrome.bounds.height > 0 else {
+            return nil
+        }
+        let scale = CGFloat(screen.width) / screenRect.width
+        let size = CGSize(
+            width: (chrome.bounds.width * scale).rounded(),
+            height: (chrome.bounds.height * scale).rounded()
+        )
+        guard size.width >= 1, size.height >= 1,
+              let context = CGContext(
+                  data: nil,
+                  width: Int(size.width),
+                  height: Int(size.height),
+                  bitsPerComponent: 8,
+                  bytesPerRow: 0,
+                  space: CGColorSpaceCreateDeviceRGB(),
+                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                      | CGBitmapInfo.byteOrder32Little.rawValue
+              ) else {
+            return nil
+        }
+
+        context.scaleBy(x: scale, y: scale)
+        let graphics = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphics
+        chrome.displayIgnoringOpacity(chrome.bounds, in: graphics)
+        NSGraphicsContext.restoreGraphicsState()
+
+        context.draw(screen, in: screenRect)
+        return context.makeImage().flatMap(pngData(from:))
+    }
+
+    static func pngData(from image: CGImage) -> Data? {
+        let representation = NSBitmapImageRep(cgImage: image)
+        representation.size = CGSize(width: image.width, height: image.height)
+        return representation.representation(using: .png, properties: [:])
+    }
+
     public static func pngData(from surface: IOSurfaceRef) -> Data? {
         guard let image = image(from: surface) else { return nil }
         return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])

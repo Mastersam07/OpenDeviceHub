@@ -36,20 +36,12 @@ final class CapturePreviewLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(frame.maxX, narrow.maxX)
     }
 
-    func testPreviewsStackUpwardsWithoutOverlapping() {
-        let window = CGRect(x: 400, y: 100, width: 430, height: 700)
-        let first = CapturePreviewLayout.frame(size: card, beside: window, visible: display, index: 0)
-        let second = CapturePreviewLayout.frame(size: card, beside: window, visible: display, index: 1)
-        XCTAssertGreaterThanOrEqual(second.minY, first.maxY)
-    }
-
     func testItNeverLeavesTheVisibleArea() {
         for y in [-500.0, 0.0, 400.0, 2000.0] {
             let frame = CapturePreviewLayout.frame(
                 size: card,
                 beside: CGRect(x: 400, y: y, width: 430, height: 700),
-                visible: display,
-                index: 3
+                visible: display
             )
             XCTAssertGreaterThanOrEqual(frame.minY, display.minY, "y=\(y)")
             XCTAssertLessThanOrEqual(frame.maxY, display.maxY, "y=\(y)")

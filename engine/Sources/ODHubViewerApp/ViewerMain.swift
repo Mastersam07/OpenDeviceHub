@@ -84,6 +84,18 @@ struct ODHubViewer: ParsableCommand {
                 plan.udids.forEach(store.forget)
             }
             let manager = DeviceWindowManager(frameStore: store)
+
+            let previews = CapturePreviewPresenter(report: { print($0) })
+            let present: @MainActor ([URL]) -> Void = { urls in
+                let destination = recordingDirectory(settings)
+                for url in urls {
+                    previews.show(
+                        PendingCapture(temporary: url, destination: destination),
+                        beside: NSApp.keyWindow ?? manager.openUDIDs.first.flatMap(manager.controller(for:))?.window
+                    )
+                }
+            }
+
             var failures: [String] = []
 
             let show: @MainActor (String, Bool) throws -> Void = { udid, allowBoot in
@@ -93,7 +105,8 @@ struct ODHubViewer: ParsableCommand {
                     from: current,
                     adapter: adapter,
                     manager: manager,
-                    allowBoot: allowBoot
+                    allowBoot: allowBoot,
+                    present: present
                 )
                 recent.remember(udid)
             }
@@ -166,24 +179,17 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 saveScreenshot: {
-                    let directory = recordingDirectory(settings)
-                    for url in manager.saveScreenshots(into: directory) {
-                        print("saved \(url.path(percentEncoded: false))")
-                    }
+                    present(manager.saveScreenshots(into: CaptureStaging.directory()))
                 },
                 copyScreenshot: {
                     print(manager.copyScreenshotToClipboard() ? "screenshot copied" : "nothing to copy")
                 },
                 toggleRecording: {
-                    let directory = recordingDirectory(settings)
-                    let finished = manager.toggleRecording(into: directory)
+                    let finished = manager.toggleRecording(into: CaptureStaging.directory())
                     if finished.isEmpty {
                         print("recording started")
                     } else {
-                        for url in finished { print("recorded \(url.path(percentEncoded: false))") }
-                        // Showing the file is the closest thing to dragging it out of the window,
-                        // which needs a drag source and is not built yet.
-                        NSWorkspace.shared.activateFileViewerSelecting(finished)
+                        present(finished)
                     }
                 },
                 simulateMemoryWarning: {
@@ -277,9 +283,7 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 stopRecording: {
-                    for url in manager.toggleRecording(into: recordingDirectory(settings)) {
-                        print("recorded \(url.path(percentEncoded: false))")
-                    }
+                    present(manager.toggleRecording(into: CaptureStaging.directory()))
                 },
                 isRecording: { manager.isRecording },
                 checkForUpdates: updates.map { updater in { updater.checkForUpdates() } },
@@ -348,7 +352,8 @@ struct ODHubViewer: ParsableCommand {
                     devices: (try? adapter.devices()) ?? [],
                     remembered: nil
                 ).udids.first },
-                onTerminate: { manager.closeAll() }
+                onTerminate: { manager.closeAll() },
+                settlePreviews: { previews.settleEverything() }
             )
             // NSApplication holds its delegate weakly, and nothing else refers to these objects
             // once the run loop starts, so without this ARC releases them and the display sessions
@@ -366,7 +371,8 @@ struct ODHubViewer: ParsableCommand {
         from devices: [DeviceInfo],
         adapter: any SimulatorAdapter,
         manager: DeviceWindowManager,
-        allowBoot: Bool
+        allowBoot: Bool,
+        present: @escaping @MainActor ([URL]) -> Void
     ) throws {
         guard var device = devices.first(where: {
             $0.udid.caseInsensitiveCompare(udid) == .orderedSame
@@ -402,7 +408,7 @@ struct ODHubViewer: ParsableCommand {
             keepOnTop: keepOnTop,
             showFPS: fps
         )
-        installToolbar(udid: device.udid, manager: manager, adapter: adapter)
+        installToolbar(udid: device.udid, manager: manager, adapter: adapter, present: present)
         if case .largerThanScreen(let size) = controller.applyScaleMode(scale) {
             print("\(device.name): \(scale.displayName) needs \(Int(size.width))x\(Int(size.height)) points, which is larger than this display.")
         }
@@ -431,6 +437,7 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
     private let openLink: (String) -> Void
     private let deviceToReopen: () -> String?
     private let onTerminate: () -> Void
+    private let settlePreviews: () -> Void
 
     init(
         quitsWithLastWindow: Bool,
@@ -438,7 +445,8 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
         reopen: @escaping (String) -> Void,
         openLink: @escaping (String) -> Void,
         deviceToReopen: @escaping () -> String?,
-        onTerminate: @escaping () -> Void
+        onTerminate: @escaping () -> Void,
+        settlePreviews: @escaping () -> Void
     ) {
         self.quitsWithLastWindow = quitsWithLastWindow
         self.dockMenu = dockMenu
@@ -446,6 +454,7 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
         self.openLink = openLink
         self.deviceToReopen = deviceToReopen
         self.onTerminate = onTerminate
+        self.settlePreviews = settlePreviews
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -466,6 +475,13 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         onTerminate()
+    }
+
+    /// A preview still on screen at quit is filed rather than lost, which is what leaving it alone
+    /// would have done anyway.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        settlePreviews()
+        return .terminateNow
     }
 
     /// A devices:// link only reaches this app if someone chose it in Settings. One that names a
@@ -501,7 +517,8 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
 private func installToolbar(
     udid: String,
     manager: DeviceWindowManager,
-    adapter: any SimulatorAdapter
+    adapter: any SimulatorAdapter,
+    present: @escaping @MainActor ([URL]) -> Void
 ) {
     guard let controller = manager.controller(for: udid) else { return }
     controller.setToolbarActions(DeviceToolbarActions(
@@ -526,14 +543,10 @@ private func installToolbar(
             }
         },
         saveScreenshot: {
-            for url in manager.saveScreenshots(into: recordingDirectory(), only: udid) {
-                print("saved \(url.path(percentEncoded: false))")
-            }
+            present(manager.saveScreenshots(into: CaptureStaging.directory(), only: udid))
         },
         stopRecording: {
-            for url in manager.toggleRecording(into: recordingDirectory()) {
-                print("recorded \(url.path(percentEncoded: false))")
-            }
+            present(manager.toggleRecording(into: CaptureStaging.directory()))
         },
         rotate: { [weak controller] toLeft in
             guard let controller else { return }
@@ -581,6 +594,17 @@ private func swipeHome(_ session: any InputSession) async throws {
 
 /// Recordings and screenshots land on the Desktop, falling back to a temporary folder on a machine
 /// that has none.
+/// Captures are written here first and only move into the capture folder when their preview goes
+/// away, so the folder stays empty while a preview is still on screen.
+enum CaptureStaging {
+    static func directory() -> URL {
+        let staging = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "\(Brand.identifierPrefix).captures")
+        try? FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        return staging
+    }
+}
+
 private func recordingDirectory(_ settings: ViewerSettings = ViewerSettings()) -> URL {
     if let chosen = settings.captureDirectory,
        FileManager.default.fileExists(atPath: chosen.path(percentEncoded: false)) {

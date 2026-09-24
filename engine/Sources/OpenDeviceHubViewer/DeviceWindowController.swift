@@ -344,7 +344,15 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     /// The most recent frame as a PNG, matching whatever the window is showing including the bezel.
     public func screenshotPNG() -> Data? {
-        renderer.currentSurface.flatMap(ScreenshotWriter.pngData)
+        guard let surface = renderer.currentSurface else { return nil }
+        // With the body shown, a screenshot means the device, not just its screen. Without it, the
+        // screen is the whole picture.
+        guard chromeView.hasChrome else { return ScreenshotWriter.pngData(from: surface) }
+        return ScreenshotWriter.pngData(
+            from: surface,
+            inside: chromeView,
+            screenRect: chromeView.screenRect
+        ) ?? ScreenshotWriter.pngData(from: surface)
     }
 
     /// The plain device name, without the recording dot or the latency overlay, so screenshot and

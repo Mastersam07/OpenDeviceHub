@@ -7,15 +7,8 @@ import CoreGraphics
 /// the display, and clamped to the display when neither side fits.
 public enum CapturePreviewLayout {
     public static let gap: CGFloat = 12
-    /// Previews stack upwards from the window's bottom edge, newest lowest.
-    public static let stackStep: CGFloat = 8
 
-    public static func frame(
-        size: CGSize,
-        beside window: CGRect,
-        visible: CGRect,
-        index: Int = 0
-    ) -> CGRect {
+    public static func frame(size: CGSize, beside window: CGRect, visible: CGRect) -> CGRect {
         let toTheRight = window.maxX + gap
         let toTheLeft = window.minX - gap - size.width
 
@@ -29,10 +22,9 @@ public enum CapturePreviewLayout {
             x = visible.maxX - size.width
         }
 
-        let stacked = window.minY + CGFloat(index) * (size.height + stackStep)
         return CGRect(
             x: clamp(x, low: visible.minX, high: visible.maxX - size.width),
-            y: clamp(stacked, low: visible.minY, high: visible.maxY - size.height),
+            y: clamp(window.minY, low: visible.minY, high: visible.maxY - size.height),
             width: size.width,
             height: size.height
         )
