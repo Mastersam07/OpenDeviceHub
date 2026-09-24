@@ -112,7 +112,9 @@ options.
 - **No Flutter tooling yet** — it is the reason this project exists, and none of it is built.
 - **Other Apple platforms** — tvOS, watchOS and visionOS simulators are not supported.
 
-Want to help close one of these? Pull requests are welcome.
+Want to help close one of these? Pull requests are welcome. [ROADMAP.md](ROADMAP.md) is where that
+list is going: location, push, biometrics, proxy certificates, device management, and the project
+aware tooling this exists for.
 
 ## Requirements
 
