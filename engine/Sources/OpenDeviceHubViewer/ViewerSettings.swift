@@ -25,6 +25,13 @@ public struct ViewerSettings: Sendable {
         nonmutating set { setFlag("shutdownOnWindowClose", newValue) }
     }
 
+    /// Copies made on the Mac reach the device on their own, and a copy made in the device comes
+    /// back when you switch away from the app. On by default, as in Simulator.app.
+    public var syncsPasteboard: Bool {
+        get { flag("syncsPasteboard", default: true) }
+        nonmutating set { setFlag("syncsPasteboard", newValue) }
+    }
+
     /// With nothing booted, opening the app starts the simulator you had last. Turn it off and a
     /// launch with nothing running opens no window.
     public var bootsMostRecentOnStart: Bool {

@@ -85,6 +85,14 @@ struct ODHubViewer: ParsableCommand {
             }
             let manager = DeviceWindowManager(frameStore: store)
 
+            let pasteboard = PasteboardSyncController(
+                isAutomatic: settings.syncsPasteboard,
+                devices: { manager.openUDIDs },
+                frontmost: { manager.frontmostUDID },
+                open: { try adapter.openPasteboard($0) }
+            )
+            manager.onDeviceClosed = { pasteboard.forget($0) }
+
             let previews = CapturePreviewPresenter(report: { print($0) })
             let present: @MainActor ([URL]) -> Void = { urls in
                 let destination = recordingDirectory(settings)
@@ -109,6 +117,7 @@ struct ODHubViewer: ParsableCommand {
                     present: present
                 )
                 recent.remember(udid)
+                pasteboard.adopt(udid)
             }
 
             for udid in plan.udids {
@@ -346,6 +355,13 @@ struct ODHubViewer: ParsableCommand {
                         }
                     }
                 },
+                toggleAutomaticPasteboardSync: { enabled in
+                    settings.syncsPasteboard = enabled
+                    pasteboard.setAutomatic(enabled)
+                },
+                getPasteboard: { pasteboard.get() },
+                sendPasteboard: { pasteboard.send() },
+                syncsPasteboard: { settings.syncsPasteboard },
                 newSimulator: {
                     let simctl = SimctlService()
                     NewSimulatorPanel.show(actions: NewSimulatorActions(
@@ -459,7 +475,8 @@ struct ODHubViewer: ParsableCommand {
                     remembered: nil
                 ).udids.first },
                 onTerminate: { manager.closeAll() },
-                settlePreviews: { previews.settleEverything() }
+                settlePreviews: { previews.settleEverything() },
+                onResignActive: { pasteboard.reconcileOnResignActive() }
             )
             // NSApplication holds its delegate weakly, and nothing else refers to these objects
             // once the run loop starts, so without this ARC releases them and the display sessions
@@ -544,6 +561,7 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
     private let deviceToReopen: () -> String?
     private let onTerminate: () -> Void
     private let settlePreviews: () -> Void
+    private let onResignActive: () -> Void
 
     init(
         quitsWithLastWindow: Bool,
@@ -552,7 +570,8 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
         openLink: @escaping (String) -> Void,
         deviceToReopen: @escaping () -> String?,
         onTerminate: @escaping () -> Void,
-        settlePreviews: @escaping () -> Void
+        settlePreviews: @escaping () -> Void,
+        onResignActive: @escaping () -> Void
     ) {
         self.quitsWithLastWindow = quitsWithLastWindow
         self.dockMenu = dockMenu
@@ -561,6 +580,13 @@ private final class ViewerAppDelegate: NSObject, NSApplicationDelegate {
         self.deviceToReopen = deviceToReopen
         self.onTerminate = onTerminate
         self.settlePreviews = settlePreviews
+        self.onResignActive = onResignActive
+    }
+
+    /// The automatic sync only carries the Mac's copies to the device, so a copy made inside a device
+    /// is fetched when the user switches away, which is when they are about to paste it elsewhere.
+    func applicationWillResignActive(_ notification: Notification) {
+        onResignActive()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

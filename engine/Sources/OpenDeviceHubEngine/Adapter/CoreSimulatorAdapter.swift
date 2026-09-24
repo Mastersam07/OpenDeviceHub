@@ -188,6 +188,43 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         }
     }
 
+    /// A connection that keeps the device's clipboard and the Mac's in step.
+    ///
+    /// The caller holds the result for as long as the device is on screen: the autosync runs on this
+    /// connection, so releasing it stops the syncing.
+    ///
+    /// The port is looked up here rather than stored anywhere, because a mach port name means
+    /// nothing outside the process that asked for it. Verified on Xcode 27 (27A266a) and Xcode 26.6.
+    public func openPasteboard(_ udid: String) throws -> any PasteboardSession {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let device = try rawDevice(udid)
+        guard DeviceState.from(state: device.state, stateString: device.stateString ?? "") == .booted else {
+            throw EngineError.deviceNotBooted(udid: udid)
+        }
+        guard (device as AnyObject).responds(to: NSSelectorFromString("lookup:error:")) else {
+            throw EngineError.symbolNotFound(
+                name: "-[SimDevice lookup:error:]",
+                framework: PrivateFramework.coreSimulator.rawValue
+            )
+        }
+        _ = try FrameworkLoader.load(.simPasteboardPlus, from: xcode)
+        // Asked of the listener class rather than written down here, so a rename in a later Xcode is
+        // followed rather than guessed at.
+        guard let service = PasteboardBridge.serviceName() else {
+            throw EngineError.symbolNotFound(
+                name: "+[SimPasteboardInterfaceListener machServiceName]",
+                framework: PrivateFramework.simPasteboardPlus.rawValue
+            )
+        }
+        let port = device.lookup(service, error: nil)
+        guard port != 0 else {
+            throw EngineError.capabilityUnavailable(name: "pasteboard sync on \(udid)")
+        }
+        return try PasteboardBridge(port: port)
+    }
+
     public func setOrientation(_ orientation: DeviceOrientation, udid: String) throws {
         lock.lock()
         defer { lock.unlock() }
@@ -309,6 +346,12 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
                device, NSSelectorFromString("setHardwareKeyboardEnabled:keyboardType:error:")
            ) != nil {
             capabilities.insert(.hardwareKeyboard)
+        }
+        // The interface class only exists once SimPasteboardPlus has been loaded, which happens on
+        // first use, so the flag turns on the route rather than promising the class is resident.
+        if let device = NSClassFromString("SimDevice"),
+           class_getInstanceMethod(device, NSSelectorFromString("lookup:error:")) != nil {
+            capabilities.insert(.pasteboardSync)
         }
         if let deviceSet = NSClassFromString("SimDeviceSet"),
            class_getInstanceMethod(

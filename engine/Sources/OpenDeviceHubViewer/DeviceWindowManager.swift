@@ -69,6 +69,7 @@ public final class DeviceWindowManager {
         controller.onClose = { [weak self] udid in
             self?.controllers.removeValue(forKey: udid)
             self?.shutdownIfAsked(udid)
+            self?.onDeviceClosed?(udid)
         }
         // A window that has lost its sessions offers the same way back as one whose device shut
         // down, since a wedged device usually needs the same thing.
@@ -218,9 +219,17 @@ public final class DeviceWindowManager {
     }
 
     /// The UDIDs of every open window, so a menu action can reach all of them.
+    /// Called after a window has closed, so anything held per device can be let go of.
+    public var onDeviceClosed: ((String) -> Void)?
+
     public var openUDIDs: [String] { Array(controllers.keys) }
 
     public func controller(for udid: String) -> DeviceWindowController? { controllers[udid] }
+    /// The device the user is looking at, which is where an action that can only land on one goes.
+    public var frontmostUDID: String? {
+        controllers.first { $0.value.window?.isKeyWindow == true }?.key ?? controllers.keys.first
+    }
+
 
     public func toggleBezel() {
         let enabled = controllers.values.first?.isBezelEnabled ?? true

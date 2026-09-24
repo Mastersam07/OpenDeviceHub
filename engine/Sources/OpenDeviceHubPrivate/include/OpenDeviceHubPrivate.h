@@ -124,6 +124,24 @@
              completion:(void (^_Nonnull)(NSError *_Nullable))completion;
 @end
 
+/// The pasteboard bridge between the Mac and a booted device, from `SimPasteboardPlus`, which lives
+/// inside CoreSimulator's own bundle. The port comes from `-[SimDevice lookup:error:]` with the
+/// service name `SimPasteboardInterfaceListener` reports. Verified on Xcode 27 (27A266a).
+@protocol ODHSimPasteboardInterface <NSObject>
+/// `managingPasteboard` is the `NSPasteboard` to keep in step. Typed `id` so this header does not
+/// pull in AppKit.
+- (instancetype _Nullable)initWithConnectingToPort:(unsigned int)port
+                                managingPasteboard:(id _Nullable)pasteboard
+                                          delegate:(id _Nullable)delegate
+                                     delegateQueue:(id _Nullable)queue;
+/// The Mac's clipboard to the device.
+- (void)push;
+/// The device's clipboard to the Mac.
+- (void)pull;
+- (void)enableRemoteAutosync;
+- (void)disableRemoteAutosync;
+@end
+
 @protocol ODHSimServiceContext <NSObject>
 - (nullable id<ODHSimDeviceSet>)defaultDeviceSetWithError:(NSError *_Nullable *_Nullable)error;
 @end

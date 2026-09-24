@@ -18,6 +18,7 @@ public struct Capabilities: OptionSet, Sendable, Hashable {
     public static let rotation = Capabilities(rawValue: 1 << 10)
     public static let deviceNotifications = Capabilities(rawValue: 1 << 11)
     public static let hardwareKeyboard = Capabilities(rawValue: 1 << 12)
+    public static let pasteboardSync = Capabilities(rawValue: 1 << 13)
 }
 
 extension Capabilities {

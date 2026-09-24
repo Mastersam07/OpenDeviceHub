@@ -49,6 +49,11 @@ public enum ViewerMenu {
         public var toggleKeyboardInput: (Bool) -> Void
         public var toggleHardwareKeyboard: (Bool) -> Void
         public var matchKeyboardLanguage: (Bool) -> Void
+        public var toggleAutomaticPasteboardSync: (Bool) -> Void
+        public var getPasteboard: () -> Void
+        public var sendPasteboard: () -> Void
+        /// Whether the sync starts on, which is remembered between launches.
+        public var syncsPasteboard: () -> Bool
         public var newSimulator: (() -> Void)?
         public var setOrientation: (DeviceOrientation) -> Void
         public var appSwitcher: () -> Void
@@ -84,6 +89,10 @@ public enum ViewerMenu {
             toggleKeyboardInput: @escaping (Bool) -> Void,
             toggleHardwareKeyboard: @escaping (Bool) -> Void,
             matchKeyboardLanguage: @escaping (Bool) -> Void,
+            toggleAutomaticPasteboardSync: @escaping (Bool) -> Void,
+            getPasteboard: @escaping () -> Void,
+            sendPasteboard: @escaping () -> Void,
+            syncsPasteboard: @escaping () -> Bool,
             newSimulator: (() -> Void)? = nil,
             setOrientation: @escaping (DeviceOrientation) -> Void,
             appSwitcher: @escaping () -> Void,
@@ -118,6 +127,10 @@ public enum ViewerMenu {
             self.toggleKeyboardInput = toggleKeyboardInput
             self.toggleHardwareKeyboard = toggleHardwareKeyboard
             self.matchKeyboardLanguage = matchKeyboardLanguage
+            self.toggleAutomaticPasteboardSync = toggleAutomaticPasteboardSync
+            self.getPasteboard = getPasteboard
+            self.sendPasteboard = sendPasteboard
+            self.syncsPasteboard = syncsPasteboard
             self.newSimulator = newSimulator
             self.setOrientation = setOrientation
             self.appSwitcher = appSwitcher
@@ -225,6 +238,30 @@ public enum ViewerMenu {
         let pasteItem = target.item("Paste", #selector(MenuTarget.paste), "v", [])
         pasteItem.icon("doc.on.clipboard")
         editMenu.addItem(pasteItem)
+        editMenu.addItem(.separator())
+
+        let syncItem = target.item(
+            "Automatically Sync Pasteboard",
+            #selector(MenuTarget.automaticPasteboardSync(_:)),
+            "",
+            []
+        )
+        syncItem.icon("clipboard")
+        syncItem.state = target.syncsPasteboard ? .on : .off
+        let getItem = target.item("Get Pasteboard", #selector(MenuTarget.getPasteboard), "", [])
+        let sendItem = target.item("Send Pasteboard", #selector(MenuTarget.sendPasteboard), "", [])
+        for item in [syncItem, getItem, sendItem] {
+            disable(
+                item,
+                unless: capabilities.contains(.pasteboardSync),
+                reason: "not available on this Xcode"
+            )
+            editMenu.addItem(item)
+        }
+        // Both are the manual halves of the sync, so they are redundant while it is on. Simulator.app
+        // greys them for the same reason.
+        target.trackPasteboardItems(get: getItem, send: sendItem)
+
         editMenu.addItem(.separator())
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = editMenu
@@ -457,6 +494,9 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private var sendsKeyboardInput = true
     private var hasHardwareKeyboard = true
     private var matchesKeyboardLanguage = true
+    private weak var getPasteboardItem: NSMenuItem?
+    private weak var sendPasteboardItem: NSMenuItem?
+    private lazy var syncsPasteboardNow = actions.syncsPasteboard()
 
     init(actions: ViewerMenu.Actions, commandLineTool: CommandLineToolMenu? = nil) {
         self.actions = actions
@@ -561,6 +601,22 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
         actions.toggleKeyboardInput(sendsKeyboardInput)
     }
 
+    var syncsPasteboard: Bool { syncsPasteboardNow }
+
+    func trackPasteboardItems(get: NSMenuItem, send: NSMenuItem) {
+        getPasteboardItem = get
+        sendPasteboardItem = send
+    }
+
+    @objc func automaticPasteboardSync(_ sender: NSMenuItem) {
+        syncsPasteboardNow.toggle()
+        sender.state = syncsPasteboardNow ? .on : .off
+        actions.toggleAutomaticPasteboardSync(syncsPasteboardNow)
+    }
+
+    @objc func getPasteboard() { actions.getPasteboard() }
+    @objc func sendPasteboard() { actions.sendPasteboard() }
+
     @objc func matchKeyboardLanguage(_ sender: NSMenuItem) {
         matchesKeyboardLanguage.toggle()
         sender.state = matchesKeyboardLanguage ? .on : .off
@@ -591,8 +647,11 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     }
 
     public func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        guard item === stopRecordingItem else { return item.action != nil }
-        return actions.isRecording()
+        if item === stopRecordingItem { return actions.isRecording() }
+        if item === getPasteboardItem || item === sendPasteboardItem {
+            return item.action != nil && !syncsPasteboardNow
+        }
+        return item.action != nil
     }
     @objc func rotateRight() { actions.rotate(false) }
     @objc func checkForUpdates() { actions.checkForUpdates?() }
