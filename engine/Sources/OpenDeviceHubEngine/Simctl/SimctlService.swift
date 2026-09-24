@@ -301,3 +301,104 @@ extension SimctlService {
         }
     }
 }
+
+extension SimctlService {
+    public enum ContentSizeStep: String, Sendable {
+        case increment
+        case decrement
+    }
+
+    /// The scenarios `simctl location list` reports, which are the same four Simulator.app offers.
+    public enum LocationScenario: String, CaseIterable, Sendable {
+        case cityRun = "City Run"
+        case cityBicycleRide = "City Bicycle Ride"
+        case freewayDrive = "Freeway Drive"
+        case apple = "Apple"
+    }
+
+    static func eraseArguments(udid: String) -> [String] {
+        ["simctl", "erase", udid]
+    }
+
+    static func iCloudSyncArguments(udid: String) -> [String] {
+        ["simctl", "icloud_sync", udid]
+    }
+
+    static func contentSizeArguments(udid: String, step: ContentSizeStep) -> [String] {
+        ["simctl", "ui", udid, "content_size", step.rawValue]
+    }
+
+    static func increaseContrastArguments(udid: String, enabled: Bool) -> [String] {
+        ["simctl", "ui", udid, "increase_contrast", enabled ? "enabled" : "disabled"]
+    }
+
+    static func readIncreaseContrastArguments(udid: String) -> [String] {
+        ["simctl", "ui", udid, "increase_contrast"]
+    }
+
+    static func locationScenarioArguments(udid: String, scenario: LocationScenario) -> [String] {
+        ["simctl", "location", udid, "run", scenario.rawValue]
+    }
+
+    static func locationSetArguments(udid: String, latitude: Double, longitude: Double) -> [String] {
+        ["simctl", "location", udid, "set", "\(latitude),\(longitude)"]
+    }
+
+    static func locationClearArguments(udid: String) -> [String] {
+        ["simctl", "location", udid, "clear"]
+    }
+
+    /// Erasing needs the device down first, and leaves it down. The caller decides whether to boot
+    /// it again, because erasing to then throw the device away is a reasonable thing to want.
+    public func erase(udid: String) throws {
+        try? shutdown(udid: udid)
+        try runChecked(Self.eraseArguments(udid: udid))
+    }
+
+    /// Down and up again. Shutting down a device that is already down is not an error worth
+    /// stopping for, which is why only the boot is checked.
+    public func restart(udid: String) throws {
+        try? shutdown(udid: udid)
+        try boot(udid: udid)
+    }
+
+    public func triggerICloudSync(udid: String) throws {
+        try runChecked(Self.iCloudSyncArguments(udid: udid))
+    }
+
+    public func stepContentSize(_ step: ContentSizeStep, udid: String) throws {
+        try runChecked(Self.contentSizeArguments(udid: udid, step: step))
+    }
+
+    public func setIncreaseContrast(_ enabled: Bool, udid: String) throws {
+        try runChecked(Self.increaseContrastArguments(udid: udid, enabled: enabled))
+    }
+
+    public func increasesContrast(udid: String) -> Bool {
+        let result = try? ProcessRunner.run("/usr/bin/xcrun", Self.readIncreaseContrastArguments(udid: udid))
+        return result?.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines) == "enabled"
+    }
+
+    public func runLocation(_ scenario: LocationScenario, udid: String) throws {
+        try runChecked(Self.locationScenarioArguments(udid: udid, scenario: scenario))
+    }
+
+    public func setLocation(latitude: Double, longitude: Double, udid: String) throws {
+        try runChecked(Self.locationSetArguments(udid: udid, latitude: latitude, longitude: longitude))
+    }
+
+    public func clearLocation(udid: String) throws {
+        try runChecked(Self.locationClearArguments(udid: udid))
+    }
+
+    private func runChecked(_ arguments: [String]) throws {
+        let result = try ProcessRunner.run("/usr/bin/xcrun", arguments)
+        guard result.status == 0 else {
+            throw EngineError.simctl(
+                args: Array(arguments.dropFirst()),
+                code: result.status,
+                stderr: result.standardError
+            )
+        }
+    }
+}

@@ -258,6 +258,72 @@ struct ODHubViewer: ParsableCommand {
                         }
                     }
                 },
+                restart: {
+                    for udid in manager.openUDIDs {
+                        runOnEveryDevice("restart", udid) { try SimctlService().restart(udid: $0) }
+                    }
+                },
+                erase: {
+                    // Destructive and not undoable, so it asks, names the device, and Erase is not
+                    // the default button.
+                    for udid in manager.openUDIDs {
+                        guard let controller = manager.controller(for: udid) else { continue }
+                        let alert = NSAlert()
+                        alert.alertStyle = .warning
+                        alert.messageText = "Erase \(controller.deviceTitle)?"
+                        alert.informativeText = "Every app, setting and file on this simulator is deleted. This cannot be undone, and the device is left shut down."
+                        alert.addButton(withTitle: "Cancel")
+                        alert.addButton(withTitle: "Erase")
+                        guard alert.runModal() == .alertSecondButtonReturn else { continue }
+                        runOnEveryDevice("erase", udid) { try SimctlService().erase(udid: $0) }
+                    }
+                },
+                stepTextSize: { step in
+                    for udid in manager.openUDIDs {
+                        runOnEveryDevice("text size", udid) {
+                            try SimctlService().stepContentSize(step, udid: $0)
+                        }
+                    }
+                },
+                toggleIncreaseContrast: {
+                    let simctl = SimctlService()
+                    for udid in manager.openUDIDs {
+                        let wanted = !simctl.increasesContrast(udid: udid)
+                        runOnEveryDevice("increase contrast", udid) {
+                            try simctl.setIncreaseContrast(wanted, udid: $0)
+                        }
+                    }
+                },
+                triggerICloudSync: {
+                    for udid in manager.openUDIDs {
+                        runOnEveryDevice("iCloud sync", udid) {
+                            try SimctlService().triggerICloudSync(udid: $0)
+                        }
+                    }
+                },
+                setLocation: { scenario in
+                    for udid in manager.openUDIDs {
+                        runOnEveryDevice("location", udid) { device in
+                            if let scenario {
+                                try SimctlService().runLocation(scenario, udid: device)
+                            } else {
+                                try SimctlService().clearLocation(udid: device)
+                            }
+                        }
+                    }
+                },
+                setCustomLocation: {
+                    guard let point = CustomLocationPrompt.ask() else { return }
+                    for udid in manager.openUDIDs {
+                        runOnEveryDevice("location", udid) {
+                            try SimctlService().setLocation(
+                                latitude: point.latitude,
+                                longitude: point.longitude,
+                                udid: $0
+                            )
+                        }
+                    }
+                },
                 setOrientation: { orientation in
                     for udid in manager.openUDIDs {
                         guard let controller = manager.controller(for: udid) else { continue }
@@ -590,6 +656,52 @@ private func swipeHome(_ session: any InputSession) async throws {
     try await session.touch(
         TouchEvent(phase: .ended, points: [path[path.count - 1]], edge: .bottom)
     )
+}
+
+/// Off the main thread, because every one of these blocks for a second or more and they run from a
+/// menu. A failure is printed rather than swallowed.
+@MainActor
+private func runOnEveryDevice(
+    _ what: String,
+    _ udid: String,
+    _ work: @escaping @Sendable (String) throws -> Void
+) {
+    Task {
+        let failure = await Task.detached { () -> String? in
+            do {
+                try work(udid)
+                return nil
+            } catch {
+                return error.localizedDescription
+            }
+        }.value
+        if let failure { print("\(what) failed: \(failure)") }
+    }
+}
+
+/// Latitude and longitude asked for in one line. The simulator this replaces opens a map here,
+/// which is a different piece of work.
+@MainActor
+enum CustomLocationPrompt {
+    static func ask() -> (latitude: Double, longitude: Double)? {
+        let alert = NSAlert()
+        alert.messageText = "Custom Location"
+        alert.informativeText = "Latitude and longitude, separated by a comma."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.placeholderString = "37.3349, -122.0090"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Set")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        guard let point = Coordinate(parsing: field.stringValue) else {
+            let complaint = NSAlert()
+            complaint.messageText = "That is not a coordinate."
+            complaint.informativeText = "Latitude is between -90 and 90, longitude between -180 and 180."
+            complaint.runModal()
+            return nil
+        }
+        return (point.latitude, point.longitude)
+    }
 }
 
 /// Recordings and screenshots land on the Desktop, falling back to a temporary folder on a machine
