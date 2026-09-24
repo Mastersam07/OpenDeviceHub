@@ -126,20 +126,12 @@ options.
 </details>
 
 ## Current limitations
-
-- **Input can stop on a running simulator**: a booted device sometimes stops accepting taps and
-  keystrokes while it still renders and still reports itself booted, with no error anywhere. Not the
-  app window: a command line tap fails on the same device at the same moment, while a device booted
-  fresh right then is fine. Shut the simulator down and boot it again. Under investigation.
 - **The windows are invisible to accessibility**: VoiceOver, window managers and scripting tools see
   the app and its menus but not its windows.
 - **A device taller than your display** keeps its bottom edge off screen, where the pointer cannot
   reach it. Use Fit.
-- **Simulators shut themselves down when idle** on at least one machine. Not reproduced on demand,
-  and CoreSimulator has no setting for it.
 - **The compact layout below 340 points wide** is written and unit tested but has never been used by
   hand.
-- **No Flutter tooling yet**: it is the reason this project exists, and none of it is built.
 - **Other Apple platforms**: tvOS, watchOS and visionOS simulators are not supported.
 
 Want to help close one of these? Pull requests are welcome. [ROADMAP.md](ROADMAP.md) is where that

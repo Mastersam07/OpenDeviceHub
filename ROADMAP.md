@@ -11,24 +11,23 @@ mentioned.
 
 Things the classic Simulator had, or that a simulator should simply be able to do.
 
-- **Location**: presets, a search, GPX routes, and per-project saved places.
+- **Location**: a search, GPX routes, and per-project saved places. Scenarios, your own coordinates
+  and clearing the location already work.
 - **Push notifications**: send a payload to an app, with a saved library of them and templates for
   the fiddly parts.
 - **Biometrics**: enrol, match and fail a match for Face ID and Touch ID.
-- **Device and runtime management**: create, rename, erase and delete simulators, and install
-  runtimes, without going back to Xcode.
+- **Device and runtime management**: rename and delete simulators, and install runtimes, without
+  going back to Xcode. Creating and erasing already work.
 - **Proxy certificates**: drop a `.cer` onto a device, or install a debugging proxy's root
   certificate on every booted device at once. Removed from Device Hub, and badly missed by anyone
   who inspects traffic for a living.
 - **Status bar presets**: 9:41, full battery, full signal, for clean App Store screenshots.
-- **Locale, region and Dynamic Type**: switch them without digging through Settings.
+- **Locale and region**: switch them without digging through Settings. Text size and increased
+  contrast already work.
 - **Privacy permissions**: grant, revoke and reset per app, so the first-run flow can be tested more
   than once.
 
 ## Tooling for the app you are actually building
-
-The reason this project exists, and none of it is built yet. The theme is everything a mobile
-developer scripts by hand today, one click away, remembered per project.
 
 - **Project awareness**: point it at a project and it learns the bundle identifiers, flavours and
   entry points, then remembers your deep links, payloads, proxy settings and favourite devices
