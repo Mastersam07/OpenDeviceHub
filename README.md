@@ -112,7 +112,9 @@ options.
 - **No Flutter tooling yet** — it is the reason this project exists, and none of it is built.
 - **Other Apple platforms** — tvOS, watchOS and visionOS simulators are not supported.
 
-Want to help close one of these? Pull requests are welcome.
+Want to help close one of these? Pull requests are welcome. [ROADMAP.md](ROADMAP.md) is where that
+list is going: location, push, biometrics, proxy certificates, device management, and the project
+aware tooling this exists for.
 
 ## Requirements
 
@@ -142,6 +144,10 @@ configured and a source build can never replace itself with a release.
 
 Bug reports, feature ideas and pull requests are welcome. A bug report is far more useful with the
 output of `odhub doctor`, which names your macOS version, Xcode version, device and runtime.
+
+For a vulnerability, please read [SECURITY.md](SECURITY.md) instead of opening an issue. It also
+describes what the app does to your machine, which is worth knowing given it loads private
+frameworks out of your Xcode. Maintainers cutting a release want [RELEASING.md](RELEASING.md).
 
 ## License
 
