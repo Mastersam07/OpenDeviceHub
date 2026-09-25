@@ -152,7 +152,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
     ///
     /// Available on any booted device, since the service is not foldable specific, but only a device
     /// with a hinge does anything with it.
-    public func openFoldableControl(_ udid: String) throws -> FoldableControl {
+    public func openFoldableControl(_ udid: String) throws -> any HingeControl {
         lock.lock()
         defer { lock.unlock() }
 

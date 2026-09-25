@@ -13,6 +13,21 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private let screenView: DeviceScreenView
     private let chromeView: DeviceChromeView
     private let controlBar: DeviceControlBar
+    private let foldBar: FoldControlBar?
+
+    /// Whether this window has the fold controls, which only a foldable does.
+    public var foldsAtHinge: Bool { foldBar != nil }
+
+    /// Reports the hinge angle the user asked for, continuously while the slider moves.
+    public var onHingeAngle: ((Double) -> Void)? {
+        get { foldBar?.onAngle }
+        set { foldBar?.onAngle = newValue }
+    }
+
+    /// Moves the fold controls to an angle that came from somewhere other than this window.
+    public func showHingeAngle(_ degrees: Double) {
+        foldBar?.showAngle(degrees)
+    }
     private let presentationView: DevicePresentationView
     private var chrome: DeviceChrome?
     private var toolbar: DeviceToolbar?
@@ -50,7 +65,8 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         keepOnTop: Bool,
         frameStore: WindowFrameStore,
         fpsLabel: String?,
-        chrome: DeviceChrome?
+        chrome: DeviceChrome?,
+        foldsAtHinge: Bool = false
     ) throws {
         self.frameStore = frameStore
         self.udid = udid
@@ -66,7 +82,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         screenView.delegate = renderer
         chromeView = DeviceChromeView(screenView: screenView)
         controlBar = DeviceControlBar(deviceName: deviceName, runtimeName: runtimeName)
-        presentationView = DevicePresentationView(bar: controlBar, chrome: chromeView)
+        foldBar = foldsAtHinge ? FoldControlBar() : nil
+        presentationView = DevicePresentationView(
+            bar: controlBar,
+            chrome: chromeView,
+            foldBar: foldBar
+        )
         self.chrome = chrome
 
         let screenSize = DeviceGeometry.pointSize(
@@ -83,9 +104,10 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             ? PresentationLayout.defaultContentSize(
                 forDevice: deviceSize,
                 isTablet: deviceName.contains("iPad"),
-                available: available
+                available: available,
+                hasFoldBar: foldsAtHinge
             )
-            : PresentationLayout.contentSize(forDevice: deviceSize)
+            : PresentationLayout.contentSize(forDevice: deviceSize, hasFoldBar: foldsAtHinge)
         let window = DeviceWindow(
             contentRect: CGRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],

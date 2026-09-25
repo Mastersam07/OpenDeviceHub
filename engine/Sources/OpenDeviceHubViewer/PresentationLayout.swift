@@ -11,6 +11,9 @@ public struct PresentationLayout: Equatable {
     /// The height AppKit gives a unified toolbar, which is the band the native items are laid out
     /// in. The bar has to match it or the items would sit off centre inside it.
     public static let barHeight: CGFloat = 52
+    /// Shorter than the top bar: it carries one slider and three buttons, not the window's own
+    /// controls, and the device is what the window is for.
+    public static let foldBarHeight: CGFloat = 44
     public static let deviceSideMargin: CGFloat = 12
     public static let deviceTopMargin: CGFloat = 12
     public static let deviceBottomMargin: CGFloat = 24
@@ -34,22 +37,26 @@ public struct PresentationLayout: Equatable {
     public static func defaultContentSize(
         forDevice device: CGSize,
         isTablet: Bool,
-        available: CGSize
+        available: CGSize,
+        hasFoldBar: Bool = false
     ) -> CGSize {
         let box = CGSize(
             width: isTablet ? defaultTabletWidth : defaultPhoneWidth,
             height: min(defaultMaximumHeight, available.height)
         )
-        return contentSize(forDevice: deviceSize(fitting: device, in: box))
+        return contentSize(forDevice: deviceSize(fitting: device, in: box), hasFoldBar: hasFoldBar)
     }
 
     public let bar: CGRect
+    /// The second bar, along the bottom, for the controls only a foldable has. Empty when the
+    /// device is not one, which is every device but the Duo.
+    public let foldBar: CGRect
     public let device: CGRect
     public let cornerRadius: CGFloat
 
     /// Full screen hands the window to AppKit, which puts its own chrome at the top, so the bar
     /// squares off and the device takes the rest.
-    public init(contentSize: CGSize, isFullScreen: Bool = false) {
+    public init(contentSize: CGSize, isFullScreen: Bool = false, hasFoldBar: Bool = false) {
         let width = max(contentSize.width, 0)
         let height = max(contentSize.height, 0)
         bar = CGRect(
@@ -63,20 +70,29 @@ public struct PresentationLayout: Equatable {
         let side = isFullScreen ? 0 : Self.deviceSideMargin
         let top = isFullScreen ? 0 : Self.deviceTopMargin
         let bottom = isFullScreen ? 0 : Self.deviceBottomMargin
+
+        // The bottom bar sits inside the margin the device already leaves, so a foldable's window is
+        // taller by the bar rather than by the bar and a second set of margins.
+        foldBar = hasFoldBar
+            ? CGRect(x: 0, y: 0, width: width, height: min(Self.foldBarHeight, height))
+            : .zero
+
+        let floor = foldBar.height > 0 ? foldBar.maxY + bottom : bottom
         device = CGRect(
             x: side,
-            y: bottom,
+            y: floor,
             width: max(width - side * 2, 0),
-            height: max(bar.minY - top - bottom, 0)
+            height: max(bar.minY - top - floor, 0)
         )
     }
 
     /// What a window has to be, in content points, to show a device of this size with the bar above
     /// it and the margins around it.
-    public static func contentSize(forDevice device: CGSize) -> CGSize {
+    public static func contentSize(forDevice device: CGSize, hasFoldBar: Bool = false) -> CGSize {
         CGSize(
             width: device.width + deviceSideMargin * 2,
             height: device.height + barHeight + deviceTopMargin + deviceBottomMargin
+                + (hasFoldBar ? foldBarHeight : 0)
         )
     }
 

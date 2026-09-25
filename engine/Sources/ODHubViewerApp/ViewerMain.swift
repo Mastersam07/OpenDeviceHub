@@ -91,7 +91,12 @@ struct ODHubViewer: ParsableCommand {
                 frontmost: { manager.frontmostUDID },
                 open: { try adapter.openPasteboard($0) }
             )
-            manager.onDeviceClosed = { pasteboard.forget($0) }
+            let foldables = FoldableController(open: { try adapter.openFoldableControl($0) })
+            foldables.report = { print($0) }
+            manager.onDeviceClosed = {
+                pasteboard.forget($0)
+                foldables.forget($0)
+            }
 
             let previews = CapturePreviewPresenter(report: { print($0) })
             let present: @MainActor ([URL]) -> Void = { urls in
@@ -127,6 +132,27 @@ struct ODHubViewer: ParsableCommand {
                 )
                 recent.remember(udid)
                 pasteboard.adopt(udid)
+
+                // Only a foldable gets the bottom bar, and only it can be folded.
+                if let controller = manager.controller(for: udid), controller.foldsAtHinge {
+                    controller.showHingeAngle(foldables.angle(for: udid))
+                    controller.onHingeAngle = { angle in foldables.setAngle(angle, for: udid) }
+                }
+            }
+
+            // The guest moves its own picture to the other panel as the hinge passes the threshold,
+            // so the window follows it rather than deciding anything.
+            foldables.onHandoff = { udid, unfolded in
+                guard let panels = try? adapter.panels(udid),
+                      let target = panels.first(where: { $0.name == (unfolded ? "Unfolded" : "Cover") }),
+                      settings.panelIndex(for: udid) != target.index else { return }
+                settings.setPanelIndex(target.index, for: udid)
+                manager.closeKeepingDevice(udid)
+                do {
+                    try show(udid, false)
+                } catch {
+                    print("could not follow the fold: \(error.localizedDescription)")
+                }
             }
 
             for udid in plan.udids {
@@ -548,6 +574,9 @@ struct ODHubViewer: ParsableCommand {
 
         let session = try adapter.openDisplay(device.udid, panel: panel)
         session.setBezelEnabled(bezel)
+        // More than one built in screen means a hinge between them, which is the only thing the
+        // bottom bar is for.
+        let foldsAtHinge = ((try? adapter.panels(device.udid))?.count ?? 1) > 1
         let input: (any InputSession)?
         do {
             input = try adapter.openInput(device.udid)
@@ -563,7 +592,8 @@ struct ODHubViewer: ParsableCommand {
             scaleMode: scale,
             bezelEnabled: bezel,
             keepOnTop: keepOnTop,
-            showFPS: fps
+            showFPS: fps,
+            foldsAtHinge: foldsAtHinge
         )
         installToolbar(udid: device.udid, manager: manager, adapter: adapter, present: present)
         if case .largerThanScreen(let size) = controller.applyScaleMode(scale) {

@@ -145,6 +145,16 @@ public protocol PasteboardSession: Sendable {
     func reconcile()
 }
 
+/// Folding a foldable and turning one, as the viewer sees it.
+public protocol HingeControl: AnyObject, Sendable {
+    /// Turns the guest's vendor input feature on. Reports are ignored until it has answered.
+    func activate() async throws
+    /// Folds the device, in degrees, where 0 is shut and 180 is flat open.
+    func setHingeAngle(_ degrees: Double) throws
+    /// Turns the device. An ordinary rotation does not stick on a foldable.
+    func setOrientation(_ orientation: DeviceOrientation) throws
+}
+
 public protocol SimulatorAdapter: Sendable {
     var xcode: XcodeInstall { get }
     var capabilities: Capabilities { get }
@@ -155,7 +165,7 @@ public protocol SimulatorAdapter: Sendable {
     /// Opens one panel, or the device's own main screen when none is named.
     func openDisplay(_ udid: String, panel: DevicePanel?) throws -> any DisplaySession
     /// Opens the control that folds and turns a foldable.
-    func openFoldableControl(_ udid: String) throws -> FoldableControl
+    func openFoldableControl(_ udid: String) throws -> any HingeControl
     func openInput(_ udid: String) throws -> any InputSession
     func simulateMemoryWarning(_ udid: String) throws
     /// Turns the device itself, which makes the guest re-lay out. The viewer still has to turn its

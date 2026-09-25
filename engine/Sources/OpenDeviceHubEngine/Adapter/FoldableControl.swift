@@ -9,7 +9,7 @@ import XPC
 ///
 /// The report is a serialised dictionary naming a provider, one of its controls, and a value. The
 /// usage page and usage below identify it as that kind of report; they are not ours to choose.
-public final class FoldableControl: @unchecked Sendable {
+public final class FoldableControl: HingeControl, @unchecked Sendable {
     /// Angles the guest treats as meaningful. Closed is flat shut, open is flat open.
     public static let closedAngle: Double = 0
     public static let openAngle: Double = 180

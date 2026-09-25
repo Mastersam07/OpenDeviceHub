@@ -45,7 +45,8 @@ public final class DeviceWindowManager {
         scaleMode: ScaleMode,
         bezelEnabled: Bool,
         keepOnTop: Bool,
-        showFPS: Bool
+        showFPS: Bool,
+        foldsAtHinge: Bool = false
     ) throws -> DeviceWindowController {
         if let existing = controllers[device.udid] {
             existing.window?.makeKeyAndOrderFront(nil)
@@ -64,7 +65,8 @@ public final class DeviceWindowManager {
             keepOnTop: keepOnTop,
             frameStore: frameStore,
             fpsLabel: showFPS ? device.name : nil,
-            chrome: ChromeLocator.chrome(forDeviceType: device.deviceTypeIdentifier)
+            chrome: ChromeLocator.chrome(forDeviceType: device.deviceTypeIdentifier),
+            foldsAtHinge: foldsAtHinge
         )
         controller.onClose = { [weak self] udid in
             self?.controllers.removeValue(forKey: udid)
