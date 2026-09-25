@@ -47,7 +47,8 @@ public final class DeviceWindowManager {
         keepOnTop: Bool,
         showFPS: Bool,
         foldsAtHinge: Bool = false,
-        chrome: DeviceChrome? = nil
+        chrome: DeviceChrome? = nil,
+        panelNativeRotation: Int = 0
     ) throws -> DeviceWindowController {
         if let existing = controllers[device.udid] {
             existing.window?.makeKeyAndOrderFront(nil)
@@ -67,7 +68,8 @@ public final class DeviceWindowManager {
             frameStore: frameStore,
             fpsLabel: showFPS ? device.name : nil,
             chrome: chrome ?? ChromeLocator.chrome(forDeviceType: device.deviceTypeIdentifier),
-            foldsAtHinge: foldsAtHinge
+            foldsAtHinge: foldsAtHinge,
+            panelNativeRotation: panelNativeRotation
         )
         controller.onClose = { [weak self] udid in
             self?.controllers.removeValue(forKey: udid)

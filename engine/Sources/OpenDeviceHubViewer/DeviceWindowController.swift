@@ -14,6 +14,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private let chromeView: DeviceChromeView
     private let controlBar: DeviceControlBar
     private let hasFoldModes: Bool
+    private let modelView: DuoModelView?
     /// Where the hinge has got to, so a pinch carries on from where the last one left off.
     private var foldAngle: Double = 0
 
@@ -27,6 +28,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     public func showHingeAngle(_ degrees: Double) {
         foldAngle = degrees
         controlBar.showFoldAngle(degrees)
+        modelView?.setHingeAngle(degrees)
     }
     private let presentationView: DevicePresentationView
     private var chrome: DeviceChrome?
@@ -66,7 +68,8 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         frameStore: WindowFrameStore,
         fpsLabel: String?,
         chrome: DeviceChrome?,
-        foldsAtHinge: Bool = false
+        foldsAtHinge: Bool = false,
+        panelNativeRotation: Int = 0
     ) throws {
         self.frameStore = frameStore
         self.udid = udid
@@ -83,7 +86,23 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         chromeView = DeviceChromeView(screenView: screenView)
         controlBar = DeviceControlBar(deviceName: deviceName, runtimeName: runtimeName)
         hasFoldModes = foldsAtHinge
-        presentationView = DevicePresentationView(bar: controlBar, chrome: chromeView)
+        // Only a foldable, and only where the installed Xcode ships the model. Anything else stays
+        // on the flat renderer, which is what every other device wants anyway.
+        // The cover is the smaller panel, so the shape of what the session opened says which face
+        // the guest is drawing to and therefore which one the picture goes on.
+        let onTheCover = max(session.pixelSize.width, session.pixelSize.height) < 2500
+        modelView = foldsAtHinge
+            ? DuoModelView(
+                metalDevice: device,
+                showingCover: onTheCover,
+                nativeRotation: panelNativeRotation
+            )
+            : nil
+        presentationView = DevicePresentationView(
+            bar: controlBar,
+            chrome: chromeView,
+            model: modelView
+        )
         self.chrome = chrome
 
         let screenSize = DeviceGeometry.pointSize(
@@ -128,13 +147,16 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         if foldsAtHinge {
             controlBar.addFoldModes()
             controlBar.onFoldMode = { [weak self] mode in
-                self?.foldAngle = mode.angle
-                self?.onHingeAngle?(mode.angle)
+                guard let self else { return }
+                foldAngle = mode.angle
+                modelView?.setHingeAngle(mode.angle)
+                onHingeAngle?(mode.angle)
             }
             screenView.onPinchFold = { [weak self] change in
                 guard let self else { return }
                 foldAngle = min(max(foldAngle + change, 0), 180)
                 controlBar.showFoldAngle(foldAngle)
+                modelView?.setHingeAngle(foldAngle)
                 onHingeAngle?(foldAngle)
             }
         }
@@ -562,6 +584,17 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         let pixelSize = session.pixelSize
         let screenView = screenView
 
+        // A foldable is drawn as the model, so a click is hit tested against the posed screen and
+        // arrives already in the guest's own coordinates. The panel's own build angle is already in
+        // the picture, so nothing is turned again here.
+        modelView?.onTouch = { [weak self] point, phase in
+            guard let self, let input else { return }
+            if phase == .began { latency.clickSent() }
+            Task {
+                try? await input.touch(TouchEvent(phase: phase, points: [point]))
+            }
+        }
+
         screenView.onContact = { [weak self] point, phase, style in
             guard let self, let input else { return }
             let orientation = self.orientation
@@ -643,6 +676,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
                 renderer.accept(frame)
                 await MainActor.run { [weak self] in
                     screenView.needsDisplay = true
+                    self?.modelView?.setScreen(frame.surface)
                     guard let self else { return }
                     if self.latency.frameDrawn() != nil, self.showsLatency {
                         self.updateTitle()

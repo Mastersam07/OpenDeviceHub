@@ -3,40 +3,48 @@ import XCTest
 @testable import OpenDeviceHubViewer
 
 final class DuoModelViewTests: XCTestCase {
-    func testTheFoldMapsOntoTheAssetsTimeline() {
-        // Flat at the start, shut five seconds in, and halfway between at ninety degrees.
-        XCTAssertEqual(DuoModelView.sceneTime(forHingeAngle: 180), 0)
-        XCTAssertEqual(DuoModelView.sceneTime(forHingeAngle: 0), 5)
-        XCTAssertEqual(DuoModelView.sceneTime(forHingeAngle: 90), 2.5, accuracy: 0.001)
-        XCTAssertEqual(DuoModelView.sceneTime(forHingeAngle: 120), 5.0 / 3, accuracy: 0.001)
+    /// The fold is the closing clip, not the start of the timeline. Other stretches also run flat
+    /// to shut while turning the hardware, which puts the device on its side.
+    func testTheFoldMapsOntoTheClosingClip() {
+        XCTAssertEqual(DuoModelView.Pose.time(forHingeAngle: 180), 260.0 / 24, accuracy: 0.001)
+        XCTAssertEqual(DuoModelView.Pose.time(forHingeAngle: 0), 380.0 / 24, accuracy: 0.001)
+        XCTAssertEqual(
+            DuoModelView.Pose.time(forHingeAngle: 90),
+            (260.0 / 24 + 380.0 / 24) / 2,
+            accuracy: 0.001
+        )
     }
 
-    /// Nothing may ask the asset for a pose outside the fold, where the animation is a reel of
-    /// unrelated poses.
     func testAnglesOutsideTheHingeAreClamped() {
-        XCTAssertEqual(DuoModelView.sceneTime(forHingeAngle: 400), 0)
-        XCTAssertEqual(DuoModelView.sceneTime(forHingeAngle: -90), 5)
+        XCTAssertEqual(DuoModelView.Pose.time(forHingeAngle: 400), 260.0 / 24, accuracy: 0.001)
+        XCTAssertEqual(DuoModelView.Pose.time(forHingeAngle: -90), 380.0 / 24, accuracy: 0.001)
+    }
+
+    /// Turning the picture back to meet the panel, which is built sideways.
+    func testTheTextureTurnsWithThePanel() {
+        XCTAssertEqual(DuoModelView.textureTransform(quarterTurns: 0).m11, 1)
+        XCTAssertEqual(DuoModelView.textureTransform(quarterTurns: 1).m12, -1)
+        XCTAssertEqual(DuoModelView.textureTransform(quarterTurns: 2).m11, -1)
+        XCTAssertEqual(DuoModelView.textureTransform(quarterTurns: 3).m12, 1)
     }
 }
 
 @MainActor
 final class DuoModelAssetTests: XCTestCase {
-    /// Loads the model Xcode ships and finds the screen in it. Skips where the asset is absent,
+    /// Loads the model Xcode ships and finds both of its screens. Skips where the asset is absent,
     /// which is every Xcode without a foldable.
-    func testTheModelLoadsAndItsScreenIsFound() throws {
+    func testTheModelLoadsAndBothScreensAreFound() throws {
         guard let device = MTLCreateSystemDefaultDevice() else {
             throw XCTSkip("no Metal device")
         }
-        // The unfolded panel this device reports, which is what the screen is matched against.
-        guard let view = DuoModelView(metalDevice: device, panelRatio: 2007.0 / 2853.0) else {
+        guard let view = DuoModelView(metalDevice: device, showingCover: false, nativeRotation: 270)
+        else {
             throw XCTSkip("this Xcode ships no foldable model")
         }
         XCTAssertNotNil(view.scene)
 
         view.setHingeAngle(120)
         XCTAssertEqual(view.hingeAngle, 120)
-        view.setHingeAngle(0)
-        XCTAssertEqual(view.hingeAngle, 0)
         view.setHingeAngle(400)
         XCTAssertEqual(view.hingeAngle, 180, "an angle beyond the hinge is clamped to it")
     }

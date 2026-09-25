@@ -606,9 +606,12 @@ struct ODHubViewer: ParsableCommand {
             foldsAtHinge: foldsAtHinge,
             // A foldable's panels declare different bodies, so the one being shown brings its own
             // rather than the device type's, which names only the cover's.
-            chrome: panel?.chromeIdentifier.flatMap { ChromeLocator.chrome(identifier: $0) }
+            chrome: panel?.chromeIdentifier.flatMap { ChromeLocator.chrome(identifier: $0) },
+            panelNativeRotation: panel?.nativeRotation ?? 0
         )
-        if let panel {
+        // Only the flat renderer needs this: the model turns the picture on the texture instead,
+        // and turning it twice is how the unfolded panel ended up on its side.
+        if let panel, !controller.foldsAtHinge {
             controller.nativeRotation = panel.nativeRotation
         }
         installToolbar(udid: device.udid, manager: manager, adapter: adapter, present: present)
