@@ -148,6 +148,32 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         return (panels, descriptors, scale)
     }
 
+    /// Opens the control that folds and turns a foldable.
+    ///
+    /// Available on any booted device, since the service is not foldable specific, but only a device
+    /// with a hinge does anything with it.
+    public func openFoldableControl(_ udid: String) throws -> FoldableControl {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let device = try rawDevice(udid)
+        guard DeviceState.from(state: device.state, stateString: device.stateString ?? "") == .booted else {
+            throw EngineError.deviceNotBooted(udid: udid)
+        }
+        guard (device as AnyObject).responds(to: NSSelectorFromString("lookup:error:")) else {
+            throw EngineError.symbolNotFound(
+                name: "-[SimDevice lookup:error:]",
+                framework: PrivateFramework.coreSimulator.rawValue
+            )
+        }
+        let port = device.lookup(FoldableControl.serviceName, error: nil)
+        let digitizerPort = device.lookup(FoldableControl.digitizerServiceName, error: nil)
+        guard port != 0, digitizerPort != 0 else {
+            throw EngineError.capabilityUnavailable(name: "vendor input on \(udid)")
+        }
+        return try FoldableControl(port: port, digitizerPort: digitizerPort)
+    }
+
     public func openInput(_ udid: String) throws -> any InputSession {
         lock.lock()
         defer { lock.unlock() }

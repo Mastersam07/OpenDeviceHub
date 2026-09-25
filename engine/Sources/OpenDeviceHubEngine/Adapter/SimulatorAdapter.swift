@@ -154,6 +154,8 @@ public protocol SimulatorAdapter: Sendable {
     func panels(_ udid: String) throws -> [DevicePanel]
     /// Opens one panel, or the device's own main screen when none is named.
     func openDisplay(_ udid: String, panel: DevicePanel?) throws -> any DisplaySession
+    /// Opens the control that folds and turns a foldable.
+    func openFoldableControl(_ udid: String) throws -> FoldableControl
     func openInput(_ udid: String) throws -> any InputSession
     func simulateMemoryWarning(_ udid: String) throws
     /// Turns the device itself, which makes the guest re-lay out. The viewer still has to turn its
