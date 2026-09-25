@@ -114,9 +114,15 @@ struct ODHubViewer: ParsableCommand {
             // A foldable has two screens and only one can be in a window, so the choice is
             // remembered per device. Anything else has one screen and this is always nil.
             let rememberedPanel: @MainActor (String) -> DevicePanel? = { udid in
-                guard let index = settings.panelIndex(for: udid),
-                      let panels = try? adapter.panels(udid) else { return nil }
-                return panels.first { $0.index == index }
+                guard let panels = try? adapter.panels(udid), panels.count > 1 else { return nil }
+                if let index = settings.panelIndex(for: udid),
+                   let chosen = panels.first(where: { $0.index == index }) {
+                    return chosen
+                }
+                // A foldable opens unfolded, so it opens on the panel that pose draws to. Opening on
+                // the main screen instead would show the cover of a device that is lying open, which
+                // is a black rectangle.
+                return panels.first { $0.name == "Unfolded" }
             }
 
             let show: @MainActor (String, Bool) throws -> Void = { udid, allowBoot in
@@ -133,10 +139,14 @@ struct ODHubViewer: ParsableCommand {
                 recent.remember(udid)
                 pasteboard.adopt(udid)
 
-                // Only a foldable gets the bottom bar, and only it can be folded.
+                // Only a foldable can be folded. It opens unfolded, which is the pose worth seeing
+                // and the one its own tooling starts on, unless it has already been put somewhere
+                // else in this session.
                 if let controller = manager.controller(for: udid), controller.foldsAtHinge {
-                    controller.showHingeAngle(foldables.angle(for: udid))
+                    let angle = foldables.angle(for: udid) ?? DeviceControlBar.FoldMode.fullyOpen.angle
+                    controller.showHingeAngle(angle)
                     controller.onHingeAngle = { angle in foldables.setAngle(angle, for: udid) }
+                    foldables.setAngle(angle, for: udid)
                 }
             }
 
@@ -593,8 +603,14 @@ struct ODHubViewer: ParsableCommand {
             bezelEnabled: bezel,
             keepOnTop: keepOnTop,
             showFPS: fps,
-            foldsAtHinge: foldsAtHinge
+            foldsAtHinge: foldsAtHinge,
+            // A foldable's panels declare different bodies, so the one being shown brings its own
+            // rather than the device type's, which names only the cover's.
+            chrome: panel?.chromeIdentifier.flatMap { ChromeLocator.chrome(identifier: $0) }
         )
+        if let panel {
+            controller.nativeRotation = panel.nativeRotation
+        }
         installToolbar(udid: device.udid, manager: manager, adapter: adapter, present: present)
         if case .largerThanScreen(let size) = controller.applyScaleMode(scale) {
             print("\(device.name): \(scale.displayName) needs \(Int(size.width))x\(Int(size.height)) points, which is larger than this display.")

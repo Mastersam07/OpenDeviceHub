@@ -13,20 +13,20 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private let screenView: DeviceScreenView
     private let chromeView: DeviceChromeView
     private let controlBar: DeviceControlBar
-    private let foldBar: FoldControlBar?
+    private let hasFoldModes: Bool
+    /// Where the hinge has got to, so a pinch carries on from where the last one left off.
+    private var foldAngle: Double = 0
 
     /// Whether this window has the fold controls, which only a foldable does.
-    public var foldsAtHinge: Bool { foldBar != nil }
+    public var foldsAtHinge: Bool { hasFoldModes }
 
-    /// Reports the hinge angle the user asked for, continuously while the slider moves.
-    public var onHingeAngle: ((Double) -> Void)? {
-        get { foldBar?.onAngle }
-        set { foldBar?.onAngle = newValue }
-    }
+    /// Reports the angle the user asked for, from the positions in the bar or from a pinch.
+    public var onHingeAngle: ((Double) -> Void)?
 
     /// Moves the fold controls to an angle that came from somewhere other than this window.
     public func showHingeAngle(_ degrees: Double) {
-        foldBar?.showAngle(degrees)
+        foldAngle = degrees
+        controlBar.showFoldAngle(degrees)
     }
     private let presentationView: DevicePresentationView
     private var chrome: DeviceChrome?
@@ -82,12 +82,8 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         screenView.delegate = renderer
         chromeView = DeviceChromeView(screenView: screenView)
         controlBar = DeviceControlBar(deviceName: deviceName, runtimeName: runtimeName)
-        foldBar = foldsAtHinge ? FoldControlBar() : nil
-        presentationView = DevicePresentationView(
-            bar: controlBar,
-            chrome: chromeView,
-            foldBar: foldBar
-        )
+        hasFoldModes = foldsAtHinge
+        presentationView = DevicePresentationView(bar: controlBar, chrome: chromeView)
         self.chrome = chrome
 
         let screenSize = DeviceGeometry.pointSize(
@@ -104,10 +100,9 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             ? PresentationLayout.defaultContentSize(
                 forDevice: deviceSize,
                 isTablet: deviceName.contains("iPad"),
-                available: available,
-                hasFoldBar: foldsAtHinge
+                available: available
             )
-            : PresentationLayout.contentSize(forDevice: deviceSize, hasFoldBar: foldsAtHinge)
+            : PresentationLayout.contentSize(forDevice: deviceSize)
         let window = DeviceWindow(
             contentRect: CGRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -130,6 +125,19 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         window.collectionBehavior.insert(.fullScreenPrimary)
         super.init(window: window)
         window.delegate = self
+        if foldsAtHinge {
+            controlBar.addFoldModes()
+            controlBar.onFoldMode = { [weak self] mode in
+                self?.foldAngle = mode.angle
+                self?.onHingeAngle?(mode.angle)
+            }
+            screenView.onPinchFold = { [weak self] change in
+                guard let self else { return }
+                foldAngle = min(max(foldAngle + change, 0), 180)
+                controlBar.showFoldAngle(foldAngle)
+                onHingeAngle?(foldAngle)
+            }
+        }
         chromeView.setScreenSize(screenSize)
         chromeView.setChrome(bezelEnabled ? chrome : nil)
         installChromeButtons()
@@ -421,10 +429,18 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     /// Turns the window and the image to match the device. The device itself is turned by the
     /// adapter; this is the half the host owns.
+    /// How far this panel is built round in its housing, added to whatever the guest is doing. A
+    /// foldable's unfolded panel is sideways, so its picture is landscape while the guest thinks it
+    /// is upright.
+    public var nativeRotation: Int = 0 {
+        didSet { setOrientation(orientation) }
+    }
+
     public func setOrientation(_ orientation: DeviceOrientation) {
         self.orientation = orientation
-        renderer.setOrientation(orientation)
-        chromeView.setOrientation(orientation)
+        let shown = Self.shown(orientation, nativeRotation: nativeRotation)
+        renderer.setOrientation(shown)
+        chromeView.setOrientation(shown)
         // The scale mode settles the window's shape and its ratio, including the body, and leaves
         // both alone in full screen.
         applyScaleMode(scaleMode)
@@ -432,6 +448,18 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     }
 
     public var currentOrientation: DeviceOrientation { orientation }
+
+    /// What to draw, which is the guest's orientation turned by the panel's own build angle.
+    nonisolated static func shown(
+        _ orientation: DeviceOrientation,
+        nativeRotation: Int
+    ) -> DeviceOrientation {
+        // Subtracted, not added. This project measures an orientation as the clockwise turn applied
+        // to the portrait picture, and a panel's native rotation says how far the panel itself is
+        // turned the other way, so adding them left the unfolded screen upside down.
+        let degrees = ((orientation.degrees - nativeRotation) % 360 + 360) % 360
+        return DeviceOrientation.allCases.first { $0.degrees == degrees } ?? orientation
+    }
 
     /// Whether the device has a real Home button, which decides between pressing it and swiping up
     /// from the bottom edge.

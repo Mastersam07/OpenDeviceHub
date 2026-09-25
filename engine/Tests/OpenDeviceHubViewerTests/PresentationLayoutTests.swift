@@ -109,3 +109,14 @@ final class PresentationLayoutTests: XCTestCase {
         XCTAssertEqual(PresentationLayout.deviceSize(fitting: .zero, in: .zero), .zero)
     }
 }
+
+extension PresentationLayoutTests {
+    /// A foldable's unfolded panel is built sideways, so its picture is landscape while the guest
+    /// still believes it is upright.
+    func testAPanelBuiltSidewaysTurnsThePicture() {
+        XCTAssertEqual(DeviceWindowController.shown(.portrait, nativeRotation: 0), .portrait)
+        XCTAssertEqual(DeviceWindowController.shown(.portrait, nativeRotation: 270), .landscapeLeft)
+        XCTAssertEqual(DeviceWindowController.shown(.landscapeLeft, nativeRotation: 270), .portraitUpsideDown)
+        XCTAssertEqual(DeviceWindowController.shown(.portraitUpsideDown, nativeRotation: 270), .landscapeRight)
+    }
+}

@@ -134,15 +134,25 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
             throw EngineError.capabilityUnavailable(name: "main display port")
         }
 
+        let deviceTypeIdentifier = device.deviceType?.identifier ?? ""
         let panels = sizes.indices.map { position in
-            DevicePanel(
+            let size = sizes[position]
+            let profile = DeviceTypeProfile.display(
+                forDeviceType: deviceTypeIdentifier,
+                pixelWidth: Int(size.width),
+                pixelHeight: Int(size.height)
+            )
+            return DevicePanel(
                 id: identifiers[position],
                 index: indexes[position],
                 name: DevicePanel.name(at: position, of: sizes),
-                pixelSize: sizes[position],
+                pixelSize: size,
                 // A foldable's main screen is its cover, so this is read from the device rather than
                 // assumed to be the first or the largest panel.
-                isMainScreen: sizes[position] == mainScreenSize
+                isMainScreen: size == mainScreenSize,
+                screenID: profile?.screenID ?? 0,
+                nativeRotation: profile?.nativeRotation ?? 0,
+                chromeIdentifier: profile?.chromeIdentifier
             )
         }
         return (panels, descriptors, scale)

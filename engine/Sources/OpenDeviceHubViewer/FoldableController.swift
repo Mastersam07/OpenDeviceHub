@@ -23,8 +23,9 @@ public final class FoldableController {
         self.open = open
     }
 
-    public func angle(for udid: String) -> Double {
-        wanted[udid] ?? FoldableControl.closedAngle
+    /// The angle this device was last put at, or nil when it has not been touched in this session.
+    public func angle(for udid: String) -> Double? {
+        wanted[udid]
     }
 
     public func setAngle(_ degrees: Double, for udid: String) {

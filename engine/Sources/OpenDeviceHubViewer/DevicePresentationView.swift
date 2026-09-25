@@ -7,19 +7,15 @@ import AppKit
 public final class DevicePresentationView: NSView {
     public let bar: DeviceControlBar
     public let chrome: DeviceChromeView
-    /// Only a foldable has one, so every other window lays out exactly as it did.
-    public let foldBar: FoldControlBar?
 
     private var isFullScreen = false
 
-    public init(bar: DeviceControlBar, chrome: DeviceChromeView, foldBar: FoldControlBar? = nil) {
+    public init(bar: DeviceControlBar, chrome: DeviceChromeView) {
         self.bar = bar
         self.chrome = chrome
-        self.foldBar = foldBar
         super.init(frame: .zero)
         addSubview(chrome)
         addSubview(bar)
-        if let foldBar { addSubview(foldBar) }
     }
 
     @available(*, unavailable)
@@ -35,11 +31,7 @@ public final class DevicePresentationView: NSView {
     }
 
     public var currentLayout: PresentationLayout {
-        PresentationLayout(
-            contentSize: bounds.size,
-            isFullScreen: isFullScreen,
-            hasFoldBar: foldBar != nil
-        )
+        PresentationLayout(contentSize: bounds.size, isFullScreen: isFullScreen)
     }
 
     /// The content covers the whole window, including the few points AppKit keeps at the edges for
@@ -48,8 +40,7 @@ public final class DevicePresentationView: NSView {
         let local = convert(point, from: superview)
         let border = PresentationLayout.resizeBorder
         let inside = bounds.insetBy(dx: border, dy: border)
-        if !inside.contains(local), !bar.frame.contains(local),
-           !(foldBar?.frame.contains(local) ?? false) { return nil }
+        if !inside.contains(local), !bar.frame.contains(local) { return nil }
         return super.hitTest(point)
     }
 
@@ -77,6 +68,5 @@ public final class DevicePresentationView: NSView {
         bar.isFullScreen = isFullScreen
         chrome.fillsMargin = isFullScreen
         chrome.frame = layout.device
-        foldBar?.frame = layout.foldBar
     }
 }
