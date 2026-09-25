@@ -54,6 +54,10 @@ public enum ViewerMenu {
         public var sendPasteboard: () -> Void
         /// Whether the sync starts on, which is remembered between launches.
         public var syncsPasteboard: () -> Bool
+        /// The built in screens of the device in front, for the Screen submenu.
+        public var panels: () -> [DevicePanel]
+        public var currentPanel: () -> DevicePanel?
+        public var showPanel: (DevicePanel) -> Void
         public var newSimulator: (() -> Void)?
         public var setOrientation: (DeviceOrientation) -> Void
         public var appSwitcher: () -> Void
@@ -93,6 +97,9 @@ public enum ViewerMenu {
             getPasteboard: @escaping () -> Void,
             sendPasteboard: @escaping () -> Void,
             syncsPasteboard: @escaping () -> Bool,
+            panels: @escaping () -> [DevicePanel],
+            currentPanel: @escaping () -> DevicePanel?,
+            showPanel: @escaping (DevicePanel) -> Void,
             newSimulator: (() -> Void)? = nil,
             setOrientation: @escaping (DeviceOrientation) -> Void,
             appSwitcher: @escaping () -> Void,
@@ -131,6 +138,9 @@ public enum ViewerMenu {
             self.getPasteboard = getPasteboard
             self.sendPasteboard = sendPasteboard
             self.syncsPasteboard = syncsPasteboard
+            self.panels = panels
+            self.currentPanel = currentPanel
+            self.showPanel = showPanel
             self.newSimulator = newSimulator
             self.setOrientation = setOrientation
             self.appSwitcher = appSwitcher
@@ -278,6 +288,15 @@ public enum ViewerMenu {
             disable(item, unless: capabilities.contains(.rotation), reason: "not available on this Xcode")
             deviceMenu.addItem(item)
         }
+
+        let screenItem = NSMenuItem(title: "Screen", action: nil, keyEquivalent: "")
+        let screenMenu = NSMenu(title: "Screen")
+        screenItem.submenu = screenMenu
+        screenItem.icon("rectangle.on.rectangle")
+        deviceMenu.addItem(screenItem)
+        // Built when the menu opens, because it describes whichever device is in front, and hidden
+        // outright on the ordinary devices that have one screen.
+        target.trackScreenMenu(screenItem, in: deviceMenu)
 
         let orientationItem = NSMenuItem(title: "Orientation", action: nil, keyEquivalent: "")
         let orientationMenu = NSMenu(title: "Orientation")
@@ -497,6 +516,8 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private weak var getPasteboardItem: NSMenuItem?
     private weak var sendPasteboardItem: NSMenuItem?
     private lazy var syncsPasteboardNow = actions.syncsPasteboard()
+    private weak var screenItem: NSMenuItem?
+    private weak var deviceMenu: NSMenu?
 
     init(actions: ViewerMenu.Actions, commandLineTool: CommandLineToolMenu? = nil) {
         self.actions = actions
@@ -511,8 +532,47 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
         retitleCommandLineToolItem()
     }
 
+    func trackScreenMenu(_ item: NSMenuItem, in menu: NSMenu) {
+        screenItem = item
+        deviceMenu = menu
+        menu.delegate = self
+    }
+
     public func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === deviceMenu {
+            rebuildScreenMenu()
+            return
+        }
         retitleCommandLineToolItem()
+    }
+
+    /// A device with one screen has nothing to choose between, so the item is not there at all
+    /// rather than present and inert.
+    private func rebuildScreenMenu() {
+        guard let screenItem, let submenu = screenItem.submenu else { return }
+        let panels = actions.panels()
+        screenItem.isHidden = panels.count < 2
+        guard !screenItem.isHidden else { return }
+
+        let current = actions.currentPanel()
+        submenu.removeAllItems()
+        for panel in panels {
+            let item = NSMenuItem(
+                title: panel.name,
+                action: #selector(MenuTarget.chooseScreen(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = panel
+            item.state = panel.id == current?.id ? .on : .off
+            item.toolTip = "\(Int(panel.pixelSize.width)) by \(Int(panel.pixelSize.height)) pixels"
+            submenu.addItem(item)
+        }
+    }
+
+    @objc func chooseScreen(_ sender: NSMenuItem) {
+        guard let panel = sender.representedObject as? DevicePanel else { return }
+        actions.showPanel(panel)
     }
 
     private func retitleCommandLineToolItem() {

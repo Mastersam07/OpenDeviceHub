@@ -106,6 +106,14 @@ struct ODHubViewer: ParsableCommand {
 
             var failures: [String] = []
 
+            // A foldable has two screens and only one can be in a window, so the choice is
+            // remembered per device. Anything else has one screen and this is always nil.
+            let rememberedPanel: @MainActor (String) -> DevicePanel? = { udid in
+                guard let index = settings.panelIndex(for: udid),
+                      let panels = try? adapter.panels(udid) else { return nil }
+                return panels.first { $0.index == index }
+            }
+
             let show: @MainActor (String, Bool) throws -> Void = { udid, allowBoot in
                 let current = try adapter.devices()
                 try self.open(
@@ -114,6 +122,7 @@ struct ODHubViewer: ParsableCommand {
                     adapter: adapter,
                     manager: manager,
                     allowBoot: allowBoot,
+                    panel: rememberedPanel(udid),
                     present: present
                 )
                 recent.remember(udid)
@@ -362,6 +371,30 @@ struct ODHubViewer: ParsableCommand {
                 getPasteboard: { pasteboard.get() },
                 sendPasteboard: { pasteboard.send() },
                 syncsPasteboard: { settings.syncsPasteboard },
+                panels: {
+                    guard let udid = manager.frontmostUDID else { return [] }
+                    return (try? adapter.panels(udid)) ?? []
+                },
+                currentPanel: {
+                    guard let udid = manager.frontmostUDID,
+                          let panels = try? adapter.panels(udid) else { return nil }
+                    let remembered = settings.panelIndex(for: udid)
+                    return panels.first { $0.index == remembered }
+                        ?? panels.first(where: \.isMainScreen)
+                        ?? panels.first
+                },
+                showPanel: { panel in
+                    guard let udid = manager.frontmostUDID else { return }
+                    settings.setPanelIndex(panel.index, for: udid)
+                    // The window is rebuilt rather than re-pointed: the two panels have different
+                    // shapes, so the frame, the scaling and the input mapping all follow the screen.
+                    manager.closeKeepingDevice(udid)
+                    do {
+                        try show(udid, false)
+                    } catch {
+                        print("could not show \(panel.name): \(error.localizedDescription)")
+                    }
+                },
                 newSimulator: {
                     let simctl = SimctlService()
                     NewSimulatorPanel.show(actions: NewSimulatorActions(
@@ -436,7 +469,7 @@ struct ODHubViewer: ParsableCommand {
                 manager.follow(
                     notifier,
                     attach: { udid in
-                        let session = try adapter.openDisplay(udid)
+                        let session = try adapter.openDisplay(udid, panel: rememberedPanel(udid))
                         session.setBezelEnabled(bezel)
                         return DeviceAttachment(
                             session: session,
@@ -495,6 +528,7 @@ struct ODHubViewer: ParsableCommand {
         adapter: any SimulatorAdapter,
         manager: DeviceWindowManager,
         allowBoot: Bool,
+        panel: DevicePanel? = nil,
         present: @escaping @MainActor ([URL]) -> Void
     ) throws {
         guard var device = devices.first(where: {
@@ -512,7 +546,7 @@ struct ODHubViewer: ParsableCommand {
             device = try adapter.devices().first { $0.udid == device.udid } ?? device
         }
 
-        let session = try adapter.openDisplay(device.udid)
+        let session = try adapter.openDisplay(device.udid, panel: panel)
         session.setBezelEnabled(bezel)
         let input: (any InputSession)?
         do {

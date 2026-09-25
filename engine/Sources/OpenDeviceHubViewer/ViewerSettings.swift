@@ -61,6 +61,22 @@ public struct ViewerSettings: Sendable {
         }
     }
 
+    /// Which of a device's screens to show, for the foldables that have more than one.
+    ///
+    /// Stored as the port index rather than the port's UUID, because the UUIDs are minted fresh on
+    /// every boot and the index is what survives one.
+    public func panelIndex(for udid: String) -> Int? {
+        storage.text(forKey: prefix + "panel." + udid).flatMap(Int.init)
+    }
+
+    public func setPanelIndex(_ index: Int?, for udid: String) {
+        guard let index else {
+            storage.removeText(forKey: prefix + "panel." + udid)
+            return
+        }
+        storage.setText(String(index), forKey: prefix + "panel." + udid)
+    }
+
     /// What Previous fills the New Simulator panel with.
     public var lastCreatedSimulator: LastCreatedSimulator? {
         get {

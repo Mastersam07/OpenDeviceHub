@@ -40,10 +40,50 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         }
     }
 
+    /// Every built in screen the device has, in port order.
+    ///
+    /// One for an ordinary device, two for a foldable. Both of a foldable's panels are live at the
+    /// same time, so this says nothing about which one the guest is currently drawing to.
+    public func panels(_ udid: String) throws -> [DevicePanel] {
+        lock.lock()
+        defer { lock.unlock() }
+        return try builtInPanels(udid).panels
+    }
+
     public func openDisplay(_ udid: String) throws -> any DisplaySession {
+        try openDisplay(udid, panel: nil)
+    }
+
+    /// Opens one panel, or the device's own main screen when none is named.
+    public func openDisplay(_ udid: String, panel: DevicePanel?) throws -> any DisplaySession {
         lock.lock()
         defer { lock.unlock() }
 
+        let found = try builtInPanels(udid)
+        let chosen = panel.flatMap { wanted in
+            // By identity first, so remembering a panel survives a port order that moved. Falling
+            // back to the index keeps a remembered choice usable across a reboot, which mints new
+            // port UUIDs.
+            found.panels.firstIndex { $0.id == wanted.id }
+                ?? found.panels.firstIndex { $0.index == wanted.index }
+        } ?? found.panels.firstIndex { $0.isMainScreen } ?? found.panels.indices.first
+
+        guard let index = chosen else {
+            throw EngineError.capabilityUnavailable(name: "main display port")
+        }
+
+        // The bezel is on by default, matching what the simulator itself shows. The caller turns it
+        // off through the session.
+        return try SimulatorDisplaySession(
+            descriptor: found.descriptors[index],
+            pointScale: found.scale,
+            bezelEnabled: true
+        )
+    }
+
+    private func builtInPanels(
+        _ udid: String
+    ) throws -> (panels: [DevicePanel], descriptors: [AnyObject], scale: CGFloat) {
         let device = try rawDevice(udid)
         let state = DeviceState.from(state: device.state, stateString: device.stateString ?? "")
         guard state == .booted else {
@@ -54,6 +94,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         }
 
         let scale = CGFloat(device.deviceType?.mainScreenScale ?? 1)
+        let mainScreenSize = device.deviceType?.mainScreenSize ?? .zero
         let ports = unsafeBitCast(io as AnyObject, to: (any ODHSimDeviceIO).self).ioPorts ?? []
 
         guard let renderableProtocol = NSProtocolFromString("SimDisplayRenderable"),
@@ -62,7 +103,12 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
             throw EngineError.symbolNotFound(name: "SimDisplay protocols", framework: "CoreSimDeviceIO")
         }
 
-        for element in ports {
+        var descriptors: [AnyObject] = []
+        var identifiers: [String] = []
+        var indexes: [Int] = []
+        var sizes: [CGSize] = []
+
+        for (index, element) in ports.enumerated() {
             let port = unsafeBitCast(element as AnyObject, to: (any ODHSimDeviceIOPort).self)
             guard let descriptor = port.descriptor as AnyObject?,
                   descriptor.conforms(to: renderableProtocol),
@@ -72,21 +118,34 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
             guard let portState = typedDescriptor.state as AnyObject?,
                   portState.conforms(to: stateProtocol) else { continue }
 
-            // Two ports share the identifier com.apple.framebuffer.display on 17F42. Class 0 is the
-            // device's own screen; class 1 is a secondary display that stays empty while unused.
+            // Class 1 is an external display port that stays empty while unused. A foldable reports
+            // a class 0 port per panel, which is why this collects them rather than taking the first.
             let displayState = unsafeBitCast(portState, to: (any ODHSimDisplayDescriptorState).self)
             guard displayState.displayClass == 0 else { continue }
 
-            // The bezel is on by default, matching what the simulator itself shows. The caller
-            // turns it off through the session.
-            return try SimulatorDisplaySession(
-                descriptor: descriptor,
-                pointScale: scale,
-                bezelEnabled: true
-            )
+            let renderable = unsafeBitCast(descriptor, to: (any ODHSimDisplayRenderable).self)
+            descriptors.append(descriptor)
+            identifiers.append(port.uuid?.uuidString ?? "port-\(index)")
+            indexes.append(index)
+            sizes.append(renderable.displaySize)
         }
 
-        throw EngineError.capabilityUnavailable(name: "main display port")
+        guard !descriptors.isEmpty else {
+            throw EngineError.capabilityUnavailable(name: "main display port")
+        }
+
+        let panels = sizes.indices.map { position in
+            DevicePanel(
+                id: identifiers[position],
+                index: indexes[position],
+                name: DevicePanel.name(at: position, of: sizes),
+                pixelSize: sizes[position],
+                // A foldable's main screen is its cover, so this is read from the device rather than
+                // assumed to be the first or the largest panel.
+                isMainScreen: sizes[position] == mainScreenSize
+            )
+        }
+        return (panels, descriptors, scale)
     }
 
     public func openInput(_ udid: String) throws -> any InputSession {
