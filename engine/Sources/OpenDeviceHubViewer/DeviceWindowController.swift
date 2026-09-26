@@ -187,7 +187,10 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         // which has already sized the window by this point.
         if let remembered = frameStore.frame(for: frameKey) {
             if scaleMode == .fit {
-                window.setFrame(remembered, display: false)
+                window.setFrame(
+                    modelView == nil ? remembered : frameHoldingTheOpenDevice(remembered, in: window),
+                    display: false
+                )
             } else {
                 window.setFrameOrigin(remembered.origin)
             }
@@ -260,6 +263,29 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         toolbar?.setEnabled(true)
         startConsumingFrames()
         applyScaleMode(scaleMode)
+    }
+
+    /// A foldable's viewport holds the open device whatever the device is doing, so a remembered
+    /// frame gives the window its place and its width and the open device gives it its height. A
+    /// frame remembered by an earlier version, which reshaped the window for each panel, would
+    /// otherwise stand the open device in a tall frame with empty space above and below it.
+    private func frameHoldingTheOpenDevice(_ remembered: CGRect, in window: NSWindow) -> CGRect {
+        let shown = Self.shown(.portrait, nativeRotation: panelBuildAngle).displayedSize(
+            portraitNative: screenPointSize
+        )
+        guard shown.width > 0, shown.height > 0 else { return remembered }
+        let contentWidth = window.contentRect(forFrameRect: remembered).width
+        let deviceWidth = max(contentWidth - PresentationLayout.deviceSideMargin * 2, 1)
+        let device = CGSize(width: deviceWidth, height: deviceWidth * shown.height / shown.width)
+        let content = PresentationLayout.contentSize(forDevice: device)
+        let outer = window.frameRect(forContentRect: CGRect(origin: .zero, size: content)).size
+        // The top edge stays where it was remembered.
+        return CGRect(
+            x: remembered.minX,
+            y: remembered.maxY - outer.height,
+            width: outer.width,
+            height: outer.height
+        )
     }
 
     /// The screen this window is showing, in points rather than pixels.
