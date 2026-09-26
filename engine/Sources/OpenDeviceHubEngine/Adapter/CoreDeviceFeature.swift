@@ -9,8 +9,9 @@ import XPC
 /// here can be checked against it.
 ///
 /// A request is one XPC dictionary under `CoreDevice.*` keys and the reply carries either
-/// `CoreDevice.output` or `CoreDevice.error`. The shape is idb's, confirmed against `devicectl` on
-/// Xcode 27 (27A266a).
+/// `CoreDevice.output` or `CoreDevice.error`. A streaming action names a side channel in its input
+/// and the guest then sends events for that channel on the connection, each of which is answered
+/// with whether to stop. The shapes are idb's, confirmed against `devicectl` on Xcode 27 (27A266a).
 public final class CoreDeviceFeature: @unchecked Sendable {
     public static let displayInfoService = "com.apple.coredevice.feature.getdisplayinfo"
     public static let displayInfoAction = "com.apple.coredevice.action.displayinfo"
@@ -20,15 +21,45 @@ public final class CoreDeviceFeature: @unchecked Sendable {
     public static let universalHIDService = "com.apple.coredevice.feature.remote.universalhidservice"
 
     static let replyTimeout: TimeInterval = 5
+    static let sideChannelKey = "XPCSideChannel.uniqueIdentifier"
+    static let cancellationKey = "CoreDevice.XPCMessageKey.cancellationRequested"
+
+    /// A stream in flight. Cancelling asks the guest to stop at its next event.
+    public final class StreamHandle: @unchecked Sendable {
+        private let lock = NSLock()
+        private var cancelled = false
+
+        var isCancelled: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return cancelled
+        }
+
+        public func cancel() {
+            lock.lock()
+            cancelled = true
+            lock.unlock()
+        }
+    }
+
+    private struct SideChannel {
+        let handle: StreamHandle
+        let onEvent: @Sendable (xpc_object_t) -> Void
+        let onEnd: @Sendable ((any Error)?) -> Void
+    }
 
     private let connection: xpc_connection_t
     private let udid: String
     private let queue = DispatchQueue(label: "\(Brand.identifierPrefix).coredevice", qos: .userInitiated)
+    private let lock = NSLock()
+    private var channels: [String: SideChannel] = [:]
 
     init(port: mach_port_t, udid: String) throws {
         self.udid = udid
         connection = try SimulatorXPC.connect(port: port, queue: queue)
-        xpc_connection_set_event_handler(connection) { _ in }
+        xpc_connection_set_event_handler(connection) { [weak self] event in
+            self?.handle(event)
+        }
         xpc_connection_resume(connection)
     }
 
@@ -39,12 +70,55 @@ public final class CoreDeviceFeature: @unchecked Sendable {
     /// Performs one action and hands back its output dictionary.
     public func perform(action: String, input: xpc_object_t? = nil) async throws -> xpc_object_t {
         let request = try Self.request(action: action, udid: udid, input: input)
+        let reply = try await send(request, describedAs: action)
+        return try Self.output(of: reply, action: action)
+    }
+
+    /// Sends a message that is not an action, for the features that speak their own dialect, and
+    /// hands back the reply as it came.
+    public func exchange(_ message: xpc_object_t, describedAs name: String) async throws -> xpc_object_t {
+        try await send(message, describedAs: name)
+    }
+
+    /// Starts a streaming action. Every event the guest sends for `sideChannel` reaches `onEvent`,
+    /// and `onEnd` is called once, with the error if the stream failed, when the guest ends it or
+    /// after the handle is cancelled.
+    public func stream(
+        action: String,
+        input: xpc_object_t,
+        sideChannel: UUID,
+        onEvent: @escaping @Sendable (xpc_object_t) -> Void,
+        onEnd: @escaping @Sendable ((any Error)?) -> Void
+    ) throws -> StreamHandle {
+        let handle = StreamHandle()
+        let key = sideChannel.uuidString
+        lock.lock()
+        channels[key] = SideChannel(handle: handle, onEvent: onEvent, onEnd: onEnd)
+        lock.unlock()
+
+        let request = try Self.request(action: action, udid: udid, input: input)
+        xpc_connection_send_message_with_reply(connection, request, queue) { [weak self] reply in
+            guard let self else { return }
+            let failure: (any Error)?
+            if xpc_get_type(reply) == XPC_TYPE_ERROR {
+                failure = EngineError.privateCall(symbol: action, message: "the stream's connection was lost")
+            } else {
+                failure = (try? Self.output(of: reply, action: action)) == nil
+                    ? EngineError.privateCall(symbol: action, message: "the device ended the stream with an error")
+                    : nil
+            }
+            end(key, with: failure)
+        }
+        return handle
+    }
+
+    private func send(_ message: xpc_object_t, describedAs name: String) async throws -> xpc_object_t {
         let reply: XPCReply = try await withCheckedThrowingContinuation { continuation in
             let once = OnceContinuation(continuation)
-            xpc_connection_send_message_with_reply(connection, request, queue) { reply in
+            xpc_connection_send_message_with_reply(connection, message, queue) { reply in
                 if xpc_get_type(reply) == XPC_TYPE_ERROR {
                     once.finish(.failure(EngineError.privateCall(
-                        symbol: action,
+                        symbol: name,
                         message: "the device's CoreDevice service refused the connection"
                     )))
                 } else {
@@ -53,12 +127,45 @@ public final class CoreDeviceFeature: @unchecked Sendable {
             }
             queue.asyncAfter(deadline: .now() + Self.replyTimeout) {
                 once.finish(.failure(EngineError.privateCall(
-                    symbol: action,
+                    symbol: name,
                     message: "the device did not answer within \(Int(Self.replyTimeout)) seconds"
                 )))
             }
         }
-        return try Self.output(of: reply.object, action: action)
+        return reply.object
+    }
+
+    private func handle(_ event: xpc_object_t) {
+        guard xpc_get_type(event) == XPC_TYPE_DICTIONARY else {
+            // The connection itself went, so every stream on it has ended.
+            lock.lock()
+            let open = channels
+            channels = [:]
+            lock.unlock()
+            for channel in open.values {
+                channel.onEnd(EngineError.privateCall(symbol: "CoreDevice", message: "the connection was lost"))
+            }
+            return
+        }
+        guard let key = XPCValue.string(event, Self.sideChannelKey) else { return }
+        lock.lock()
+        let channel = channels[key]
+        lock.unlock()
+        guard let channel else { return }
+
+        channel.onEvent(event)
+        // Every event is answered with whether the guest should stop sending.
+        if let reply = xpc_dictionary_create_reply(event) {
+            xpc_dictionary_set_bool(reply, Self.cancellationKey, channel.handle.isCancelled)
+            xpc_connection_send_message(connection, reply)
+        }
+    }
+
+    private func end(_ key: String, with failure: (any Error)?) {
+        lock.lock()
+        let channel = channels.removeValue(forKey: key)
+        lock.unlock()
+        channel?.onEnd(failure)
     }
 
     /// The version every request has to declare, read from the framework installed on this host.
@@ -98,8 +205,8 @@ public final class CoreDeviceFeature: @unchecked Sendable {
 
     static func output(of reply: xpc_object_t, action: String) throws -> xpc_object_t {
         if let failure = xpc_dictionary_get_value(reply, "CoreDevice.error") {
-            let domain = xpc_dictionary_get_string(failure, "domain").map { String(cString: $0) } ?? "unknown"
-            let code = xpc_dictionary_get_int64(failure, "code")
+            let domain = XPCValue.string(failure, "domain") ?? "unknown"
+            let code = Int(XPCValue.number(failure, "code") ?? 0)
             throw EngineError.privateCall(symbol: action, message: "the device answered \(domain) (\(code))")
         }
         guard let output = xpc_dictionary_get_value(reply, "CoreDevice.output"),
@@ -154,5 +261,14 @@ enum XPCValue {
         guard let value = xpc_dictionary_get_value(dictionary, key),
               xpc_get_type(value) == XPC_TYPE_DICTIONARY else { return nil }
         return value
+    }
+
+    static func uuid(_ uuid: UUID) -> xpc_object_t {
+        var bytes = uuid.uuid
+        return withUnsafePointer(to: &bytes) { pointer in
+            pointer.withMemoryRebound(to: UInt8.self, capacity: MemoryLayout<uuid_t>.size) {
+                xpc_uuid_create($0)
+            }
+        }
     }
 }

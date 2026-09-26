@@ -173,6 +173,12 @@ public protocol SimulatorAdapter: Sendable {
     /// What the guest says about its screens right now, which on a foldable is the only honest
     /// answer to which panel is in use.
     func displayReport(_ udid: String) async throws -> DisplayReport
+    /// Whether the guest can report its hinge and its motion.
+    func motionCapabilities(_ udid: String) async throws -> MotionCapabilities
+    /// The guest's hinge angle as it changes, whoever moves it.
+    func openHingeStream(_ udid: String) throws -> HingeAngleStream
+    /// The guest's touchscreens, each with the display it sits under.
+    func touchscreens(_ udid: String) async throws -> [Touchscreen]
     func openInput(_ udid: String) throws -> any InputSession
     func simulateMemoryWarning(_ udid: String) throws
     /// Turns the device itself, which makes the guest re-lay out. The viewer still has to turn its
@@ -222,5 +228,19 @@ extension SimulatorAdapter {
     public func displayReport(_ udid: String) async throws -> DisplayReport {
         let feature = try openCoreDevice(udid, service: CoreDeviceFeature.displayInfoService)
         return try DisplayReport.parse(try await feature.perform(action: CoreDeviceFeature.displayInfoAction))
+    }
+
+    public func motionCapabilities(_ udid: String) async throws -> MotionCapabilities {
+        let feature = try openCoreDevice(udid, service: CoreDeviceFeature.motionService)
+        return MotionCapabilities.parse(try await feature.perform(action: CoreDeviceFeature.motionCapabilitiesAction))
+    }
+
+    public func openHingeStream(_ udid: String) throws -> HingeAngleStream {
+        try HingeAngleStream(feature: try openCoreDevice(udid, service: CoreDeviceFeature.motionService))
+    }
+
+    public func touchscreens(_ udid: String) async throws -> [Touchscreen] {
+        let feature = try openCoreDevice(udid, service: CoreDeviceFeature.universalHIDService)
+        return try Touchscreen.parse(try await feature.exchange(Touchscreen.request(), describedAs: "connectedServices"))
     }
 }
