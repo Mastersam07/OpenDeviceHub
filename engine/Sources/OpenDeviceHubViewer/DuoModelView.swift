@@ -528,9 +528,22 @@ public final class DuoModelView: SCNView {
     public override func mouseDragged(with event: NSEvent) { report(event, phase: .moved) }
     public override func mouseUp(with event: NSEvent) { report(event, phase: .ended) }
 
+    /// Where the finger last was on the screen. A drag that runs off the edge of the screen stops
+    /// there rather than vanishing, and a release off the screen lifts from there, since a contact
+    /// that never lifts leaves the guest holding a finger down.
+    private var lastContact: CGPoint?
+
     private func report(_ event: NSEvent, phase: TouchEvent.Phase) {
         let point = convert(event.locationInWindow, from: nil)
-        guard let guestPoint = screenPoint(at: point) else { return }
+        let guestPoint: CGPoint
+        if let hit = screenPoint(at: point) {
+            guestPoint = hit
+        } else if phase != .began, let last = lastContact {
+            guestPoint = last
+        } else {
+            return
+        }
+        lastContact = phase == .ended ? nil : guestPoint
         onTouch?(guestPoint, phase)
     }
 

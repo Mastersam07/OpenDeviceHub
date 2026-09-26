@@ -97,20 +97,21 @@ import XPC
         }
     }
 
-    @Test func aBacklightThatLagsTheLayoutIsNotSettled() throws {
+    @Test func onlyTheActivePanelsBacklightDecidesWhetherItIsSettled() throws {
         // The guest moved its layout to the inner panel and the cover's backlight has not gone off
-        // yet. The layout still says which is active; the report says to wait.
-        let report = try DisplayReport.parse(output([
+        // yet. The inner panel is lit, so the report is one to act on.
+        let lagging = try DisplayReport.parse(output([
             record(id: "cover", displayID: 1, active: false, backlight: "activeOn"),
             record(id: "inner", name: "LCD-1", displayID: 3, active: true, backlight: "activeOn", width: 2007, height: 2853),
         ]))
-        #expect(report.activeIntegrated?.uniqueID == "inner")
-        #expect(report.isSettled == false)
-        let settled = try DisplayReport.parse(output([
-            record(id: "cover", displayID: 1, active: false, backlight: "off"),
-            record(id: "inner", name: "LCD-1", displayID: 3, active: true, backlight: "activeOn", width: 2007, height: 2853),
+        #expect(lagging.activeIntegrated?.uniqueID == "inner")
+        #expect(lagging.isSettled == true)
+        // The layout names a panel that is dark, which cannot be right.
+        let dark = try DisplayReport.parse(output([
+            record(id: "cover", displayID: 1, active: true, backlight: "off"),
+            record(id: "inner", name: "LCD-1", displayID: 3, active: false, backlight: "activeOn", width: 2007, height: 2853),
         ]))
-        #expect(settled.isSettled == true)
+        #expect(dark.isSettled == false)
     }
 
     @Test func onlyTheBuiltInScreensAreIntegrated() throws {

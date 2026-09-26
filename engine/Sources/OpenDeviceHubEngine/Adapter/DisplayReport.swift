@@ -51,17 +51,15 @@ public struct DisplayReport: Sendable, Hashable {
     /// external and virtual displays.
     public var integrated: [Display] { displays.filter(\.isIntegrated) }
 
-    /// Whether every screen's layout and backlight tell the same story. Mid fold they do not, for a
-    /// moment: the guest moves its layout before a panel's backlight follows. Device Hub trusts the
-    /// layout only when the backlight agrees, so a report that is not settled is one to wait on,
-    /// not one to act on.
+    /// Whether the screen the layout names is actually lit. Device Hub's rule, in its own words: a
+    /// report that names a panel whose backlight is off "cannot be right", and is ignored. The other
+    /// panel's backlight is allowed to lag, which it does for a few seconds after a fold, or the
+    /// handoff would wait on it.
     public var isSettled: Bool {
-        integrated.allSatisfy { display in
-            switch display.backlight {
-            case .activeOn, .activeDimmed: display.isActive
-            case .off, .inactiveOn: !display.isActive
-            case .unknown: true
-            }
+        guard let active = activeIntegrated else { return false }
+        switch active.backlight {
+        case .activeOn, .activeDimmed, .unknown: return true
+        case .off, .inactiveOn: return false
         }
     }
 
