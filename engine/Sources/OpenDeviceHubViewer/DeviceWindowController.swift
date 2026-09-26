@@ -13,6 +13,24 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private let screenView: DeviceScreenView
     private let chromeView: DeviceChromeView
     private let controlBar: DeviceControlBar
+    private let hasFoldModes: Bool
+    private let modelView: DuoModelView?
+    /// Where the hinge has got to, so a pinch carries on from where the last one left off.
+    private var foldAngle: Double = 0
+
+    /// Whether this window has the fold controls, which only a foldable does.
+    public var foldsAtHinge: Bool { hasFoldModes }
+
+    /// Reports the angle the user asked for, from the positions in the bar or from a pinch.
+    public var onHingeAngle: ((Double) -> Void)?
+
+    /// Moves the fold controls to an angle that came from somewhere other than this window.
+    public func showHingeAngle(_ degrees: Double) {
+        foldAngle = degrees
+        controlBar.showFoldAngle(degrees)
+        toolbar?.showFoldAngle(degrees)
+        modelView?.setHingeAngle(degrees)
+    }
     private let presentationView: DevicePresentationView
     private var chrome: DeviceChrome?
     private var toolbar: DeviceToolbar?
@@ -23,6 +41,11 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     public var onReboot: (() -> Void)?
 
     private var input: (any InputSession)?
+
+    /// The session this window drives its device with, aimed at the panel it is showing. Actions
+    /// from the menus and the toolbar use it rather than opening their own, which on a foldable
+    /// would be aimed at the wrong screen, and which used to mint a fresh connection per press.
+    public var inputSession: (any InputSession)? { input }
     private var isStopped = false
     private var keepOnTop = false
     /// Set once the window has been placed. Sizing and centring during construction move the
@@ -35,8 +58,19 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private var dragEdge: TouchEvent.Edge = .none
     private var orientation: DeviceOrientation = .portrait
     private var scaleMode: ScaleMode
+    private let deviceName: String
+    private var pendingSend: Task<Void, Never>?
+    /// A foldable's two screens. The window opens on the unfolded one and keeps the cover warm.
+    private let unfoldedPanel: DevicePanel?
+    private let cover: FoldableCover?
+    private let retarget: ((Int) -> Void)?
+    private var coverFrameTask: Task<Void, Never>?
+    private var activeScreenID: Int
     private var bezelEnabled: Bool
     private let frameStore: WindowFrameStore
+    /// How far this window's panel is built round in its housing, which the renderer may or may not
+    /// be undoing but a gesture always has to account for.
+    private var panelBuildAngle: Int
 
     public init(
         udid: String,
@@ -50,9 +84,20 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         keepOnTop: Bool,
         frameStore: WindowFrameStore,
         fpsLabel: String?,
-        chrome: DeviceChrome?
+        chrome: DeviceChrome?,
+        foldsAtHinge: Bool = false,
+        panelNativeRotation: Int = 0,
+        unfoldedPanel: DevicePanel? = nil,
+        cover: FoldableCover? = nil,
+        retarget: ((Int) -> Void)? = nil
     ) throws {
         self.frameStore = frameStore
+        self.deviceName = deviceName
+        self.unfoldedPanel = unfoldedPanel
+        self.cover = cover
+        self.retarget = retarget
+        activeScreenID = unfoldedPanel?.screenID ?? 0
+        panelBuildAngle = unfoldedPanel?.nativeRotation ?? panelNativeRotation
         self.udid = udid
         self.scaleMode = scaleMode
         self.bezelEnabled = bezelEnabled
@@ -66,26 +111,35 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         screenView.delegate = renderer
         chromeView = DeviceChromeView(screenView: screenView)
         controlBar = DeviceControlBar(deviceName: deviceName, runtimeName: runtimeName)
-        presentationView = DevicePresentationView(bar: controlBar, chrome: chromeView)
+        hasFoldModes = foldsAtHinge
+        // Only a foldable, and only where the installed Xcode ships the model. Anything else stays
+        // on the flat renderer, which is what every other device wants anyway.
+        // The cover is the smaller panel, so the shape of what the session opened says which face
+        // the guest is drawing to and therefore which one the picture goes on.
+        let onTheCover = unfoldedPanel == nil
+            && max(session.pixelSize.width, session.pixelSize.height) < 2500
+        modelView = foldsAtHinge
+            ? DuoModelView(
+                metalDevice: device,
+                showingCover: onTheCover,
+                nativeRotation: unfoldedPanel?.nativeRotation ?? panelNativeRotation
+            )
+            : nil
+        presentationView = DevicePresentationView(
+            bar: controlBar,
+            chrome: chromeView,
+            model: modelView
+        )
         self.chrome = chrome
 
-        let screenSize = DeviceGeometry.pointSize(
-            pixelSize: session.pixelSize,
-            pointScale: session.pointScale
+        // The model draws its own body, so the bezel's measurements do not shape its window.
+        let contentSize = Self.contentSize(
+            for: session,
+            chrome: bezelEnabled && modelView == nil ? chrome : nil,
+            buildAngle: unfoldedPanel?.nativeRotation ?? panelNativeRotation,
+            scaleMode: scaleMode,
+            deviceName: deviceName
         )
-        let deviceSize = bezelEnabled && chrome != nil
-            ? ChromeGeometry.contentSize(screen: screenSize, chrome: chrome!, orientation: .portrait)
-            : screenSize
-        let available = (NSScreen.main?.visibleFrame.size) ?? CGSize(width: 1512, height: 900)
-        // Fit is the mode that lets any size work, so it opens at a size that leaves room for other
-        // windows instead of at whatever the device measures. An explicit scale sizes it below.
-        let contentSize = scaleMode == .fit
-            ? PresentationLayout.defaultContentSize(
-                forDevice: deviceSize,
-                isTablet: deviceName.contains("iPad"),
-                available: available
-            )
-            : PresentationLayout.contentSize(forDevice: deviceSize)
         let window = DeviceWindow(
             contentRect: CGRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -108,7 +162,25 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         window.collectionBehavior.insert(.fullScreenPrimary)
         super.init(window: window)
         window.delegate = self
-        chromeView.setScreenSize(screenSize)
+        if foldsAtHinge {
+            controlBar.addFoldModes()
+            controlBar.onFoldMode = { [weak self] mode in
+                guard let self else { return }
+                foldAngle = mode.angle
+                controlBar.showFoldAngle(mode.angle)
+                toolbar?.showFoldAngle(mode.angle)
+                modelView?.setHingeAngle(mode.angle)
+                onHingeAngle?(mode.angle)
+            }
+            screenView.onPinchFold = { [weak self] change in
+                guard let self else { return }
+                foldAngle = min(max(foldAngle + change, 0), 180)
+                controlBar.showFoldAngle(foldAngle)
+                modelView?.setHingeAngle(foldAngle)
+                onHingeAngle?(foldAngle)
+            }
+        }
+        chromeView.setScreenSize(screenPointSize)
         chromeView.setChrome(bezelEnabled ? chrome : nil)
         installChromeButtons()
         applyScaleMode(scaleMode)
@@ -116,9 +188,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
         // A remembered frame wins over the default placement, but not over an explicit scale mode,
         // which has already sized the window by this point.
-        if let remembered = frameStore.frame(for: udid) {
+        if let remembered = frameStore.frame(for: frameKey) {
             if scaleMode == .fit {
-                window.setFrame(remembered, display: false)
+                window.setFrame(
+                    modelView == nil ? remembered : frameHoldingTheOpenDevice(remembered, in: window),
+                    display: false
+                )
             } else {
                 window.setFrameOrigin(remembered.origin)
             }
@@ -132,6 +207,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             installClickToTap()
         }
         startConsumingFrames()
+        startConsumingCoverFrames()
     }
 
     @available(*, unavailable)
@@ -148,9 +224,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private func closeSessions() {
         frameTask?.cancel()
         frameTask = nil
+        coverFrameTask?.cancel()
+        coverFrameTask = nil
         input?.close()
         input = nil
         session.close()
+        cover?.session.close()
     }
 
     public var isDetached: Bool { overlay != nil }
@@ -187,6 +266,75 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         toolbar?.setEnabled(true)
         startConsumingFrames()
         applyScaleMode(scaleMode)
+    }
+
+    /// A foldable's viewport holds the open device whatever the device is doing, so a remembered
+    /// frame gives the window its place and its width and the open device gives it its height. A
+    /// frame remembered by an earlier version, which reshaped the window for each panel, would
+    /// otherwise stand the open device in a tall frame with empty space above and below it.
+    private func frameHoldingTheOpenDevice(_ remembered: CGRect, in window: NSWindow) -> CGRect {
+        let shown = Self.shown(.portrait, nativeRotation: panelBuildAngle).displayedSize(
+            portraitNative: screenPointSize
+        )
+        guard shown.width > 0, shown.height > 0 else { return remembered }
+        let contentWidth = window.contentRect(forFrameRect: remembered).width
+        let deviceWidth = max(contentWidth - PresentationLayout.deviceSideMargin * 2, 1)
+        let device = CGSize(width: deviceWidth, height: deviceWidth * shown.height / shown.width)
+        let content = PresentationLayout.contentSize(forDevice: device)
+        let outer = window.frameRect(forContentRect: CGRect(origin: .zero, size: content)).size
+        // The top edge stays where it was remembered.
+        return CGRect(
+            x: remembered.minX,
+            y: remembered.maxY - outer.height,
+            width: outer.width,
+            height: outer.height
+        )
+    }
+
+    /// The screen this window is showing, in points rather than pixels.
+    private var screenPointSize: CGSize {
+        DeviceGeometry.pointSize(pixelSize: session.pixelSize, pointScale: session.pointScale)
+    }
+
+    /// The size a window showing this screen opens at. Fit is the mode that lets any size work, so
+    /// it takes a size that leaves room for other windows rather than whatever the device measures.
+    private static func contentSize(
+        for session: any DisplaySession,
+        chrome: DeviceChrome?,
+        buildAngle: Int,
+        scaleMode: ScaleMode,
+        deviceName: String
+    ) -> CGSize {
+        // Sized from the picture as it is shown, not as the framebuffer stores it. A foldable's
+        // unfolded panel is stored upright and shown sideways, and a window shaped for the upright
+        // framebuffer stood a wide device in a tall frame with the space left over above it.
+        let screenSize = Self.shown(.portrait, nativeRotation: buildAngle).displayedSize(
+            portraitNative: DeviceGeometry.pointSize(
+                pixelSize: session.pixelSize,
+                pointScale: session.pointScale
+            )
+        )
+        let deviceSize = chrome.map {
+            ChromeGeometry.contentSize(screen: screenSize, chrome: $0, orientation: .portrait)
+        } ?? screenSize
+        guard scaleMode == .fit else { return PresentationLayout.contentSize(forDevice: deviceSize) }
+        return PresentationLayout.defaultContentSize(
+            forDevice: deviceSize,
+            isTablet: deviceName.contains("iPad"),
+            available: (NSScreen.main?.visibleFrame.size) ?? CGSize(width: 1512, height: 900)
+        )
+    }
+
+    /// The guest has moved to another of its screens. Only three things follow it: where a touch is
+    /// addressed, which face of the model a click is tested against and drawn as the front, and
+    /// what a screenshot is of. The window, its shape and both pictures stay exactly where they are.
+    public func setActivePanel(screenID: Int) {
+        guard let unfoldedPanel, let cover, screenID != activeScreenID else { return }
+        let panel = screenID == cover.panel.screenID ? cover.panel : unfoldedPanel
+        activeScreenID = panel.screenID
+        panelBuildAngle = panel.nativeRotation
+        modelView?.setShowingCover(panel.screenID == cover.panel.screenID, nativeRotation: panel.nativeRotation)
+        retarget?(panel.screenID)
     }
 
     /// Resizes the window so the device screen is shown at the requested scale. Fit leaves the
@@ -297,9 +445,15 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     /// Every send goes through here so a failure is seen. A send used to be `try?`, which made a
     /// dead session look exactly like a gesture the guest ignored.
+    /// Sends are chained rather than started side by side. A contact going down and coming up are
+    /// two messages, and on their own tasks the second can overtake the first, which the guest reads
+    /// as a finger that lifted before it landed: a tap does nothing at all, while a swipe, being
+    /// many messages, still looks like a swipe.
     private func send(_ work: @escaping @Sendable (any InputSession) async throws -> Void) {
         guard let input else { return }
-        Task { [weak self] in
+        let previous = pendingSend
+        pendingSend = Task { [weak self] in
+            await previous?.value
             do {
                 try await work(input)
             } catch {
@@ -320,7 +474,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     private func installChromeButtons() {
         chromeView.onButton = { [weak self] button, phase in
-            guard let self, let input else { return }
+            guard let self else { return }
             send { try await $0.button(button, phase: phase) }
         }
     }
@@ -350,6 +504,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     }
 
     public func screenshotPNG() -> Data? {
+        // A foldable is drawn as the device itself, so a picture of it is the picture. Compositing
+        // the flat body around the framebuffer instead puts a phone shaped bezel around a landscape
+        // panel, which is what a Duo screenshot used to be.
+        if let modelView, chromeView.hasChrome, let png = modelView.screenshotPNG() {
+            return png
+        }
         guard let surface = renderer.currentSurface else { return nil }
         // With the body shown, a screenshot means the device, not just its screen. Without it, the
         // screen is the whole picture.
@@ -399,10 +559,21 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     /// Turns the window and the image to match the device. The device itself is turned by the
     /// adapter; this is the half the host owns.
+    /// How far this panel is built round in its housing, added to whatever the guest is doing. A
+    /// foldable's unfolded panel is sideways, so its picture is landscape while the guest thinks it
+    /// is upright.
+    public var nativeRotation: Int = 0 {
+        didSet { setOrientation(orientation) }
+    }
+
     public func setOrientation(_ orientation: DeviceOrientation) {
         self.orientation = orientation
-        renderer.setOrientation(orientation)
-        chromeView.setOrientation(orientation)
+        let shown = Self.shown(orientation, nativeRotation: nativeRotation)
+        renderer.setOrientation(shown)
+        chromeView.setOrientation(shown)
+        // The model shows the hardware, so it turns by how the device is standing rather than by
+        // what the flat renderer would draw.
+        modelView?.setOrientation(orientation)
         // The scale mode settles the window's shape and its ratio, including the body, and leaves
         // both alone in full screen.
         applyScaleMode(scaleMode)
@@ -410,6 +581,28 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     }
 
     public var currentOrientation: DeviceOrientation { orientation }
+
+    /// The size of the screen this window is showing, which changes when it follows its guest to
+    /// the device's other panel.
+    public var screenPixelSize: CGSize { session.pixelSize }
+
+    /// How far the guest's layout is turned from the framebuffer a touch is addressed in, which a
+    /// gesture written in what the window shows has to be converted through.
+    public var layoutTurn: DeviceOrientation {
+        Self.shown(orientation, nativeRotation: panelBuildAngle)
+    }
+
+    /// What to draw, which is the guest's orientation turned by the panel's own build angle.
+    nonisolated static func shown(
+        _ orientation: DeviceOrientation,
+        nativeRotation: Int
+    ) -> DeviceOrientation {
+        // Subtracted, not added. This project measures an orientation as the clockwise turn applied
+        // to the portrait picture, and a panel's native rotation says how far the panel itself is
+        // turned the other way, so adding them left the unfolded screen upside down.
+        let degrees = ((orientation.degrees - nativeRotation) % 360 + 360) % 360
+        return DeviceOrientation.allCases.first { $0.degrees == degrees } ?? orientation
+    }
 
     /// Whether the device has a real Home button, which decides between pressing it and swiping up
     /// from the bottom edge.
@@ -423,6 +616,9 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         guard let window else { return }
         let toolbar = DeviceToolbar(actions: actions)
         toolbar.install(on: window)
+        // The toolbar's fold positions drive the same path as the bar's.
+        toolbar.onFoldMode = { [weak self] mode in self?.controlBar.onFoldMode?(mode) }
+        if window.styleMask.contains(.fullScreen) { toolbar.setFoldModes(visible: hasFoldModes) }
         self.toolbar = toolbar
         // A unified toolbar makes the title bar taller, which would otherwise come out of the
         // device's own height, so the window is sized again now that it is there.
@@ -438,8 +634,10 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         guard tracksFrameChanges,
               let window,
               !window.styleMask.contains(.fullScreen) else { return }
-        frameStore.save(window.frame, for: udid)
+        frameStore.save(window.frame, for: frameKey)
     }
+
+    private var frameKey: String { udid }
 
     /// A locked aspect ratio cannot survive a full screen transition: AppKit collapses the window
     /// to the title bar trying to satisfy both. Clearing it through `contentResizeIncrements` is
@@ -448,11 +646,18 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         (window as? DeviceWindow)?.constrainsToScreen = true
         window?.contentResizeIncrements = NSSize(width: 1, height: 1)
         presentationView.setFullScreen(true)
+        // Full screen hides the bar's band and reveals the toolbar over it, so the fold positions
+        // move to the toolbar for the duration.
+        if hasFoldModes {
+            toolbar?.setFoldModes(visible: true)
+            toolbar?.showFoldAngle(foldAngle)
+        }
     }
 
     public func windowDidExitFullScreen(_ notification: Notification) {
         (window as? DeviceWindow)?.constrainsToScreen = false
         presentationView.setFullScreen(false)
+        toolbar?.setFoldModes(visible: false)
         // The device may have been turned while full screen, where the window is not resized, so
         // the shape it comes back to is whatever the current orientation asks for.
         applyScaleMode(scaleMode)
@@ -512,8 +717,22 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         let pixelSize = session.pixelSize
         let screenView = screenView
 
+        // A foldable is drawn as the model, so a click is hit tested against the posed screen and
+        // arrives already in the guest's own coordinates. The panel's own build angle is already in
+        // the picture, so nothing is turned again here.
+        modelView?.onTouch = { [weak self] point, phase in
+            guard let self else { return }
+            if phase == .began {
+                latency.clickSent()
+                dragEdge = .beginning(at: point)
+            }
+            let event = TouchEvent(phase: phase, points: [point], edge: dragEdge)
+            if phase == .ended { dragEdge = .none }
+            send { try await $0.touch(event) }
+        }
+
         screenView.onContact = { [weak self] point, phase, style in
-            guard let self, let input else { return }
+            guard let self else { return }
             let orientation = self.orientation
             guard let primary = CoordinateMapper.normalize(
                 viewPoint: point,
@@ -543,7 +762,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
             if touchPhase == .began {
                 self.latency.clickSent()
-                self.dragEdge = style == .single ? .beginning(at: primary) : .none
+                self.dragEdge = style == .single ? .beginning(at: points[0]) : .none
             }
             let event = TouchEvent(phase: touchPhase, points: points, edge: self.dragEdge)
             if touchPhase == .ended { self.dragEdge = .none }
@@ -559,12 +778,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         }
 
         screenView.onKey = { [weak self] usage, isDown in
-            guard let self, let input else { return }
+            guard let self else { return }
             send { try await $0.key(KeyEvent(phase: isDown ? .down : .up, usage: usage)) }
         }
 
         screenView.onGesture = { [weak self] phase, spread, angle in
-            guard let self, let input else { return }
+            guard let self else { return }
             let size = screenView.bounds.size
             guard size.width > 0, size.height > 0 else { return }
 
@@ -593,10 +812,30 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
                 renderer.accept(frame)
                 await MainActor.run { [weak self] in
                     screenView.needsDisplay = true
+                    if let rotation = self?.unfoldedPanel?.nativeRotation {
+                        self?.modelView?.setScreen(frame.surface, onCover: false, nativeRotation: rotation)
+                    } else {
+                        self?.modelView?.setScreen(frame.surface)
+                    }
                     guard let self else { return }
                     if self.latency.frameDrawn() != nil, self.showsLatency {
                         self.updateTitle()
                     }
+                }
+            }
+        }
+    }
+
+    /// The cover's picture goes on its own face as it arrives, so it is there before the guest
+    /// moves to it.
+    private func startConsumingCoverFrames() {
+        guard let cover else { return }
+        let rotation = cover.panel.nativeRotation
+        coverFrameTask = Task { [frames = cover.session.frames, weak self] in
+            for await frame in frames {
+                if Task.isCancelled { return }
+                await MainActor.run { [weak self] in
+                    self?.modelView?.setScreen(frame.surface, onCover: true, nativeRotation: rotation)
                 }
             }
         }

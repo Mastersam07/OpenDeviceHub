@@ -46,6 +46,10 @@ final class ViewController: UIViewController {
         coordinator.animate(alongsideTransition: nil) { [weak self] _ in self?.update() }
     }
 
+    func recordActivation(_ isActive: Bool) {
+        record(isActive ? "SCENE FOREGROUND" : "SCENE BACKGROUND")
+    }
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let point = touches.first?.location(in: view) else { return }
         let x = point.x / view.bounds.width
@@ -114,6 +118,20 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.rootViewController = ViewController()
         window.makeKeyAndVisible()
         self.window = window
+    }
+
+    // Going home and opening the app switcher are only visible from inside the guest, so the host
+    // reports them rather than leaving a caller to infer them from a screenshot.
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        host?.recordActivation(true)
+    }
+
+    func sceneWillResignActive(_ scene: UIScene) {
+        host?.recordActivation(false)
+    }
+
+    private var host: ViewController? {
+        window?.rootViewController as? ViewController
     }
 }
 

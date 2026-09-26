@@ -7,14 +7,22 @@ import AppKit
 public final class DevicePresentationView: NSView {
     public let bar: DeviceControlBar
     public let chrome: DeviceChromeView
+    /// A foldable is drawn as the device itself, which is the only way to show a bent one, so its
+    /// model stands in for the flat body and screen.
+    public let model: DuoModelView?
 
     private var isFullScreen = false
 
-    public init(bar: DeviceControlBar, chrome: DeviceChromeView) {
+    public init(bar: DeviceControlBar, chrome: DeviceChromeView, model: DuoModelView? = nil) {
         self.bar = bar
         self.chrome = chrome
+        self.model = model
         super.init(frame: .zero)
-        addSubview(chrome)
+        if let model {
+            addSubview(model)
+        } else {
+            addSubview(chrome)
+        }
         addSubview(bar)
     }
 
@@ -41,6 +49,12 @@ public final class DevicePresentationView: NSView {
         let border = PresentationLayout.resizeBorder
         let inside = bounds.insetBy(dx: border, dy: border)
         if !inside.contains(local), !bar.frame.contains(local) { return nil }
+        // The model's viewport is sized for the open device, so a shut one leaves clear space
+        // around it. That space is not the window's: a click there goes to whatever is behind.
+        if let model, !bar.frame.contains(local), model.frame.contains(local),
+           !model.hasHardware(at: model.convert(local, from: self)) {
+            return nil
+        }
         return super.hitTest(point)
     }
 
@@ -68,5 +82,6 @@ public final class DevicePresentationView: NSView {
         bar.isFullScreen = isFullScreen
         chrome.fillsMargin = isFullScreen
         chrome.frame = layout.device
+        model?.frame = layout.device
     }
 }

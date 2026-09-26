@@ -91,7 +91,16 @@ struct ODHubViewer: ParsableCommand {
                 frontmost: { manager.frontmostUDID },
                 open: { try adapter.openPasteboard($0) }
             )
-            manager.onDeviceClosed = { pasteboard.forget($0) }
+            let foldables = FoldableController(
+                open: { try adapter.openFoldableControl($0) },
+                hingeStream: { try adapter.openHingeStream($0) },
+                displayReport: { try await adapter.displayReport($0) }
+            )
+            foldables.report = { print($0) }
+            manager.onDeviceClosed = {
+                pasteboard.forget($0)
+                foldables.forget($0)
+            }
 
             let previews = CapturePreviewPresenter(report: { print($0) })
             let present: @MainActor ([URL]) -> Void = { urls in
@@ -106,6 +115,25 @@ struct ODHubViewer: ParsableCommand {
 
             var failures: [String] = []
 
+            // A foldable has two screens and only one can be in a window, so the choice is
+            // remembered per device. Anything else has one screen and this is always nil.
+            // A foldable takes its orientation from the same provider as its hinge, which overwrites
+            // an ordinary rotation the moment it is sent. So it is turned through the fold control
+            // and everything else the usual way.
+            let turn: @MainActor (DeviceOrientation, String) -> Void = { orientation, udid in
+                guard let controller = manager.controller(for: udid) else { return }
+                do {
+                    if controller.foldsAtHinge {
+                        try foldables.setOrientation(orientation, for: udid)
+                    } else {
+                        try adapter.setOrientation(orientation, udid: udid)
+                    }
+                    controller.setOrientation(orientation)
+                } catch {
+                    print("rotate failed: \(error.localizedDescription)")
+                }
+            }
+
             let show: @MainActor (String, Bool) throws -> Void = { udid, allowBoot in
                 let current = try adapter.devices()
                 try self.open(
@@ -114,10 +142,32 @@ struct ODHubViewer: ParsableCommand {
                     adapter: adapter,
                     manager: manager,
                     allowBoot: allowBoot,
+                    rotate: turn,
                     present: present
                 )
                 recent.remember(udid)
                 pasteboard.adopt(udid)
+
+                // Only a foldable can be folded. It opens unfolded, which is the pose worth seeing
+                // and the one its own tooling starts on, unless it has already been put somewhere
+                // else in this session.
+                if let controller = manager.controller(for: udid), controller.foldsAtHinge {
+                    let angle = foldables.angle(for: udid) ?? DeviceControlBar.FoldMode.fullyOpen.angle
+                    controller.showHingeAngle(angle)
+                    controller.onHingeAngle = { angle in foldables.setAngle(angle, for: udid) }
+                    foldables.setAngle(angle, for: udid)
+                    // From here the guest leads: its report says which panel it draws to and its
+                    // hinge stream says where the fold is, whoever moved it.
+                    foldables.follow(
+                        udid,
+                        onPanel: { [weak controller] panel in
+                            controller?.setActivePanel(screenID: panel.displayID)
+                        },
+                        onHinge: { [weak controller] degrees in
+                            controller?.showHingeAngle(degrees)
+                        }
+                    )
+                }
             }
 
             for udid in plan.udids {
@@ -242,8 +292,8 @@ struct ODHubViewer: ParsableCommand {
                     for udid in manager.openUDIDs {
                         Task {
                             do {
-                                let session = try adapter.openInput(udid)
-                                defer { session.close() }
+                                guard let session = manager.controller(for: udid)?.inputSession
+                                else { return }
                                 try await session.button(button, phase: .down)
                                 try await Task.sleep(for: .milliseconds(15))
                                 try await session.button(button, phase: .up)
@@ -259,12 +309,7 @@ struct ODHubViewer: ParsableCommand {
                         let next = left
                             ? controller.currentOrientation.rotatedLeft
                             : controller.currentOrientation.rotatedRight
-                        do {
-                            try adapter.setOrientation(next, udid: udid)
-                            controller.setOrientation(next)
-                        } catch {
-                            print("rotate failed: \(error.localizedDescription)")
-                        }
+                        turn(next, udid)
                     }
                 },
                 restart: {
@@ -362,6 +407,28 @@ struct ODHubViewer: ParsableCommand {
                 getPasteboard: { pasteboard.get() },
                 sendPasteboard: { pasteboard.send() },
                 syncsPasteboard: { settings.syncsPasteboard },
+                panels: {
+                    guard let udid = manager.frontmostUDID else { return [] }
+                    return (try? adapter.panels(udid)) ?? []
+                },
+                currentPanel: {
+                    guard let udid = manager.frontmostUDID,
+                          let panels = try? adapter.panels(udid) else { return nil }
+                    if let active = foldables.activePanel(for: udid) {
+                        return panels.first { $0.screenID == active.displayID }
+                    }
+                    return panels.first { $0.name == "Unfolded" } ?? panels.first
+                },
+                showPanel: { panel in
+                    // The guest chooses the panel from the fold, so choosing a panel is folding.
+                    guard let udid = manager.frontmostUDID,
+                          let controller = manager.controller(for: udid) else { return }
+                    let angle = panel.name == "Cover"
+                        ? DeviceControlBar.FoldMode.cover.angle
+                        : DeviceControlBar.FoldMode.fullyOpen.angle
+                    controller.showHingeAngle(angle)
+                    foldables.setAngle(angle, for: udid)
+                },
                 newSimulator: {
                     let simctl = SimctlService()
                     NewSimulatorPanel.show(actions: NewSimulatorActions(
@@ -382,22 +449,17 @@ struct ODHubViewer: ParsableCommand {
                 },
                 setOrientation: { orientation in
                     for udid in manager.openUDIDs {
-                        guard let controller = manager.controller(for: udid) else { continue }
-                        do {
-                            try adapter.setOrientation(orientation, udid: udid)
-                            controller.setOrientation(orientation)
-                        } catch {
-                            print("rotate failed: \(error.localizedDescription)")
-                        }
+                        turn(orientation, udid)
                     }
                 },
                 appSwitcher: {
                     for udid in manager.openUDIDs {
+                        guard let controller = manager.controller(for: udid),
+                              let session = controller.inputSession else { continue }
+                        let turn = controller.layoutTurn
                         Task {
                             do {
-                                let session = try adapter.openInput(udid)
-                                defer { session.close() }
-                                try await openAppSwitcher(session)
+                                try await SystemGesture.appSwitcher(on: session, turn: turn)
                             } catch {
                                 print("app switcher failed: \(error.localizedDescription)")
                             }
@@ -436,7 +498,8 @@ struct ODHubViewer: ParsableCommand {
                 manager.follow(
                     notifier,
                     attach: { udid in
-                        let session = try adapter.openDisplay(udid)
+                        let panels = (try? adapter.panels(udid)) ?? []
+                        let session = try adapter.openDisplay(udid, panel: panels.first { $0.name == "Unfolded" })
                         session.setBezelEnabled(bezel)
                         return DeviceAttachment(
                             session: session,
@@ -495,6 +558,7 @@ struct ODHubViewer: ParsableCommand {
         adapter: any SimulatorAdapter,
         manager: DeviceWindowManager,
         allowBoot: Bool,
+        rotate: @escaping @MainActor (DeviceOrientation, String) -> Void,
         present: @escaping @MainActor ([URL]) -> Void
     ) throws {
         guard var device = devices.first(where: {
@@ -512,14 +576,30 @@ struct ODHubViewer: ParsableCommand {
             device = try adapter.devices().first { $0.udid == device.udid } ?? device
         }
 
-        let session = try adapter.openDisplay(device.udid)
+        // More than one built in screen means a hinge between them. A foldable opens on the panel
+        // it lies open on, keeps the cover warm too, and aims its touches at whichever the guest is
+        // drawing to.
+        let panels = (try? adapter.panels(device.udid)) ?? []
+        let foldsAtHinge = panels.count > 1
+        let unfolded = foldsAtHinge ? panels.first { $0.name == "Unfolded" } : nil
+        let coverPanel = foldsAtHinge ? panels.first { $0.name == "Cover" } : nil
+        let panel = unfolded
+        let session = try adapter.openDisplay(device.udid, panel: panel)
         session.setBezelEnabled(bezel)
+        var cover: FoldableCover?
+        if let coverPanel, let coverSession = try? adapter.openDisplay(device.udid, panel: coverPanel) {
+            coverSession.setBezelEnabled(bezel)
+            cover = FoldableCover(panel: coverPanel, session: coverSession)
+        }
         let input: (any InputSession)?
         do {
-            input = try adapter.openInput(device.udid)
+            input = try adapter.openInput(device.udid, screenID: panel?.screenID ?? 0)
         } catch {
             input = nil
             print("\(device.name): clicking will not send taps, \(error.localizedDescription)")
+        }
+        let retarget: ((Int) -> Void)? = (input as? PanelInputSession).map { targeted in
+            { targeted.setTarget(screenID: $0) }
         }
 
         let controller = try manager.open(
@@ -529,9 +609,28 @@ struct ODHubViewer: ParsableCommand {
             scaleMode: scale,
             bezelEnabled: bezel,
             keepOnTop: keepOnTop,
-            showFPS: fps
+            showFPS: fps,
+            foldsAtHinge: foldsAtHinge,
+            // A foldable's panels declare different bodies, so the one being shown brings its own
+            // rather than the device type's, which names only the cover's.
+            chrome: panel?.chromeIdentifier.flatMap { ChromeLocator.chrome(identifier: $0) },
+            panelNativeRotation: panel?.nativeRotation ?? 0,
+            unfoldedPanel: unfolded,
+            cover: cover,
+            retarget: retarget
         )
-        installToolbar(udid: device.udid, manager: manager, adapter: adapter, present: present)
+        // Only the flat renderer needs this: the model turns the picture on the texture instead,
+        // and turning it twice is how the unfolded panel ended up on its side.
+        if let panel, !controller.foldsAtHinge {
+            controller.nativeRotation = panel.nativeRotation
+        }
+        installToolbar(
+            udid: device.udid,
+            manager: manager,
+            adapter: adapter,
+            rotate: rotate,
+            present: present
+        )
         if case .largerThanScreen(let size) = controller.applyScaleMode(scale) {
             print("\(device.name): \(scale.displayName) needs \(Int(size.width))x\(Int(size.height)) points, which is larger than this display.")
         }
@@ -650,6 +749,7 @@ private func installToolbar(
     udid: String,
     manager: DeviceWindowManager,
     adapter: any SimulatorAdapter,
+    rotate: @escaping @MainActor (DeviceOrientation, String) -> Void,
     present: @escaping @MainActor ([URL]) -> Void
 ) {
     guard let controller = manager.controller(for: udid) else { return }
@@ -658,8 +758,7 @@ private func installToolbar(
             guard let controller else { return }
             Task {
                 do {
-                    let session = try adapter.openInput(udid)
-                    defer { session.close() }
+                    guard let session = manager.controller(for: udid)?.inputSession else { return }
                     if controller.hasHomeButton {
                         try await session.button(.home, phase: .down)
                         try await Task.sleep(for: .milliseconds(15))
@@ -667,7 +766,7 @@ private func installToolbar(
                     } else {
                         // A Face ID device has no Home button, so it goes home the way a hand
                         // would, by swiping up from the bottom edge.
-                        try await swipeHome(session)
+                        try await SystemGesture.home(on: session, turn: controller.layoutTurn)
                     }
                 } catch {
                     print("home failed: \(error.localizedDescription)")
@@ -682,46 +781,13 @@ private func installToolbar(
         },
         rotate: { [weak controller] toLeft in
             guard let controller else { return }
-            let next = toLeft
-                ? controller.currentOrientation.rotatedLeft
-                : controller.currentOrientation.rotatedRight
-            do {
-                try adapter.setOrientation(next, udid: udid)
-                controller.setOrientation(next)
-            } catch {
-                print("rotate failed: \(error.localizedDescription)")
-            }
+            rotate(
+                toLeft ? controller.currentOrientation.rotatedLeft
+                       : controller.currentOrientation.rotatedRight,
+                udid
+            )
         }
     ))
-}
-
-private func openAppSwitcher(_ session: any InputSession) async throws {
-    let path = HomeGesture.appSwitcherPath()
-    try await session.touch(TouchEvent(phase: .began, points: [path[0]], edge: .bottom))
-    for point in path.dropFirst() {
-        try await Task.sleep(for: .milliseconds(10))
-        try await session.touch(TouchEvent(phase: .moved, points: [point], edge: .bottom))
-    }
-    let settle = HomeGesture.settlePath(around: path[path.count - 1])
-    for point in settle {
-        try await Task.sleep(for: .milliseconds(40))
-        try await session.touch(TouchEvent(phase: .moved, points: [point], edge: .bottom))
-    }
-    try await session.touch(
-        TouchEvent(phase: .ended, points: [settle[settle.count - 1]], edge: .bottom)
-    )
-}
-
-private func swipeHome(_ session: any InputSession) async throws {
-    let path = HomeGesture.swipePath()
-    try await session.touch(TouchEvent(phase: .began, points: [path[0]], edge: .bottom))
-    for point in path.dropFirst() {
-        try await Task.sleep(for: .milliseconds(10))
-        try await session.touch(TouchEvent(phase: .moved, points: [point], edge: .bottom))
-    }
-    try await session.touch(
-        TouchEvent(phase: .ended, points: [path[path.count - 1]], edge: .bottom)
-    )
 }
 
 /// Off the main thread, because every one of these blocks for a second or more and they run from a

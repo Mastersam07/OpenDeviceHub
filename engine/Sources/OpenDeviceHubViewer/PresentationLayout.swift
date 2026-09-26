@@ -63,6 +63,7 @@ public struct PresentationLayout: Equatable {
         let side = isFullScreen ? 0 : Self.deviceSideMargin
         let top = isFullScreen ? 0 : Self.deviceTopMargin
         let bottom = isFullScreen ? 0 : Self.deviceBottomMargin
+
         device = CGRect(
             x: side,
             y: bottom,

@@ -145,11 +145,40 @@ public protocol PasteboardSession: Sendable {
     func reconcile()
 }
 
+/// Folding a foldable and turning one, as the viewer sees it.
+public protocol HingeControl: AnyObject, Sendable {
+    /// Turns the guest's vendor input feature on. Reports are ignored until it has answered.
+    func activate() async throws
+    /// Folds the device, in degrees, where 0 is shut and 180 is flat open.
+    func setHingeAngle(_ degrees: Double) throws
+    /// Turns the device. An ordinary rotation does not stick on a foldable.
+    func setOrientation(_ orientation: DeviceOrientation) throws
+}
+
 public protocol SimulatorAdapter: Sendable {
     var xcode: XcodeInstall { get }
     var capabilities: Capabilities { get }
     func devices() throws -> [DeviceInfo]
     func openDisplay(_ udid: String) throws -> any DisplaySession
+    /// Every built in screen the device has. One for an ordinary device, two for a foldable.
+    func panels(_ udid: String) throws -> [DevicePanel]
+    /// Opens one panel, or the device's own main screen when none is named.
+    func openDisplay(_ udid: String, panel: DevicePanel?) throws -> any DisplaySession
+    /// Input aimed at one of the device's screens, which only a foldable needs.
+    func openInput(_ udid: String, screenID: Int) throws -> any InputSession
+    /// Opens the control that folds and turns a foldable.
+    func openFoldableControl(_ udid: String) throws -> any HingeControl
+    /// One of the guest's CoreDevice features, the plane that answers what the guest is doing.
+    func openCoreDevice(_ udid: String, service: String) throws -> CoreDeviceFeature
+    /// What the guest says about its screens right now, which on a foldable is the only honest
+    /// answer to which panel is in use.
+    func displayReport(_ udid: String) async throws -> DisplayReport
+    /// Whether the guest can report its hinge and its motion.
+    func motionCapabilities(_ udid: String) async throws -> MotionCapabilities
+    /// The guest's hinge angle as it changes, whoever moves it.
+    func openHingeStream(_ udid: String) throws -> HingeAngleStream
+    /// The guest's touchscreens, each with the display it sits under.
+    func touchscreens(_ udid: String) async throws -> [Touchscreen]
     func openInput(_ udid: String) throws -> any InputSession
     func simulateMemoryWarning(_ udid: String) throws
     /// Turns the device itself, which makes the guest re-lay out. The viewer still has to turn its
@@ -188,5 +217,30 @@ extension DeviceState {
         case "shuttingdown": .shuttingDown
         default: .unknown
         }
+    }
+}
+
+extension SimulatorAdapter {
+    public func openCoreDevice(_ udid: String, service: String) throws -> CoreDeviceFeature {
+        throw EngineError.capabilityUnavailable(name: "CoreDevice \(service) on \(udid)")
+    }
+
+    public func displayReport(_ udid: String) async throws -> DisplayReport {
+        let feature = try openCoreDevice(udid, service: CoreDeviceFeature.displayInfoService)
+        return try DisplayReport.parse(try await feature.perform(action: CoreDeviceFeature.displayInfoAction))
+    }
+
+    public func motionCapabilities(_ udid: String) async throws -> MotionCapabilities {
+        let feature = try openCoreDevice(udid, service: CoreDeviceFeature.motionService)
+        return MotionCapabilities.parse(try await feature.perform(action: CoreDeviceFeature.motionCapabilitiesAction))
+    }
+
+    public func openHingeStream(_ udid: String) throws -> HingeAngleStream {
+        try HingeAngleStream(feature: try openCoreDevice(udid, service: CoreDeviceFeature.motionService))
+    }
+
+    public func touchscreens(_ udid: String) async throws -> [Touchscreen] {
+        let feature = try openCoreDevice(udid, service: CoreDeviceFeature.universalHIDService)
+        return try Touchscreen.parse(try await feature.exchange(Touchscreen.request(), describedAs: "connectedServices"))
     }
 }

@@ -19,13 +19,7 @@ struct HomeSwipe: AsyncParsableCommand {
         let session = try adapter.openInput(udid)
         defer { session.close() }
 
-        let path = HomeGesture.swipePath()
-        try await session.touch(TouchEvent(phase: .began, points: [path[0]], edge: .bottom))
-        for point in path.dropFirst() {
-            try await Task.sleep(for: .milliseconds(stepMilliseconds))
-            try await session.touch(TouchEvent(phase: .moved, points: [point], edge: .bottom))
-        }
-        try await session.touch(TouchEvent(phase: .ended, points: [path[path.count - 1]], edge: .bottom))
+        try await SystemGesture.home(on: session, stepMilliseconds: stepMilliseconds)
         print("swiped up from the bottom edge")
     }
 }

@@ -34,24 +34,7 @@ struct AppSwitcher: AsyncParsableCommand {
         let session = try adapter.openInput(udid)
         defer { session.close() }
 
-        let path = HomeGesture.appSwitcherPath()
-        try await session.touch(TouchEvent(phase: .began, points: [path[0]], edge: .bottom))
-        for point in path.dropFirst() {
-            try await Task.sleep(for: .milliseconds(stepMilliseconds))
-            try await session.touch(TouchEvent(phase: .moved, points: [point], edge: .bottom))
-        }
-
-        let interval = 40
-        let settle = HomeGesture.settlePath(
-            around: path[path.count - 1],
-            steps: max(1, settleMilliseconds / interval)
-        )
-        for point in settle {
-            try await Task.sleep(for: .milliseconds(interval))
-            try await session.touch(TouchEvent(phase: .moved, points: [point], edge: .bottom))
-        }
-
-        try await session.touch(TouchEvent(phase: .ended, points: [settle[settle.count - 1]], edge: .bottom))
+        try await SystemGesture.appSwitcher(on: session, stepMilliseconds: stepMilliseconds)
         print("opened the app switcher")
     }
 }
