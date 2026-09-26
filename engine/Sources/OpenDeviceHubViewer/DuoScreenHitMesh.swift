@@ -98,7 +98,12 @@ struct DuoScreenHitMesh {
     /// Where the ray meets the screen, in the guest's coordinates, or nil when it misses.
     func hit(from start: SIMD3<Float>, to end: SIMD3<Float>, bones: [SCNNode]) -> SIMD2<Float>? {
         guard !bones.isEmpty else { return nil }
-        let posed = skinned(bones: bones)
+        return hit(from: start, to: end, posed: skinned(bones: bones))
+    }
+
+    /// The same, against vertices already skinned, for a caller that tests many rays against one
+    /// pose and does not want the skinning done again for each.
+    func hit(from start: SIMD3<Float>, to end: SIMD3<Float>, posed: [SIMD3<Float>]) -> SIMD2<Float>? {
         let direction = end - start
         var best: (distance: Float, uv: SIMD2<Float>)?
 

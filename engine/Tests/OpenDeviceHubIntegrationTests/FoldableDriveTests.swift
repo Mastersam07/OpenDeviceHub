@@ -166,13 +166,16 @@ final class FoldableDriveTests: XCTestCase {
         print("RESULT home button: \(lines("SCENE").last ?? "nothing")")
         XCTAssertTrue(lines("SCENE").contains("SCENE BACKGROUND"), "home by the button did nothing")
 
-        // Home by the gesture, dragged on the window from the bottom edge.
-        try await launchHost()
-        since()
-        try await drag(from: screenBottom(), to: CGPoint(x: box.midX, y: box.midY), steps: 14)
-        try await settle(3)
-        print("RESULT home swipe: \(lines("SCENE").last ?? "nothing")")
-        XCTAssertTrue(lines("SCENE").contains("SCENE BACKGROUND"), "the home swipe did nothing")
+        // Home by the gesture, dragged on the window: once from the bezel just under the screen,
+        // the way a hand starts it, and once from just inside the screen's edge.
+        for (name, start) in [("from the bezel", screenBottom()), ("from inside the edge", CGPoint(x: box.midX, y: screenBottom().y + 8))] {
+            try await launchHost()
+            since()
+            try await drag(from: start, to: CGPoint(x: box.midX, y: box.midY + box.height * 0.1), steps: 12, stepMilliseconds: 10)
+            try await settle(3)
+            print("RESULT home swipe \(name): \(lines("SCENE").last ?? "nothing")")
+            XCTAssertTrue(lines("SCENE").contains("SCENE BACKGROUND"), "the home swipe \(name) did nothing")
+        }
 
         // The app switcher, then switching back by tapping the card.
         try await launchHost()
@@ -241,7 +244,8 @@ final class FoldableDriveTests: XCTestCase {
         let box = model.bounds
         var y = box.minY
         while y < box.midY, model.screenPoint(at: CGPoint(x: box.midX, y: y)) == nil { y += 1 }
-        return CGPoint(x: box.midX, y: y + 1)
+        // Six points below the screen's edge: on the bezel, where a hand actually starts.
+        return CGPoint(x: box.midX, y: y - 6)
     }
 
     private func launchHost() async throws {
@@ -294,26 +298,40 @@ final class FoldableDriveTests: XCTestCase {
         )
     }
 
+    /// The view the window would hand this point to. A real event is routed this way before the
+    /// model ever sees it, so a point the routing gives to another view, or to nothing, is a press
+    /// the model never gets.
+    private func target(_ spot: CGPoint, file: StaticString = #filePath, line: UInt = #line) throws -> NSView {
+        let content = try XCTUnwrap(window.contentView)
+        let inContent = model.convert(spot, to: content)
+        let view = try XCTUnwrap(content.hitTest(inContent), "the window routes \(spot) to nothing", file: file, line: line)
+        XCTAssertTrue(view === model, "the window routes \(spot) to \(type(of: view)), not the model", file: file, line: line)
+        return view
+    }
+
     private func click(at spot: CGPoint) async throws {
-        model.mouseDown(with: try Self.mouse(.leftMouseDown, at: model.convert(spot, to: nil)))
+        let view = try target(spot)
+        view.mouseDown(with: try Self.mouse(.leftMouseDown, at: model.convert(spot, to: nil)))
         try await Task.sleep(for: .milliseconds(80))
-        model.mouseUp(with: try Self.mouse(.leftMouseUp, at: model.convert(spot, to: nil)))
+        view.mouseUp(with: try Self.mouse(.leftMouseUp, at: model.convert(spot, to: nil)))
     }
 
     private func drag(from: CGPoint, to: CGPoint, steps: Int = 10, stepMilliseconds: Int = 16, lift: Bool = true) async throws {
-        model.mouseDown(with: try Self.mouse(.leftMouseDown, at: model.convert(from, to: nil)))
+        let view = try target(from)
+        view.mouseDown(with: try Self.mouse(.leftMouseDown, at: model.convert(from, to: nil)))
         for step in 1...steps {
             let fraction = CGFloat(step) / CGFloat(steps)
             let point = CGPoint(x: from.x + (to.x - from.x) * fraction, y: from.y + (to.y - from.y) * fraction)
             try await Task.sleep(for: .milliseconds(stepMilliseconds))
-            model.mouseDragged(with: try Self.mouse(.leftMouseDragged, at: model.convert(point, to: nil)))
+            view.mouseDragged(with: try Self.mouse(.leftMouseDragged, at: model.convert(point, to: nil)))
         }
         if lift {
-            model.mouseUp(with: try Self.mouse(.leftMouseUp, at: model.convert(to, to: nil)))
+            view.mouseUp(with: try Self.mouse(.leftMouseUp, at: model.convert(to, to: nil)))
         }
     }
 
     private func scroll(at spot: CGPoint, lines: Int) throws {
+        _ = try target(spot)
         let onScreen = window.convertPoint(toScreen: model.convert(spot, to: nil))
         let screenHeight = NSScreen.screens[0].frame.height
         for _ in 0..<lines {

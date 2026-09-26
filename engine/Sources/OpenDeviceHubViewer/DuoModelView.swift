@@ -169,14 +169,27 @@ public final class DuoModelView: SCNView {
 
     /// Whether there is hardware under this point of the view. Outside it the view is clear, and a
     /// click there belongs to whatever is behind the window.
+    ///
+    /// Read from a picture of the device rather than asked of SceneKit: its own hit test answers
+    /// from a skinned mesh's authored pose, and missed two thirds of the points actually drawn even
+    /// with the device flat. Before a picture exists, everything counts as hardware.
     public func hasHardware(at point: CGPoint) -> Bool {
-        !hitTest(point, options: [
-            .rootNode: content,
-            .ignoreHiddenNodes: true,
-            .backFaceCulling: false,
-            .searchMode: SCNHitTestSearchMode.any.rawValue,
-        ]).isEmpty
+        guard let silhouette else { return true }
+        let x = Int(point.x / bounds.width * CGFloat(silhouette.width))
+        let y = Int((1 - point.y / bounds.height) * CGFloat(silhouette.height))
+        // A pixel of the picture is a few points of the view, so the neighbours count too: the
+        // edge of the hardware errs towards being hardware.
+        for dy in -1...1 {
+            for dx in -1...1 {
+                let column = x + dx, row = y + dy
+                guard column >= 0, row >= 0, column < silhouette.width, row < silhouette.height else { continue }
+                if silhouette.pixels[row * silhouette.width + column] { return true }
+            }
+        }
+        return false
     }
+
+    private var silhouette: (width: Int, height: Int, pixels: [Bool])?
 
     /// Puts the guest's picture on the face being shown.
     public func setScreen(_ surface: IOSurfaceRef) {
@@ -350,17 +363,20 @@ public final class DuoModelView: SCNView {
         guard let raster = NSBitmapImageRep(data: image.tiffRepresentation ?? Data()) else { return nil }
 
         var minX = raster.pixelsWide, maxX = -1, minY = raster.pixelsHigh, maxY = -1
+        var pixels = [Bool](repeating: false, count: raster.pixelsWide * raster.pixelsHigh)
         for y in 0..<raster.pixelsHigh {
             for x in 0..<raster.pixelsWide {
                 guard let colour = raster.colorAt(x: x, y: y), colour.alphaComponent > 0.3 else {
                     continue
                 }
+                pixels[y * raster.pixelsWide + x] = true
                 minX = min(minX, x)
                 maxX = max(maxX, x)
                 minY = min(minY, y)
                 maxY = max(maxY, y)
             }
         }
+        silhouette = (raster.pixelsWide, raster.pixelsHigh, pixels)
         guard maxX >= minX, maxY >= minY else { return nil }
         return (
             Float(minX) / Float(raster.pixelsWide),
@@ -533,11 +549,22 @@ public final class DuoModelView: SCNView {
     /// that never lifts leaves the guest holding a finger down.
     private var lastContact: CGPoint?
 
+    /// How far off the screen a press still counts as a press on its edge, in points. A home swipe
+    /// begun on the bezel just under the screen is meant for the screen's bottom edge.
+    private static let pressReach: CGFloat = 24
+    /// How far off the screen a drag follows along the screen's edge before it stays put.
+    private static let dragReach: CGFloat = 60
+
     private func report(_ event: NSEvent, phase: TouchEvent.Phase) {
         let point = convert(event.locationInWindow, from: nil)
         let guestPoint: CGPoint
         if let hit = screenPoint(at: point) {
             guestPoint = hit
+        } else if let near = nearestScreenPoint(
+            to: point,
+            within: phase == .began ? Self.pressReach : Self.dragReach
+        ) {
+            guestPoint = near
         } else if phase != .began, let last = lastContact {
             guestPoint = last
         } else {
@@ -547,15 +574,30 @@ public final class DuoModelView: SCNView {
         onTouch?(guestPoint, phase)
     }
 
+    /// The nearest point of the screen to a point of the view that is not on it, out to `reach`.
+    /// Found by looking outward from the point, which needs no geometry beyond the hit test.
+    private func nearestScreenPoint(to point: CGPoint, within reach: CGFloat) -> CGPoint? {
+        var distance: CGFloat = 3
+        while distance <= reach {
+            for eighth in 0..<8 {
+                let angle = CGFloat(eighth) * .pi / 4
+                let candidate = CGPoint(x: point.x + cos(angle) * distance, y: point.y + sin(angle) * distance)
+                if let hit = screenPoint(at: candidate) { return hit }
+            }
+            distance += 3
+        }
+        return nil
+    }
+
     /// Where a click on the window lands on the guest's screen, 0 to 1 across and down.
     func screenPoint(at point: CGPoint) -> CGPoint? {
-        let mesh = hitMesh()
+        guard let mesh = hitMesh(), let posed = posedScreen(mesh) else { return nil }
         let near = unprojectPoint(SCNVector3(point.x, point.y, 0))
         let far = unprojectPoint(SCNVector3(point.x, point.y, 1))
-        guard let uv = mesh?.hit(
+        guard let uv = mesh.hit(
             from: SIMD3<Float>(Float(near.x), Float(near.y), Float(near.z)),
             to: SIMD3<Float>(Float(far.x), Float(far.y), Float(far.z)),
-            bones: activeScreen.skinner?.bones ?? []
+            posed: posed
         ) else { return nil }
 
         // The picture was turned to meet the panel, so the same turn is undone to get back to what
@@ -564,8 +606,17 @@ public final class DuoModelView: SCNView {
         // sampling the device's own framebuffer through each turn and flip and keeping the one whose
         // colours match what is drawn under the pointer.
         let turned = Self.unturn(SIMD2<Float>(uv.x, uv.y), quarterTurns: nativeQuarterTurns)
-        return CGPoint(x: CGFloat(turned.x), y: CGFloat(turned.y))
+        // Kept a fraction inside the screen: a contact on the very last pixel of an edge is one the
+        // guest sometimes drops, and a swipe from the bezel lands exactly there. Half a percent is
+        // well inside the edge band the guest reads its gestures from, and where this app's own
+        // gestures have always started.
+        return CGPoint(
+            x: min(max(CGFloat(turned.x), Self.inset), 1 - Self.inset),
+            y: min(max(CGFloat(turned.y), Self.inset), 1 - Self.inset)
+        )
     }
+
+    private static let inset: CGFloat = 0.005
 
     /// The inverse of the turn put on the texture.
     nonisolated static func unturn(_ uv: SIMD2<Float>, quarterTurns: Int) -> SIMD2<Float> {
@@ -581,6 +632,23 @@ public final class DuoModelView: SCNView {
 
     func hitMesh() -> DuoScreenHitMesh? {
         hitMesh(for: activeScreen)
+    }
+
+    /// The shown screen's vertices where they are for this pose. The bones move only with the hinge,
+    /// so the skinning is done once per pose and screen rather than once per ray, which a search
+    /// for the nearest point of the screen would otherwise pay many times over.
+    private var posedCache: (screen: ObjectIdentifier, hinge: Double, positions: [SIMD3<Float>])?
+
+    private func posedScreen(_ mesh: DuoScreenHitMesh) -> [SIMD3<Float>]? {
+        let key = ObjectIdentifier(activeScreen)
+        if let posedCache, posedCache.screen == key, posedCache.hinge == hingeAngle {
+            return posedCache.positions
+        }
+        let bones = activeScreen.skinner?.bones ?? []
+        guard !bones.isEmpty else { return nil }
+        let positions = mesh.posedPositions(bones: bones)
+        posedCache = (key, hingeAngle, positions)
+        return positions
     }
 
     private func hitMesh(for screen: SCNNode) -> DuoScreenHitMesh? {
