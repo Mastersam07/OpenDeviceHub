@@ -164,6 +164,8 @@ public protocol SimulatorAdapter: Sendable {
     func panels(_ udid: String) throws -> [DevicePanel]
     /// Opens one panel, or the device's own main screen when none is named.
     func openDisplay(_ udid: String, panel: DevicePanel?) throws -> any DisplaySession
+    /// Input aimed at one of the device's screens, which only a foldable needs.
+    func openInput(_ udid: String, screenID: Int) throws -> any InputSession
     /// Opens the control that folds and turns a foldable.
     func openFoldableControl(_ udid: String) throws -> any HingeControl
     func openInput(_ udid: String) throws -> any InputSession

@@ -158,6 +158,24 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         return (panels, descriptors, scale)
     }
 
+    /// Input aimed at one of the device's screens, for a foldable, where the older path can only
+    /// reach whichever screen the device calls its main one.
+    public func openInput(_ udid: String, screenID: Int) throws -> any InputSession {
+        let fallback = try openInput(udid)
+        guard screenID != 0 else { return fallback }
+
+        lock.lock()
+        defer { lock.unlock() }
+        let device = try rawDevice(udid)
+        let port = device.lookup(FoldableControl.digitizerServiceName, error: nil)
+        guard port != 0 else { return fallback }
+        return (try? PanelInputSession(
+            digitizerPort: port,
+            screenID: screenID,
+            fallback: fallback
+        )) ?? fallback
+    }
+
     /// Opens the control that folds and turns a foldable.
     ///
     /// Available on any booted device, since the service is not foldable specific, but only a device
