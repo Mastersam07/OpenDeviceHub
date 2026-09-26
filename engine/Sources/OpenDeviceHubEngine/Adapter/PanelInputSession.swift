@@ -12,7 +12,7 @@ import XPC
 /// client's own reports are dropped once a device is driven this way.
 public final class PanelInputSession: InputSession, @unchecked Sendable {
     private let connection: xpc_connection_t
-    private let target: UInt64
+    private var target: UInt64
     private let fallback: any InputSession
     private let lock = NSLock()
     private var isActivated = false
@@ -61,8 +61,22 @@ public final class PanelInputSession: InputSession, @unchecked Sendable {
         xpc_dictionary_set_uint64(payload, "edge", Self.code(for: event.edge))
         // The screen this report is for. Zero is the device's default, which is the wrong one on a
         // foldable whenever the unfolded panel is being shown.
-        xpc_dictionary_set_uint64(payload, "target", target)
+        xpc_dictionary_set_uint64(payload, "target", currentTarget)
         send("IndigoDigitizerEvent", payload: payload)
+    }
+
+    /// Points every touch from now on at another of the device's screens. The guest moves between
+    /// them as it folds, and the connection stays; only the target changes.
+    public func setTarget(screenID: Int) {
+        lock.lock()
+        target = UInt64(max(screenID, 0))
+        lock.unlock()
+    }
+
+    private var currentTarget: UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return target
     }
 
     public func key(_ event: KeyEvent) async throws {

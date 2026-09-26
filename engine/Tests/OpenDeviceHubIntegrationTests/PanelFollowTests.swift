@@ -3,11 +3,12 @@ import XCTest
 import OpenDeviceHubEngine
 @testable import OpenDeviceHubViewer
 
-/// A foldable's window follows its guest between the two panels. It has to do that without going
-/// away: a new window blinks, and for that moment an app set to quit with its last window has none.
+/// A foldable's window follows its guest between the two panels without going anywhere: the same
+/// window, the same shape, both pictures still there. Only the touch target, the face a click is
+/// tested against and the screenshot follow the guest.
 @MainActor
 final class PanelFollowTests: XCTestCase {
-    func testTheWindowItselfSurvivesTheSwitch() throws {
+    func testTheWindowStaysPutWhenTheGuestMoves() throws {
         try IntegrationGate.requireEnabled()
         let adapter = try AdapterFactory.make(for: XcodeLocator.locate())
         guard let device = try adapter.devices().first(where: {
@@ -15,8 +16,7 @@ final class PanelFollowTests: XCTestCase {
         }) else { throw XCTSkip("no booted foldable") }
 
         let panels = try adapter.panels(device.udid)
-        guard panels.count > 1,
-              let unfolded = panels.first(where: { $0.name == "Unfolded" }),
+        guard let unfolded = panels.first(where: { $0.name == "Unfolded" }),
               let cover = panels.first(where: { $0.name == "Cover" }) else {
             throw XCTSkip("not a foldable")
         }
@@ -28,6 +28,7 @@ final class PanelFollowTests: XCTestCase {
             frameStore: WindowFrameStore(storage: ForgetfulStorage()),
             shutdown: { _ in }
         )
+        var targets: [Int] = []
         let controller = try manager.open(
             device: device,
             session: try adapter.openDisplay(device.udid, panel: unfolded),
@@ -37,50 +38,31 @@ final class PanelFollowTests: XCTestCase {
             keepOnTop: false,
             showFPS: false,
             foldsAtHinge: true,
-            panelNativeRotation: unfolded.nativeRotation
+            panelNativeRotation: unfolded.nativeRotation,
+            unfoldedPanel: unfolded,
+            cover: FoldableCover(panel: cover, session: try adapter.openDisplay(device.udid, panel: cover)),
+            retarget: { targets.append($0) }
         )
+        defer { manager.close(device.udid) }
         let window = try XCTUnwrap(controller.window)
+        let frame = window.frame
         XCTAssertEqual(controller.screenPixelSize, unfolded.pixelSize)
-        let unfoldedFrame = window.frame
 
-        controller.showPanel(
-            session: try adapter.openDisplay(device.udid, panel: cover),
-            input: nil,
-            chrome: nil,
-            nativeRotation: cover.nativeRotation,
-            showingCover: true
-        )
-
+        controller.setActivePanel(screenID: cover.screenID)
         XCTAssertEqual(manager.openCount, 1, "no second window was made")
-        XCTAssertTrue(manager.controller(for: device.udid) === controller)
         XCTAssertTrue(controller.window === window, "the same window carried on")
         XCTAssertTrue(window.isVisible, "and it never went away")
-        XCTAssertEqual(controller.screenPixelSize, cover.pixelSize, "it shows the other panel now")
-        // The two panels are different shapes, so the window takes the shape of the one it shows.
-        let coverFrame = window.frame
-        XCTAssertNotEqual(
-            coverFrame.size, unfoldedFrame.size,
-            "the window kept the shape of the panel it is no longer showing"
-        )
-        XCTAssertEqual(
-            coverFrame.width / coverFrame.height,
-            cover.pixelSize.width / cover.pixelSize.height,
-            accuracy: 0.25,
-            "the window is not the shape of the cover"
-        )
-        XCTAssertEqual(coverFrame.maxY, unfoldedFrame.maxY, accuracy: 1, "the top edge moved")
+        XCTAssertEqual(window.frame, frame, "and it did not change shape or move")
+        XCTAssertEqual(controller.screenPixelSize, unfolded.pixelSize, "the window's own session is untouched")
+        XCTAssertEqual(targets, [cover.screenID], "touches now go to the cover")
 
-        controller.showPanel(
-            session: try adapter.openDisplay(device.udid, panel: unfolded),
-            input: nil,
-            chrome: nil,
-            nativeRotation: unfolded.nativeRotation,
-            showingCover: false
-        )
-        XCTAssertEqual(controller.screenPixelSize, unfolded.pixelSize, "and back again")
-        XCTAssertTrue(controller.window === window)
-        XCTAssertEqual(window.frame.size, unfoldedFrame.size, "and so does its shape")
-        manager.close(device.udid)
+        controller.setActivePanel(screenID: unfolded.screenID)
+        XCTAssertEqual(window.frame, frame)
+        XCTAssertEqual(targets, [cover.screenID, unfolded.screenID], "and back")
+
+        // Saying it again changes nothing.
+        controller.setActivePanel(screenID: unfolded.screenID)
+        XCTAssertEqual(targets.count, 2)
     }
 }
 

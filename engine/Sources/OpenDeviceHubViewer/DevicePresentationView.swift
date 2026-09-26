@@ -49,6 +49,12 @@ public final class DevicePresentationView: NSView {
         let border = PresentationLayout.resizeBorder
         let inside = bounds.insetBy(dx: border, dy: border)
         if !inside.contains(local), !bar.frame.contains(local) { return nil }
+        // The model's viewport is sized for the open device, so a shut one leaves clear space
+        // around it. That space is not the window's: a click there goes to whatever is behind.
+        if let model, !bar.frame.contains(local), model.frame.contains(local),
+           !model.hasHardware(at: model.convert(local, from: self)) {
+            return nil
+        }
         return super.hitTest(point)
     }
 

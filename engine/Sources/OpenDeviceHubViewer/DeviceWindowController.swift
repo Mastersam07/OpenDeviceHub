@@ -59,6 +59,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private var scaleMode: ScaleMode
     private let deviceName: String
     private var pendingSend: Task<Void, Never>?
+    /// A foldable's two screens. The window opens on the unfolded one and keeps the cover warm.
+    private let unfoldedPanel: DevicePanel?
+    private let cover: FoldableCover?
+    private let retarget: ((Int) -> Void)?
+    private var coverFrameTask: Task<Void, Never>?
+    private var activeScreenID: Int
     private var bezelEnabled: Bool
     private let frameStore: WindowFrameStore
     /// How far this window's panel is built round in its housing, which the renderer may or may not
@@ -79,11 +85,18 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         fpsLabel: String?,
         chrome: DeviceChrome?,
         foldsAtHinge: Bool = false,
-        panelNativeRotation: Int = 0
+        panelNativeRotation: Int = 0,
+        unfoldedPanel: DevicePanel? = nil,
+        cover: FoldableCover? = nil,
+        retarget: ((Int) -> Void)? = nil
     ) throws {
         self.frameStore = frameStore
         self.deviceName = deviceName
-        panelBuildAngle = panelNativeRotation
+        self.unfoldedPanel = unfoldedPanel
+        self.cover = cover
+        self.retarget = retarget
+        activeScreenID = unfoldedPanel?.screenID ?? 0
+        panelBuildAngle = unfoldedPanel?.nativeRotation ?? panelNativeRotation
         self.udid = udid
         self.scaleMode = scaleMode
         self.bezelEnabled = bezelEnabled
@@ -102,12 +115,13 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         // on the flat renderer, which is what every other device wants anyway.
         // The cover is the smaller panel, so the shape of what the session opened says which face
         // the guest is drawing to and therefore which one the picture goes on.
-        let onTheCover = max(session.pixelSize.width, session.pixelSize.height) < 2500
+        let onTheCover = unfoldedPanel == nil
+            && max(session.pixelSize.width, session.pixelSize.height) < 2500
         modelView = foldsAtHinge
             ? DuoModelView(
                 metalDevice: device,
                 showingCover: onTheCover,
-                nativeRotation: panelNativeRotation
+                nativeRotation: unfoldedPanel?.nativeRotation ?? panelNativeRotation
             )
             : nil
         presentationView = DevicePresentationView(
@@ -121,7 +135,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         let contentSize = Self.contentSize(
             for: session,
             chrome: bezelEnabled && modelView == nil ? chrome : nil,
-            buildAngle: panelNativeRotation,
+            buildAngle: unfoldedPanel?.nativeRotation ?? panelNativeRotation,
             scaleMode: scaleMode,
             deviceName: deviceName
         )
@@ -187,6 +201,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             installClickToTap()
         }
         startConsumingFrames()
+        startConsumingCoverFrames()
     }
 
     @available(*, unavailable)
@@ -203,9 +218,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private func closeSessions() {
         frameTask?.cancel()
         frameTask = nil
+        coverFrameTask?.cancel()
+        coverFrameTask = nil
         input?.close()
         input = nil
         session.close()
+        cover?.session.close()
     }
 
     public var isDetached: Bool { overlay != nil }
@@ -278,55 +296,16 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         )
     }
 
-    /// Points this window at another of the device's screens, which is how a foldable follows its
-    /// guest between the cover and the unfolded panel. The window is kept: building a new one blinks,
-    /// and for that moment the application has no window at all.
-    public func showPanel(
-        session: any DisplaySession,
-        input: (any InputSession)?,
-        chrome: DeviceChrome?,
-        nativeRotation: Int,
-        showingCover: Bool
-    ) {
-        self.chrome = chrome
-        chromeView.setChrome(bezelEnabled ? chrome : nil)
-        installChromeButtons()
-        panelBuildAngle = nativeRotation
-        if let modelView {
-            modelView.setShowingCover(showingCover, nativeRotation: nativeRotation)
-        } else {
-            // Only the flat renderer turns the picture by the panel's build angle. The model puts it
-            // on the texture instead, and turning it twice lays the unfolded screen on its side.
-            self.nativeRotation = nativeRotation
-        }
-        reattach(session: session, input: input)
-        chromeView.setScreenSize(screenPointSize)
-        if scaleMode == .fit, let remembered = frameStore.frame(for: frameKey), let window {
-            window.setFrame(remembered, display: true)
-            keepOnScreen()
-        } else {
-            resizeForCurrentScreen()
-        }
-    }
-
-    /// The two panels of a foldable are different shapes, so a window built for one leaves the other
-    /// adrift in it. Fit holds whatever size the window has, so following the guest resizes it the
-    /// way opening on that panel would have; every other mode has already been sized by the scale.
-    private func resizeForCurrentScreen() {
-        guard scaleMode == .fit, let window else { return }
-        let wanted = Self.contentSize(
-            for: session,
-            chrome: bezelEnabled && modelView == nil ? chrome : nil,
-            buildAngle: panelBuildAngle,
-            scaleMode: scaleMode,
-            deviceName: deviceName
-        )
-        let outer = window.frameRect(forContentRect: CGRect(origin: .zero, size: wanted)).size
-        var frame = window.frame
-        // The top edge stays put, so the window grows and shrinks downwards rather than jumping.
-        frame.origin.y += frame.height - outer.height
-        frame.size = outer
-        window.setFrame(frame, display: true, animate: false)
+    /// The guest has moved to another of its screens. Only three things follow it: where a touch is
+    /// addressed, which face of the model a click is tested against and drawn as the front, and
+    /// what a screenshot is of. The window, its shape and both pictures stay exactly where they are.
+    public func setActivePanel(screenID: Int) {
+        guard let unfoldedPanel, let cover, screenID != activeScreenID else { return }
+        let panel = screenID == cover.panel.screenID ? cover.panel : unfoldedPanel
+        activeScreenID = panel.screenID
+        panelBuildAngle = panel.nativeRotation
+        modelView?.setShowingCover(panel.screenID == cover.panel.screenID, nativeRotation: panel.nativeRotation)
+        retarget?(panel.screenID)
     }
 
     /// Resizes the window so the device screen is shown at the requested scale. Fit leaves the
@@ -626,12 +605,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         frameStore.save(window.frame, for: frameKey)
     }
 
-    /// What a remembered frame is filed under. A foldable's two panels are different shapes, so each
-    /// remembers its own; anything else keeps the plain key it always had.
-    private var frameKey: String {
-        guard foldsAtHinge else { return udid }
-        return "\(udid)/\(Int(session.pixelSize.width))x\(Int(session.pixelSize.height))"
-    }
+    private var frameKey: String { udid }
 
     /// A locked aspect ratio cannot survive a full screen transition: AppKit collapses the window
     /// to the title bar trying to satisfy both. Clearing it through `contentResizeIncrements` is
@@ -799,11 +773,30 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
                 renderer.accept(frame)
                 await MainActor.run { [weak self] in
                     screenView.needsDisplay = true
-                    self?.modelView?.setScreen(frame.surface)
+                    if let rotation = self?.unfoldedPanel?.nativeRotation {
+                        self?.modelView?.setScreen(frame.surface, onCover: false, nativeRotation: rotation)
+                    } else {
+                        self?.modelView?.setScreen(frame.surface)
+                    }
                     guard let self else { return }
                     if self.latency.frameDrawn() != nil, self.showsLatency {
                         self.updateTitle()
                     }
+                }
+            }
+        }
+    }
+
+    /// The cover's picture goes on its own face as it arrives, so it is there before the guest
+    /// moves to it.
+    private func startConsumingCoverFrames() {
+        guard let cover else { return }
+        let rotation = cover.panel.nativeRotation
+        coverFrameTask = Task { [frames = cover.session.frames, weak self] in
+            for await frame in frames {
+                if Task.isCancelled { return }
+                await MainActor.run { [weak self] in
+                    self?.modelView?.setScreen(frame.surface, onCover: true, nativeRotation: rotation)
                 }
             }
         }

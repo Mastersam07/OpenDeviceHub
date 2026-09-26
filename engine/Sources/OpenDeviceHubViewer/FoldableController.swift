@@ -1,26 +1,40 @@
 import Foundation
 import OpenDeviceHubEngine
 
-/// Holds the fold control for each open foldable, and notices when the guest changes panels.
+/// Holds the fold control for each open foldable, and follows the guest's own account of its hinge
+/// and its active panel.
 ///
 /// The connection has to be turned on before the guest acts on anything, which takes a round trip,
-/// so the first angle a window asks for is sent once that finishes rather than dropped.
+/// so the first angle a window asks for is sent once that finishes rather than dropped. Which panel
+/// the guest is drawing to is never inferred from the angle sent: the guest reports it, and the
+/// window follows that report.
 @MainActor
 public final class FoldableController {
     private let open: (String) throws -> any HingeControl
+    private let openHingeStream: ((String) throws -> HingeAngleStream)?
+    private let readDisplays: (@Sendable (String) async throws -> DisplayReport)?
     private var controls: [String: any HingeControl] = [:]
     private var ready: Set<String> = []
     private var activating: Set<String> = []
     private var wanted: [String: Double] = [:]
-    private var lastSide: [String: Bool] = [:]
+    private var followers: [String: Follower] = [:]
 
-    /// Called when the guest changes which panel it draws to, with true for the unfolded one. The
-    /// window follows; the guest has already moved.
-    public var onHandoff: ((String, Bool) -> Void)?
+    private struct Follower {
+        let watcher: ActivePanelWatcher
+        let hinge: HingeAngleStream?
+        let task: Task<Void, Never>
+    }
+
     public var report: ((String) -> Void)?
 
-    public init(open: @escaping (String) throws -> any HingeControl) {
+    public init(
+        open: @escaping (String) throws -> any HingeControl,
+        hingeStream: ((String) throws -> HingeAngleStream)? = nil,
+        displayReport: (@Sendable (String) async throws -> DisplayReport)? = nil
+    ) {
         self.open = open
+        openHingeStream = hingeStream
+        readDisplays = displayReport
     }
 
     /// The angle this device was last put at, or nil when it has not been touched in this session.
@@ -67,10 +81,47 @@ public final class FoldableController {
                 try? await control.activate()
                 self?.ready.insert(udid)
                 try? control.setOrientation(orientation)
+                self?.followers[udid]?.watcher.poke()
             }
             return
         }
         try control.setOrientation(orientation)
+        followers[udid]?.watcher.poke()
+    }
+
+    /// Follows the guest: `onPanel` is called with the panel it is drawing to whenever that changes,
+    /// and `onHinge` with its hinge angle as it moves, whoever is moving it.
+    public func follow(
+        _ udid: String,
+        onPanel: @escaping @MainActor (DisplayReport.Display) -> Void,
+        onHinge: @escaping @MainActor (Double) -> Void
+    ) {
+        guard followers[udid] == nil, let readDisplays else { return }
+        let hinge: HingeAngleStream?
+        do {
+            hinge = try openHingeStream?(udid)
+        } catch {
+            report?("the hinge cannot be read back: \(error.localizedDescription)")
+            hinge = nil
+        }
+        let watcher = ActivePanelWatcher(
+            read: { try await readDisplays(udid) },
+            hinge: hinge,
+            onHinge: { sample in
+                Task { @MainActor in onHinge(sample.degrees) }
+            }
+        )
+        let task = Task { @MainActor in
+            for await panel in watcher.changes {
+                onPanel(panel)
+            }
+        }
+        followers[udid] = Follower(watcher: watcher, hinge: hinge, task: task)
+    }
+
+    /// The panel the guest was last reported drawing to, once it has been read.
+    public func activePanel(for udid: String) -> DisplayReport.Display? {
+        followers[udid]?.watcher.activePanel
     }
 
     public func forget(_ udid: String) {
@@ -78,7 +129,11 @@ public final class FoldableController {
         ready.remove(udid)
         activating.remove(udid)
         wanted[udid] = nil
-        lastSide[udid] = nil
+        if let follower = followers.removeValue(forKey: udid) {
+            follower.task.cancel()
+            follower.watcher.close()
+            follower.hinge?.close()
+        }
     }
 
     private func send(_ degrees: Double, to control: any HingeControl, for udid: String) {
@@ -88,18 +143,9 @@ public final class FoldableController {
             report?("the hinge did not move: \(error.localizedDescription)")
             return
         }
-        noteHandoff(degrees, for: udid)
-    }
-
-    /// The guest moves its own picture at the threshold. This only reports the crossing, and only
-    /// when it is a crossing rather than every slider step.
-    private func noteHandoff(_ degrees: Double, for udid: String) {
-        let unfolded = degrees >= FoldableControl.handoffAngle
-        guard lastSide[udid] != unfolded else { return }
-        let isFirst = lastSide[udid] == nil
-        lastSide[udid] = unfolded
-        guard !isFirst else { return }
-        onHandoff?(udid, unfolded)
+        // The guest moves its picture at its own threshold; the watcher is asked to look now
+        // rather than on its clock.
+        followers[udid]?.watcher.poke()
     }
 
     private func control(for udid: String) -> (any HingeControl)? {

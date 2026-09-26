@@ -91,7 +91,11 @@ struct ODHubViewer: ParsableCommand {
                 frontmost: { manager.frontmostUDID },
                 open: { try adapter.openPasteboard($0) }
             )
-            let foldables = FoldableController(open: { try adapter.openFoldableControl($0) })
+            let foldables = FoldableController(
+                open: { try adapter.openFoldableControl($0) },
+                hingeStream: { try adapter.openHingeStream($0) },
+                displayReport: { try await adapter.displayReport($0) }
+            )
             foldables.report = { print($0) }
             manager.onDeviceClosed = {
                 pasteboard.forget($0)
@@ -130,38 +134,6 @@ struct ODHubViewer: ParsableCommand {
                 }
             }
 
-            // The guest moves its own picture between the two panels. The window follows by being
-            // pointed at the other one, keeping the window itself: rebuilding it blinks.
-            let followPanel: @MainActor (String, DevicePanel) -> Void = { udid, panel in
-                guard let controller = manager.controller(for: udid) else { return }
-                do {
-                    let session = try adapter.openDisplay(udid, panel: panel)
-                    session.setBezelEnabled(bezel)
-                    let input = try? adapter.openInput(udid, screenID: panel.screenID)
-                    controller.showPanel(
-                        session: session,
-                        input: input,
-                        chrome: panel.chromeIdentifier.flatMap { ChromeLocator.chrome(identifier: $0) },
-                        nativeRotation: panel.nativeRotation,
-                        showingCover: panel.name != "Unfolded"
-                    )
-                } catch {
-                    print("could not show \(panel.name): \(error.localizedDescription)")
-                }
-            }
-
-            let rememberedPanel: @MainActor (String) -> DevicePanel? = { udid in
-                guard let panels = try? adapter.panels(udid), panels.count > 1 else { return nil }
-                if let index = settings.panelIndex(for: udid),
-                   let chosen = panels.first(where: { $0.index == index }) {
-                    return chosen
-                }
-                // A foldable opens unfolded, so it opens on the panel that pose draws to. Opening on
-                // the main screen instead would show the cover of a device that is lying open, which
-                // is a black rectangle.
-                return panels.first { $0.name == "Unfolded" }
-            }
-
             let show: @MainActor (String, Bool) throws -> Void = { udid, allowBoot in
                 let current = try adapter.devices()
                 try self.open(
@@ -170,7 +142,6 @@ struct ODHubViewer: ParsableCommand {
                     adapter: adapter,
                     manager: manager,
                     allowBoot: allowBoot,
-                    panel: rememberedPanel(udid),
                     rotate: turn,
                     present: present
                 )
@@ -185,17 +156,18 @@ struct ODHubViewer: ParsableCommand {
                     controller.showHingeAngle(angle)
                     controller.onHingeAngle = { angle in foldables.setAngle(angle, for: udid) }
                     foldables.setAngle(angle, for: udid)
+                    // From here the guest leads: its report says which panel it draws to and its
+                    // hinge stream says where the fold is, whoever moved it.
+                    foldables.follow(
+                        udid,
+                        onPanel: { [weak controller] panel in
+                            controller?.setActivePanel(screenID: panel.displayID)
+                        },
+                        onHinge: { [weak controller] degrees in
+                            controller?.showHingeAngle(degrees)
+                        }
+                    )
                 }
-            }
-
-            // The guest moves its own picture to the other panel as the hinge passes the threshold,
-            // so the window follows it rather than deciding anything.
-            foldables.onHandoff = { udid, unfolded in
-                guard let panels = try? adapter.panels(udid),
-                      let target = panels.first(where: { $0.name == (unfolded ? "Unfolded" : "Cover") }),
-                      settings.panelIndex(for: udid) != target.index else { return }
-                settings.setPanelIndex(target.index, for: udid)
-                followPanel(udid, target)
             }
 
             for udid in plan.udids {
@@ -442,15 +414,20 @@ struct ODHubViewer: ParsableCommand {
                 currentPanel: {
                     guard let udid = manager.frontmostUDID,
                           let panels = try? adapter.panels(udid) else { return nil }
-                    let remembered = settings.panelIndex(for: udid)
-                    return panels.first { $0.index == remembered }
-                        ?? panels.first(where: \.isMainScreen)
-                        ?? panels.first
+                    if let active = foldables.activePanel(for: udid) {
+                        return panels.first { $0.screenID == active.displayID }
+                    }
+                    return panels.first { $0.name == "Unfolded" } ?? panels.first
                 },
                 showPanel: { panel in
-                    guard let udid = manager.frontmostUDID else { return }
-                    settings.setPanelIndex(panel.index, for: udid)
-                    followPanel(udid, panel)
+                    // The guest chooses the panel from the fold, so choosing a panel is folding.
+                    guard let udid = manager.frontmostUDID,
+                          let controller = manager.controller(for: udid) else { return }
+                    let angle = panel.name == "Cover"
+                        ? DeviceControlBar.FoldMode.cover.angle
+                        : DeviceControlBar.FoldMode.fullyOpen.angle
+                    controller.showHingeAngle(angle)
+                    foldables.setAngle(angle, for: udid)
                 },
                 newSimulator: {
                     let simctl = SimctlService()
@@ -521,7 +498,8 @@ struct ODHubViewer: ParsableCommand {
                 manager.follow(
                     notifier,
                     attach: { udid in
-                        let session = try adapter.openDisplay(udid, panel: rememberedPanel(udid))
+                        let panels = (try? adapter.panels(udid)) ?? []
+                        let session = try adapter.openDisplay(udid, panel: panels.first { $0.name == "Unfolded" })
                         session.setBezelEnabled(bezel)
                         return DeviceAttachment(
                             session: session,
@@ -580,7 +558,6 @@ struct ODHubViewer: ParsableCommand {
         adapter: any SimulatorAdapter,
         manager: DeviceWindowManager,
         allowBoot: Bool,
-        panel: DevicePanel? = nil,
         rotate: @escaping @MainActor (DeviceOrientation, String) -> Void,
         present: @escaping @MainActor ([URL]) -> Void
     ) throws {
@@ -599,19 +576,30 @@ struct ODHubViewer: ParsableCommand {
             device = try adapter.devices().first { $0.udid == device.udid } ?? device
         }
 
+        // More than one built in screen means a hinge between them. A foldable opens on the panel
+        // it lies open on, keeps the cover warm too, and aims its touches at whichever the guest is
+        // drawing to.
+        let panels = (try? adapter.panels(device.udid)) ?? []
+        let foldsAtHinge = panels.count > 1
+        let unfolded = foldsAtHinge ? panels.first { $0.name == "Unfolded" } : nil
+        let coverPanel = foldsAtHinge ? panels.first { $0.name == "Cover" } : nil
+        let panel = unfolded
         let session = try adapter.openDisplay(device.udid, panel: panel)
         session.setBezelEnabled(bezel)
-        // More than one built in screen means a hinge between them, which is the only thing the
-        // bottom bar is for.
-        let foldsAtHinge = ((try? adapter.panels(device.udid))?.count ?? 1) > 1
+        var cover: FoldableCover?
+        if let coverPanel, let coverSession = try? adapter.openDisplay(device.udid, panel: coverPanel) {
+            coverSession.setBezelEnabled(bezel)
+            cover = FoldableCover(panel: coverPanel, session: coverSession)
+        }
         let input: (any InputSession)?
         do {
-            // Aimed at the panel being shown. On a foldable the default screen is the cover, so
-            // taps on the unfolded panel would otherwise land on the other side of the device.
             input = try adapter.openInput(device.udid, screenID: panel?.screenID ?? 0)
         } catch {
             input = nil
             print("\(device.name): clicking will not send taps, \(error.localizedDescription)")
+        }
+        let retarget: ((Int) -> Void)? = (input as? PanelInputSession).map { targeted in
+            { targeted.setTarget(screenID: $0) }
         }
 
         let controller = try manager.open(
@@ -626,7 +614,10 @@ struct ODHubViewer: ParsableCommand {
             // A foldable's panels declare different bodies, so the one being shown brings its own
             // rather than the device type's, which names only the cover's.
             chrome: panel?.chromeIdentifier.flatMap { ChromeLocator.chrome(identifier: $0) },
-            panelNativeRotation: panel?.nativeRotation ?? 0
+            panelNativeRotation: panel?.nativeRotation ?? 0,
+            unfoldedPanel: unfolded,
+            cover: cover,
+            retarget: retarget
         )
         // Only the flat renderer needs this: the model turns the picture on the texture instead,
         // and turning it twice is how the unfolded panel ended up on its side.

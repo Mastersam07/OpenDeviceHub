@@ -25,7 +25,8 @@ public final class ActivePanelWatcher: @unchecked Sendable {
 
     public init(
         read: @escaping @Sendable () async throws -> DisplayReport,
-        hinge: HingeAngleStream?
+        hinge: HingeAngleStream?,
+        onHinge: (@Sendable (HingeSample) -> Void)? = nil
     ) {
         var escaping: AsyncStream<DisplayReport.Display>.Continuation!
         changes = AsyncStream(bufferingPolicy: .bufferingNewest(4)) { escaping = $0 }
@@ -51,6 +52,7 @@ public final class ActivePanelWatcher: @unchecked Sendable {
             tasks.append(Task { [weak self] in
                 for await sample in hinge.samples {
                     guard let self else { return }
+                    onHinge?(sample)
                     noteHinge(sample.degrees)
                     await reread()
                 }

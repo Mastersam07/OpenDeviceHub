@@ -58,7 +58,6 @@ public final class DuoModelView: SCNView {
 
     /// Built once per screen: reading and skinning the geometry is not something to do per click.
     private var hitMeshes: [ObjectIdentifier: DuoScreenHitMesh] = [:]
-    private var flatDistance: Float = 0
     private var measuredSize = CGSize.zero
     /// Renders small probe frames so the device can be centred by looking at it. The view itself
     /// cannot be asked for a picture until it is on screen, and the pose has to be right before then.
@@ -135,12 +134,7 @@ public final class DuoModelView: SCNView {
 
     /// Bends the device. 0 is shut and 180 is flat open, the same scale the hinge itself uses.
     public func setHingeAngle(_ degrees: Double) {
-        let wasOpen = hingeAngle >= FoldableControl.handoffAngle
         hingeAngle = min(max(degrees, 0), 180)
-        // Crossing the point where the guest changes panels changes what is on show, so the framing
-        // is taken again. Inside either side of it the distance is held, so the poses do not lurch
-        // in size while the hinge moves.
-        if wasOpen != (hingeAngle >= FoldableControl.handoffAngle) { flatDistance = 0 }
         applyPose(at: Pose.time(forHingeAngle: hingeAngle))
         SCNTransaction.flush()
         frameCamera()
@@ -162,7 +156,6 @@ public final class DuoModelView: SCNView {
         let turns = ((orientation.degrees / 90) % 4 + 4) % 4
         guard turns != guestQuarterTurns else { return }
         guestQuarterTurns = turns
-        measureFlat()
         frameCamera()
     }
 
@@ -171,15 +164,36 @@ public final class DuoModelView: SCNView {
     public func setShowingCover(_ showingCover: Bool, nativeRotation: Int) {
         activeScreen = showingCover ? coverScreen : innerScreen
         nativeQuarterTurns = ((-nativeRotation / 90) % 4 + 4) % 4
-        // The window takes the shape of the panel it shows, so the camera is measured against that
-        // panel too. Framing the cover by the unfolded panel's size left a shut device small in a
-        // window built for it.
-        flatDistance = 0
         frameCamera()
+    }
+
+    /// Whether there is hardware under this point of the view. Outside it the view is clear, and a
+    /// click there belongs to whatever is behind the window.
+    public func hasHardware(at point: CGPoint) -> Bool {
+        !hitTest(point, options: [
+            .rootNode: content,
+            .ignoreHiddenNodes: true,
+            .backFaceCulling: false,
+            .searchMode: SCNHitTestSearchMode.any.rawValue,
+        ]).isEmpty
     }
 
     /// Puts the guest's picture on the face being shown.
     public func setScreen(_ surface: IOSurfaceRef) {
+        setScreen(surface, on: activeScreen, quarterTurns: nativeQuarterTurns)
+    }
+
+    /// Puts a panel's picture on its own face, whichever face is being shown. Both panels stay
+    /// textured, so the camera can swing from one to the other with the pictures already there.
+    public func setScreen(_ surface: IOSurfaceRef, onCover: Bool, nativeRotation: Int) {
+        setScreen(
+            surface,
+            on: onCover ? coverScreen : innerScreen,
+            quarterTurns: ((-nativeRotation / 90) % 4 + 4) % 4
+        )
+    }
+
+    private func setScreen(_ surface: IOSurfaceRef, on screen: SCNNode, quarterTurns: Int) {
         let descriptor = MTLTextureDescriptor()
         descriptor.pixelFormat = .bgra8Unorm_srgb
         descriptor.width = IOSurfaceGetWidth(surface)
@@ -189,9 +203,9 @@ public final class DuoModelView: SCNView {
         guard let texture = metalDevice.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             return
         }
-        for material in activeScreen.geometry?.materials ?? [] {
+        for material in screen.geometry?.materials ?? [] {
             material.diffuse.contents = texture
-            material.diffuse.contentsTransform = Self.textureTransform(quarterTurns: nativeQuarterTurns)
+            material.diffuse.contentsTransform = Self.textureTransform(quarterTurns: quarterTurns)
             material.diffuse.wrapS = .clamp
             material.diffuse.wrapT = .clamp
             material.lightingModel = .constant
@@ -253,135 +267,76 @@ public final class DuoModelView: SCNView {
         return points.reduce(SIMD3<Float>.zero, +) / Float(points.count)
     }
 
-    /// How far back to stand, measured once on each side of the fold and then held, so the poses do
-    /// not lurch in size while the hinge moves.
-    ///
-    /// Open, the whole device is on show and is framed by the larger panel as it was authored, which
-    /// is flat. Shut, only the cover is, and the camera has swung round to face it, so the cover is
-    /// framed from where its vertices are now, along the axes the camera has from there. Framing it
-    /// from its authored box along the flat camera's axes measured its thickness as its width.
-    private func measureFlat() {
-        let open = hingeAngle >= FoldableControl.handoffAngle
-        let orbit = Self.cameraOrbit(forHingeAngle: hingeAngle)
-        let direction = SIMD3<Float>(Float(sin(orbit)), Float(cos(orbit)), 0)
-        let modelUp = SIMD3<Float>(0, 0, -1)
-        let across = simd_normalize(simd_cross(modelUp, direction))
+    /// The open device's extents, measured once from the larger panel as it was authored, which is
+    /// flat, and then held. Every pose is framed from these, so nothing lurches while the hinge
+    /// moves and the viewport stays the one the open device was sized for.
+    private var referenceHalfAcross: Float = 0
+    private var referenceHalfUp: Float = 0
 
-        let points: [SIMD3<Float>]
-        if open {
-            let box = innerScreen.boundingBox
-            let world = simd_float4x4(innerScreen.presentation.worldTransform)
-            var corners: [SIMD3<Float>] = []
-            for x in [box.min.x, box.max.x] {
-                for y in [box.min.y, box.max.y] {
-                    for z in [box.min.z, box.max.z] {
-                        corners.append(simd_make_float3(
-                            world * SIMD4<Float>(Float(x), Float(y), Float(z), 1)
-                        ))
-                    }
+    private func measureFlat() {
+        let box = innerScreen.boundingBox
+        let world = simd_float4x4(innerScreen.presentation.worldTransform)
+        var points: [SIMD3<Float>] = []
+        for x in [box.min.x, box.max.x] {
+            for y in [box.min.y, box.max.y] {
+                for z in [box.min.z, box.max.z] {
+                    points.append(simd_make_float3(
+                        world * SIMD4<Float>(Float(x), Float(y), Float(z), 1)
+                    ))
                 }
             }
-            points = corners
-        } else {
-            points = hitMesh(for: coverScreen)?
-                .posedPositions(bones: coverScreen.skinner?.bones ?? []) ?? []
         }
-        guard !points.isEmpty else { return }
-
         let centre = points.reduce(SIMD3<Float>.zero, +) / Float(points.count)
         func half(_ axis: SIMD3<Float>) -> Float {
             points.map { abs(simd_dot($0 - centre, axis)) }.max() ?? 1
         }
+        referenceHalfAcross = half(SIMD3<Float>(1, 0, 0))
+        referenceHalfUp = half(SIMD3<Float>(0, 0, -1))
+    }
+
+    /// How much of the open device's width the pose takes up on screen. Flat it is all of it; as the
+    /// device shuts and the camera swings round to the cover, only one panel is in the way, so the
+    /// framing width comes in to half. The fold recedes in depth rather than growing.
+    nonisolated static func projectedWidthFraction(hingeAngle: Double, orbit: Double) -> Float {
+        Float(max(sin(min(max(hingeAngle, 0), 180) * .pi / 360), abs(orbit) / .pi))
+    }
+
+    private func heldDistance() -> Float {
+        let orbit = Self.cameraOrbit(forHingeAngle: hingeAngle)
+        let orbitProgress = Float(min(1, abs(orbit) / (.pi / 2)))
+        let fraction = Self.projectedWidthFraction(hingeAngle: hingeAngle, orbit: orbit)
+        let halfAcross = referenceHalfAcross * (1 - orbitProgress * (1 - fraction))
+
         let aspect = Float(max(bounds.width, 1) / max(bounds.height, 1))
         let verticalField = Float(31) * .pi / 180
         let horizontalField = 2 * atan(tan(verticalField / 2) * aspect)
         // A quarter turn lays the device's long axis across the window, so which of its extents has
         // to fit which field swaps with it.
         let upright = guestQuarterTurns.isMultiple(of: 2)
-        let fit = max(
-            half(upright ? modelUp : across) / tan(verticalField / 2),
-            half(upright ? across : modelUp) / tan(horizontalField / 2)
+        return max(
+            (upright ? referenceHalfUp : halfAcross) / tan(verticalField / 2),
+            (upright ? halfAcross : referenceHalfUp) / tan(horizontalField / 2)
         ) * 1.12
-        // The camera stands off the bones, and what is being framed can sit nearer the camera or
-        // further from it than they do. Shut, the cover face is a whole folded device away from the
-        // hinge, and standing the fit distance off the hinge left it small.
-        flatDistance = fit + simd_dot(posedCentre() - centre, direction)
     }
 
     private func frameCamera() {
-        let measuring = flatDistance == 0 || bounds.size != measuredSize
-        // Any change of size, not only of width: a foldable's two windows are the same width and
-        // very different heights, so following the guest between them changes only the height, and
-        // a distance measured for the other one left the device small in this one.
-        if measuring {
+        if referenceHalfAcross == 0 || bounds.size != measuredSize {
             measuredSize = bounds.size
             measureFlat()
         }
-        place()
-        // Centred first: a shut device starts far from the middle, and a silhouette cut off by the
-        // edge looks like one that does not fit.
-        recentre()
-        if measuring {
-            settleHeldDistance()
-        }
-        keepInPicture()
-        recentre()
-    }
-
-    /// Stands the camera the held distance off the device, further while it is bent.
-    private func place() {
         let orbit = Self.cameraOrbit(forHingeAngle: hingeAngle)
         let direction = SIMD3<Float>(Float(sin(orbit)), Float(cos(orbit)), 0)
         let centre = posedCentre()
         // A bent device stands taller than a flat one and needs a little more room. Only while bent:
         // open is the common view and should stay tight to the window.
         let bend = Float(sin(.pi * (180 - min(max(hingeAngle, 0), 180)) / 180))
-        cameraNode.simdPosition = centre + direction * (flatDistance * (1 + 0.2 * bend))
+        cameraNode.simdPosition = centre + direction * (heldDistance() * (1 + 0.2 * bend))
         cameraNode.look(
             at: SCNVector3(centre),
             up: SCNVector3(Self.cameraUp(quarterTurns: guestQuarterTurns, direction: direction)),
             localFront: SCNVector3(0, 0, -1)
         )
-    }
-
-    /// How much of the window the device takes up at the held distance. As tight as the open pose
-    /// was when it was measured from the asset alone and approved, with just enough room for its
-    /// shadow and for antialiasing not to clip the edges.
-    private static let fill: Float = 0.94
-
-    /// Corrects the held distance from a picture of the device at it. The measurement reads the
-    /// asset's geometry, and the shut cover's posed vertices read larger than its face draws, so the
-    /// distance that geometry gives stands too far back. This happens only when the distance is
-    /// measured, once per side of the fold and per window size, and it is then held as before, so
-    /// nothing zooms while the hinge moves.
-    private func settleHeldDistance() {
-        for _ in 0..<3 {
-            guard let seen = measureOnScreen() else { return }
-            let taken = max(seen.maxX - seen.minX, seen.maxY - seen.minY)
-            guard taken > 0.05, taken < 0.995, abs(taken - Self.fill) > 0.015 else { return }
-            flatDistance *= taken / Self.fill
-            place()
-            recentre()
-        }
-    }
-
-    /// Backs the camera off when a pose would not fit at the held distance. The steep poses near
-    /// the fold do not: the camera has swung to the side and is close, so a device standing on its
-    /// hinge looms taller than it lay. This only ever backs off, so the open, half open and shut
-    /// poses, which fit, are shown exactly as measured.
-    private func keepInPicture() {
-        let orbit = Self.cameraOrbit(forHingeAngle: hingeAngle)
-        let direction = SIMD3<Float>(Float(sin(orbit)), Float(cos(orbit)), 0)
-        let centre = posedCentre()
-        for _ in 0..<5 {
-            guard let seen = measureOnScreen() else { return }
-            let taken = max(seen.maxX - seen.minX, seen.maxY - seen.minY)
-            guard taken > 0.97 else { return }
-            // Touching both edges says only that it does not fit, not by how much.
-            let step: Float = taken > 0.995 ? 1.15 : taken / 0.94
-            let distance = simd_length(cameraNode.simdPosition - centre)
-            cameraNode.simdPosition = centre + direction * (distance * step)
-        }
+        recentre()
     }
 
     /// Where the device is in the picture, as fractions of it, or nil when it is not in it at all.
