@@ -13,8 +13,9 @@ final class FoldablePosesTests: XCTestCase {
         }) else {
             throw XCTSkip("no booted foldable")
         }
-        let control = try adapter.openFoldableControl(device.udid)
-        try await control.activate()
+        let control = try await IntegrationFoldable.shared.control(
+            for: device.udid, adapter: adapter
+        )
         let panels = try adapter.panels(device.udid)
 
         for (name, angle) in [("Cover", 0.0), ("Partially Open", 120.0), ("Fully Open", 180.0)] {

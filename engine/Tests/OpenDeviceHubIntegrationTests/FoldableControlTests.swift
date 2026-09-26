@@ -18,46 +18,54 @@ final class FoldableControlTests: XCTestCase {
 
     /// Which panel the guest is actually drawing to.
     ///
-    /// Both panels stay powered with a live surface whatever the hinge is doing, so neither the
-    /// power state nor the surface says which is in use. What does say it is the picture: the panel
-    /// being drawn carries a screen full of detail and the other is close to blank, which shows up
-    /// as an order of magnitude difference in how well the capture compresses.
-    private func drawnPanel(udid: String, among panels: [DevicePanel]) throws -> DevicePanel? {
-        var best: (panel: DevicePanel, density: Double)?
-        for panel in panels {
-            let file = URL(fileURLWithPath: NSTemporaryDirectory())
-                .appending(path: "odh-panel-\(UUID().uuidString).png")
-            defer { try? FileManager.default.removeItem(at: file) }
-
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-            process.arguments = [
-                "simctl", "io", udid, "screenshot",
-                "--display", panel.id,
-                file.path(percentEncoded: false),
-            ]
-            process.environment = ProcessInfo.processInfo.environment
-            process.standardOutput = Pipe()
-            process.standardError = Pipe()
-            try process.run()
-            process.waitUntilExit()
-
-            let size = (try? FileManager.default.attributesOfItem(
-                atPath: file.path(percentEncoded: false)
-            )[.size] as? Int) ?? 0
-            let pixels = panel.pixelSize.width * panel.pixelSize.height
-            guard pixels > 0 else { continue }
-            let density = Double(size ?? 0) / Double(pixels)
-            if best == nil || density > best!.density { best = (panel, density) }
+    /// Both panels hand over a frame when a session opens, so the frame alone says nothing. What
+    /// says it is the picture in it: the panel in use carries a lit screen and the other is blank.
+    /// Measured on 27A266a: open, the unfolded panel is lit and the cover blank; shut, the reverse.
+    private func drawnPanels(udid: String, among panels: [DevicePanel]) async throws -> [String] {
+        var drawn: [String] = []
+        for panel in panels where try await hasPicture(udid: udid, panel: panel) {
+            drawn.append(panel.name)
         }
-        // A clear winner only. Two panels showing the same amount of detail would mean this measure
-        // has stopped working, and a wrong answer is worse than none.
-        guard let best, best.density > 0.1 else { return nil }
-        return best.panel
+        return drawn
     }
 
-    private func settle(_ seconds: TimeInterval = 3) {
-        RunLoop.current.run(until: Date().addingTimeInterval(seconds))
+    private func hasPicture(udid: String, panel: DevicePanel) async throws -> Bool {
+        let session = try makeAdapter().openDisplay(udid, panel: panel)
+        defer { session.close() }
+        let waited = Task { () -> Bool in
+            for await frame in session.frames { return Self.isLit(frame.surface) }
+            return false
+        }
+        let timeout = Task {
+            try? await Task.sleep(for: .seconds(4))
+            waited.cancel()
+        }
+        defer { timeout.cancel() }
+        return await waited.value
+    }
+
+    private static func isLit(_ surface: IOSurfaceRef) -> Bool {
+        IOSurfaceLock(surface, .readOnly, nil)
+        defer { IOSurfaceUnlock(surface, .readOnly, nil) }
+        let base = IOSurfaceGetBaseAddress(surface)
+        let rowBytes = IOSurfaceGetBytesPerRow(surface)
+        let width = IOSurfaceGetWidth(surface)
+        let height = IOSurfaceGetHeight(surface)
+        var lit = 0
+        for y in stride(from: 0, to: height, by: max(height / 20, 1)) {
+            for x in stride(from: 0, to: width, by: max(width / 20, 1)) {
+                let pixel = base.advanced(by: y * rowBytes + x * 4)
+                    .assumingMemoryBound(to: UInt8.self)
+                if Int(pixel[0]) + Int(pixel[1]) + Int(pixel[2]) > 24 { lit += 1 }
+            }
+        }
+        return lit > 40
+    }
+
+    /// Waited rather than run: spinning a run loop inside an async test returns at once, which read
+    /// the guest before it had moved and made these checks look flaky.
+    private func settle(_ seconds: Double = 3) async {
+        try? await Task.sleep(for: .seconds(seconds))
     }
 
     func testOpeningTheControlOnABootedDevice() throws {
@@ -83,28 +91,22 @@ final class FoldableControlTests: XCTestCase {
     func testTheHingeMovesTheGuest() async throws {
         try IntegrationGate.requireEnabled()
         let udid = try foldable().udid
-        let control = try makeAdapter().openFoldableControl(udid)
-        try await control.activate()
-
+        let control = try await IntegrationFoldable.shared.control(for: udid, adapter: makeAdapter())
         let panels = try makeAdapter().panels(udid)
 
         try control.setHingeAngle(FoldableControl.closedAngle)
-        settle()
-        XCTAssertEqual(
-            try drawnPanel(udid: udid, among: panels)?.name, "Cover",
-            "closed should leave the cover in use"
-        )
+        await settle(6)
+        var drawn = try await drawnPanels(udid: udid, among: panels)
+        XCTAssertEqual(drawn, ["Cover"], "closed should leave the cover in use")
 
         try control.setHingeAngle(FoldableControl.openAngle)
-        settle()
-        XCTAssertEqual(
-            try drawnPanel(udid: udid, among: panels)?.name, "Unfolded",
-            "opening should hand over to the unfolded panel"
-        )
+        await settle(6)
+        drawn = try await drawnPanels(udid: udid, among: panels)
+        XCTAssertEqual(drawn, ["Unfolded"], "opening should hand over to the unfolded panel")
 
         // Left as it was found.
         try control.setHingeAngle(FoldableControl.closedAngle)
-        settle()
+        await settle()
     }
 
     /// The orientation the guest says it is in, read out of the test host's own log.
@@ -150,28 +152,35 @@ final class FoldableControlTests: XCTestCase {
 
         try IntegrationHost.install(on: udid)
         try run("/usr/bin/xcrun", ["simctl", "launch", udid, IntegrationHost.bundleID])
-        settle(4)
+        await settle(4)
 
-        let control = try adapter.openFoldableControl(udid)
-        try await control.activate()
+        let control = try await IntegrationFoldable.shared.control(for: udid, adapter: adapter)
 
+        try control.setHingeAngle(FoldableControl.openAngle)
+        await settle(4)
         try control.setOrientation(.portrait)
-        settle(3)
-        XCTAssertEqual(try reportedOrientation(udid: udid), "PORTRAIT")
+        await settle(3)
+        // What the guest calls itself is its own panel's orientation, which is the device's turned
+        // by however the panel is built into the housing. So this reads the change, not the name.
+        let upright = try reportedOrientation(udid: udid)
+        XCTAssertNotNil(upright)
 
         // The route used for every other device, which the provider republishes over.
         try? adapter.setOrientation(.landscapeLeft, udid: udid)
-        settle(3)
+        await settle(3)
         XCTAssertEqual(
-            try reportedOrientation(udid: udid), "PORTRAIT",
+            try reportedOrientation(udid: udid), upright,
             "the ordinary rotation is expected to do nothing on a foldable"
         )
 
         try control.setOrientation(.landscapeLeft)
-        settle(3)
-        XCTAssertEqual(try reportedOrientation(udid: udid), "LANDSCAPELEFT")
+        await settle(3)
+        XCTAssertNotEqual(
+            try reportedOrientation(udid: udid), upright,
+            "the foldable's own route is expected to turn it"
+        )
 
         try control.setOrientation(.portrait)
-        settle(3)
+        await settle(3)
     }
 }
