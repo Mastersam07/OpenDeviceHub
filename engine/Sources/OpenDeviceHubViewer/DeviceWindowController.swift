@@ -28,6 +28,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     public func showHingeAngle(_ degrees: Double) {
         foldAngle = degrees
         controlBar.showFoldAngle(degrees)
+        toolbar?.showFoldAngle(degrees)
         modelView?.setHingeAngle(degrees)
     }
     private let presentationView: DevicePresentationView
@@ -166,6 +167,8 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             controlBar.onFoldMode = { [weak self] mode in
                 guard let self else { return }
                 foldAngle = mode.angle
+                controlBar.showFoldAngle(mode.angle)
+                toolbar?.showFoldAngle(mode.angle)
                 modelView?.setHingeAngle(mode.angle)
                 onHingeAngle?(mode.angle)
             }
@@ -613,6 +616,9 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         guard let window else { return }
         let toolbar = DeviceToolbar(actions: actions)
         toolbar.install(on: window)
+        // The toolbar's fold positions drive the same path as the bar's.
+        toolbar.onFoldMode = { [weak self] mode in self?.controlBar.onFoldMode?(mode) }
+        if window.styleMask.contains(.fullScreen) { toolbar.setFoldModes(visible: hasFoldModes) }
         self.toolbar = toolbar
         // A unified toolbar makes the title bar taller, which would otherwise come out of the
         // device's own height, so the window is sized again now that it is there.
@@ -640,11 +646,18 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         (window as? DeviceWindow)?.constrainsToScreen = true
         window?.contentResizeIncrements = NSSize(width: 1, height: 1)
         presentationView.setFullScreen(true)
+        // Full screen hides the bar's band and reveals the toolbar over it, so the fold positions
+        // move to the toolbar for the duration.
+        if hasFoldModes {
+            toolbar?.setFoldModes(visible: true)
+            toolbar?.showFoldAngle(foldAngle)
+        }
     }
 
     public func windowDidExitFullScreen(_ notification: Notification) {
         (window as? DeviceWindow)?.constrainsToScreen = false
         presentationView.setFullScreen(false)
+        toolbar?.setFoldModes(visible: false)
         // The device may have been turned while full screen, where the window is not resized, so
         // the shape it comes back to is whatever the current orientation asks for.
         applyScaleMode(scaleMode)
