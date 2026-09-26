@@ -21,8 +21,13 @@ final class PanelFollowTests: XCTestCase {
             throw XCTSkip("not a foldable")
         }
 
-        // A frame remembered from an earlier run would move the window, so this one forgets.
-        let manager = DeviceWindowManager(frameStore: WindowFrameStore(storage: ForgetfulStorage()))
+        // A frame remembered from an earlier run would move the window, so this one forgets, and
+        // closing its window must leave the device running rather than shut it down as a real
+        // window would under the user's own setting.
+        let manager = DeviceWindowManager(
+            frameStore: WindowFrameStore(storage: ForgetfulStorage()),
+            shutdown: { _ in }
+        )
         let controller = try manager.open(
             device: device,
             session: try adapter.openDisplay(device.udid, panel: unfolded),

@@ -46,7 +46,9 @@ final class WindowTapOrderTests: XCTestCase {
         }
 
         let recorder = Recorder()
-        let manager = DeviceWindowManager()
+        // Closing the window must leave the device running rather than shut it down as a real
+        // window would under the user's own setting.
+        let manager = DeviceWindowManager(shutdown: { _ in })
         let controller = try manager.open(
             device: device,
             session: try adapter.openDisplay(device.udid, panel: unfolded),
