@@ -168,6 +168,11 @@ public protocol SimulatorAdapter: Sendable {
     func openInput(_ udid: String, screenID: Int) throws -> any InputSession
     /// Opens the control that folds and turns a foldable.
     func openFoldableControl(_ udid: String) throws -> any HingeControl
+    /// One of the guest's CoreDevice features, the plane that answers what the guest is doing.
+    func openCoreDevice(_ udid: String, service: String) throws -> CoreDeviceFeature
+    /// What the guest says about its screens right now, which on a foldable is the only honest
+    /// answer to which panel is in use.
+    func displayReport(_ udid: String) async throws -> DisplayReport
     func openInput(_ udid: String) throws -> any InputSession
     func simulateMemoryWarning(_ udid: String) throws
     /// Turns the device itself, which makes the guest re-lay out. The viewer still has to turn its
@@ -206,5 +211,16 @@ extension DeviceState {
         case "shuttingdown": .shuttingDown
         default: .unknown
         }
+    }
+}
+
+extension SimulatorAdapter {
+    public func openCoreDevice(_ udid: String, service: String) throws -> CoreDeviceFeature {
+        throw EngineError.capabilityUnavailable(name: "CoreDevice \(service) on \(udid)")
+    }
+
+    public func displayReport(_ udid: String) async throws -> DisplayReport {
+        let feature = try openCoreDevice(udid, service: CoreDeviceFeature.displayInfoService)
+        return try DisplayReport.parse(try await feature.perform(action: CoreDeviceFeature.displayInfoAction))
     }
 }

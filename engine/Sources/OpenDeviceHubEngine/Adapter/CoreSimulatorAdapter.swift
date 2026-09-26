@@ -202,6 +202,35 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         return try FoldableControl(port: port, digitizerPort: digitizerPort)
     }
 
+    /// Kept for the life of the adapter, one per device and feature. The guest's services do not
+    /// take kindly to being connected to afresh for every question.
+    private var coreDeviceFeatures: [String: CoreDeviceFeature] = [:]
+
+    public func openCoreDevice(_ udid: String, service: String) throws -> CoreDeviceFeature {
+        lock.lock()
+        defer { lock.unlock() }
+        let key = "\(udid)/\(service)"
+        if let existing = coreDeviceFeatures[key] { return existing }
+
+        let device = try rawDevice(udid)
+        guard DeviceState.from(state: device.state, stateString: device.stateString ?? "") == .booted else {
+            throw EngineError.deviceNotBooted(udid: udid)
+        }
+        guard (device as AnyObject).responds(to: NSSelectorFromString("lookup:error:")) else {
+            throw EngineError.symbolNotFound(
+                name: "-[SimDevice lookup:error:]",
+                framework: PrivateFramework.coreSimulator.rawValue
+            )
+        }
+        let port = device.lookup(service, error: nil)
+        guard port != 0 else {
+            throw EngineError.capabilityUnavailable(name: "\(service) on \(udid)")
+        }
+        let feature = try CoreDeviceFeature(port: port, udid: udid)
+        coreDeviceFeatures[key] = feature
+        return feature
+    }
+
     public func openInput(_ udid: String) throws -> any InputSession {
         lock.lock()
         defer { lock.unlock() }
