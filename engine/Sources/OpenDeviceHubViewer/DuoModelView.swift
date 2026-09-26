@@ -59,7 +59,7 @@ public final class DuoModelView: SCNView {
     /// Built once per screen: reading and skinning the geometry is not something to do per click.
     private var hitMeshes: [ObjectIdentifier: DuoScreenHitMesh] = [:]
     private var flatDistance: Float = 0
-    private var measuredWidth: CGFloat = 0
+    private var measuredSize = CGSize.zero
     /// Renders small probe frames so the device can be centred by looking at it. The view itself
     /// cannot be asked for a picture until it is on screen, and the pose has to be right before then.
     private let probe = SCNRenderer(device: MTLCreateSystemDefaultDevice(), options: nil)
@@ -149,6 +149,11 @@ public final class DuoModelView: SCNView {
     public override func layout() {
         super.layout()
         frameCamera()
+    }
+
+    public override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        needsLayout = true
     }
 
     /// Turns the device. Everything on screen turns, the hardware included, because the guest has
@@ -304,10 +309,27 @@ public final class DuoModelView: SCNView {
     }
 
     private func frameCamera() {
-        if flatDistance == 0 || bounds.width != measuredWidth {
-            measuredWidth = bounds.width
+        let measuring = flatDistance == 0 || bounds.size != measuredSize
+        // Any change of size, not only of width: a foldable's two windows are the same width and
+        // very different heights, so following the guest between them changes only the height, and
+        // a distance measured for the other one left the device small in this one.
+        if measuring {
+            measuredSize = bounds.size
             measureFlat()
         }
+        place()
+        // Centred first: a shut device starts far from the middle, and a silhouette cut off by the
+        // edge looks like one that does not fit.
+        recentre()
+        if measuring {
+            settleHeldDistance()
+        }
+        keepInPicture()
+        recentre()
+    }
+
+    /// Stands the camera the held distance off the device, further while it is bent.
+    private func place() {
         let orbit = Self.cameraOrbit(forHingeAngle: hingeAngle)
         let direction = SIMD3<Float>(Float(sin(orbit)), Float(cos(orbit)), 0)
         let centre = posedCentre()
@@ -320,15 +342,37 @@ public final class DuoModelView: SCNView {
             up: SCNVector3(Self.cameraUp(quarterTurns: guestQuarterTurns, direction: direction)),
             localFront: SCNVector3(0, 0, -1)
         )
-        keepInPicture(from: centre, along: direction)
-        recentre()
+    }
+
+    /// How much of the window the device takes up at the held distance. As tight as the open pose
+    /// was when it was measured from the asset alone and approved, with just enough room for its
+    /// shadow and for antialiasing not to clip the edges.
+    private static let fill: Float = 0.94
+
+    /// Corrects the held distance from a picture of the device at it. The measurement reads the
+    /// asset's geometry, and the shut cover's posed vertices read larger than its face draws, so the
+    /// distance that geometry gives stands too far back. This happens only when the distance is
+    /// measured, once per side of the fold and per window size, and it is then held as before, so
+    /// nothing zooms while the hinge moves.
+    private func settleHeldDistance() {
+        for _ in 0..<3 {
+            guard let seen = measureOnScreen() else { return }
+            let taken = max(seen.maxX - seen.minX, seen.maxY - seen.minY)
+            guard taken > 0.05, taken < 0.995, abs(taken - Self.fill) > 0.015 else { return }
+            flatDistance *= taken / Self.fill
+            place()
+            recentre()
+        }
     }
 
     /// Backs the camera off when a pose would not fit at the held distance. The steep poses near
     /// the fold do not: the camera has swung to the side and is close, so a device standing on its
     /// hinge looms taller than it lay. This only ever backs off, so the open, half open and shut
     /// poses, which fit, are shown exactly as measured.
-    private func keepInPicture(from centre: SIMD3<Float>, along direction: SIMD3<Float>) {
+    private func keepInPicture() {
+        let orbit = Self.cameraOrbit(forHingeAngle: hingeAngle)
+        let direction = SIMD3<Float>(Float(sin(orbit)), Float(cos(orbit)), 0)
+        let centre = posedCentre()
         for _ in 0..<5 {
             guard let seen = measureOnScreen() else { return }
             let taken = max(seen.maxX - seen.minX, seen.maxY - seen.minY)
