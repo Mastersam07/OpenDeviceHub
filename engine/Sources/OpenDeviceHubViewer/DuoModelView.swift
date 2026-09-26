@@ -51,9 +51,13 @@ public final class DuoModelView: SCNView {
     private let innerScreen: SCNNode
     private let coverScreen: SCNNode
     private let metalDevice: MTLDevice
-    private let nativeQuarterTurns: Int
+    /// How far the panel being shown is built round in its housing. The two panels of a foldable
+    /// are built differently, so this follows whichever one the guest is drawing to.
+    private var nativeQuarterTurns: Int
     private var activeScreen: SCNNode
 
+    /// Built once per screen: reading and skinning the geometry is not something to do per click.
+    private var hitMeshes: [ObjectIdentifier: DuoScreenHitMesh] = [:]
     private var flatDistance: Float = 0
     private var measuredWidth: CGFloat = 0
     /// Renders small probe frames so the device can be centred by looking at it. The view itself
@@ -62,6 +66,9 @@ public final class DuoModelView: SCNView {
 
     /// Where the hinge has been put, kept here rather than read back from the view.
     public private(set) var hingeAngle: Double = 180
+    /// How the device itself is standing. The picture inside the panel is already turned by the
+    /// guest, so the hardware is turned to match by rolling the camera.
+    private var guestQuarterTurns = 0
 
     /// Nil when the installed Xcode ships no foldable model, which leaves the caller on the ordinary
     /// flat renderer rather than showing nothing.
@@ -128,7 +135,12 @@ public final class DuoModelView: SCNView {
 
     /// Bends the device. 0 is shut and 180 is flat open, the same scale the hinge itself uses.
     public func setHingeAngle(_ degrees: Double) {
+        let wasOpen = hingeAngle >= FoldableControl.handoffAngle
         hingeAngle = min(max(degrees, 0), 180)
+        // Crossing the point where the guest changes panels changes what is on show, so the framing
+        // is taken again. Inside either side of it the distance is held, so the poses do not lurch
+        // in size while the hinge moves.
+        if wasOpen != (hingeAngle >= FoldableControl.handoffAngle) { flatDistance = 0 }
         applyPose(at: Pose.time(forHingeAngle: hingeAngle))
         SCNTransaction.flush()
         frameCamera()
@@ -139,9 +151,25 @@ public final class DuoModelView: SCNView {
         frameCamera()
     }
 
+    /// Turns the device. Everything on screen turns, the hardware included, because the guest has
+    /// already turned its own picture inside the panel.
+    public func setOrientation(_ orientation: DeviceOrientation) {
+        let turns = ((orientation.degrees / 90) % 4 + 4) % 4
+        guard turns != guestQuarterTurns else { return }
+        guestQuarterTurns = turns
+        measureFlat()
+        frameCamera()
+    }
+
     /// Which panel the guest is drawing to, so the picture goes on the face that is being shown.
-    public func setShowingCover(_ showingCover: Bool) {
+    /// The panels are built into the housing at different angles, so the turn comes with it.
+    public func setShowingCover(_ showingCover: Bool, nativeRotation: Int) {
         activeScreen = showingCover ? coverScreen : innerScreen
+        nativeQuarterTurns = ((-nativeRotation / 90) % 4 + 4) % 4
+        // The window takes the shape of the panel it shows, so the camera is measured against that
+        // panel too. Framing the cover by the unfolded panel's size left a shut device small in a
+        // window built for it.
+        flatDistance = 0
         frameCamera()
     }
 
@@ -220,21 +248,41 @@ public final class DuoModelView: SCNView {
         return points.reduce(SIMD3<Float>.zero, +) / Float(points.count)
     }
 
-    /// How far back to stand, measured once from the device lying flat and then held, so the poses
-    /// do not lurch in size between one another.
+    /// How far back to stand, measured once on each side of the fold and then held, so the poses do
+    /// not lurch in size while the hinge moves.
+    ///
+    /// Open, the whole device is on show and is framed by the larger panel as it was authored, which
+    /// is flat. Shut, only the cover is, and the camera has swung round to face it, so the cover is
+    /// framed from where its vertices are now, along the axes the camera has from there. Framing it
+    /// from its authored box along the flat camera's axes measured its thickness as its width.
     private func measureFlat() {
-        let box = innerScreen.boundingBox
-        let world = simd_float4x4(innerScreen.presentation.worldTransform)
-        var points: [SIMD3<Float>] = []
-        for x in [box.min.x, box.max.x] {
-            for y in [box.min.y, box.max.y] {
-                for z in [box.min.z, box.max.z] {
-                    points.append(simd_make_float3(
-                        world * SIMD4<Float>(Float(x), Float(y), Float(z), 1)
-                    ))
+        let open = hingeAngle >= FoldableControl.handoffAngle
+        let orbit = Self.cameraOrbit(forHingeAngle: hingeAngle)
+        let direction = SIMD3<Float>(Float(sin(orbit)), Float(cos(orbit)), 0)
+        let modelUp = SIMD3<Float>(0, 0, -1)
+        let across = simd_normalize(simd_cross(modelUp, direction))
+
+        let points: [SIMD3<Float>]
+        if open {
+            let box = innerScreen.boundingBox
+            let world = simd_float4x4(innerScreen.presentation.worldTransform)
+            var corners: [SIMD3<Float>] = []
+            for x in [box.min.x, box.max.x] {
+                for y in [box.min.y, box.max.y] {
+                    for z in [box.min.z, box.max.z] {
+                        corners.append(simd_make_float3(
+                            world * SIMD4<Float>(Float(x), Float(y), Float(z), 1)
+                        ))
+                    }
                 }
             }
+            points = corners
+        } else {
+            points = hitMesh(for: coverScreen)?
+                .posedPositions(bones: coverScreen.skinner?.bones ?? []) ?? []
         }
+        guard !points.isEmpty else { return }
+
         let centre = points.reduce(SIMD3<Float>.zero, +) / Float(points.count)
         func half(_ axis: SIMD3<Float>) -> Float {
             points.map { abs(simd_dot($0 - centre, axis)) }.max() ?? 1
@@ -242,10 +290,17 @@ public final class DuoModelView: SCNView {
         let aspect = Float(max(bounds.width, 1) / max(bounds.height, 1))
         let verticalField = Float(31) * .pi / 180
         let horizontalField = 2 * atan(tan(verticalField / 2) * aspect)
-        flatDistance = max(
-            half(SIMD3<Float>(0, 0, -1)) / tan(verticalField / 2),
-            half(SIMD3<Float>(1, 0, 0)) / tan(horizontalField / 2)
+        // A quarter turn lays the device's long axis across the window, so which of its extents has
+        // to fit which field swaps with it.
+        let upright = guestQuarterTurns.isMultiple(of: 2)
+        let fit = max(
+            half(upright ? modelUp : across) / tan(verticalField / 2),
+            half(upright ? across : modelUp) / tan(horizontalField / 2)
         ) * 1.12
+        // The camera stands off the bones, and what is being framed can sit nearer the camera or
+        // further from it than they do. Shut, the cover face is a whole folded device away from the
+        // hinge, and standing the fit distance off the hinge left it small.
+        flatDistance = fit + simd_dot(posedCentre() - centre, direction)
     }
 
     private func frameCamera() {
@@ -262,10 +317,71 @@ public final class DuoModelView: SCNView {
         cameraNode.simdPosition = centre + direction * (flatDistance * (1 + 0.2 * bend))
         cameraNode.look(
             at: SCNVector3(centre),
-            up: SCNVector3(0, 0, -1),
+            up: SCNVector3(Self.cameraUp(quarterTurns: guestQuarterTurns, direction: direction)),
             localFront: SCNVector3(0, 0, -1)
         )
+        keepInPicture(from: centre, along: direction)
         recentre()
+    }
+
+    /// Backs the camera off when a pose would not fit at the held distance. The steep poses near
+    /// the fold do not: the camera has swung to the side and is close, so a device standing on its
+    /// hinge looms taller than it lay. This only ever backs off, so the open, half open and shut
+    /// poses, which fit, are shown exactly as measured.
+    private func keepInPicture(from centre: SIMD3<Float>, along direction: SIMD3<Float>) {
+        for _ in 0..<5 {
+            guard let seen = measureOnScreen() else { return }
+            let taken = max(seen.maxX - seen.minX, seen.maxY - seen.minY)
+            guard taken > 0.97 else { return }
+            // Touching both edges says only that it does not fit, not by how much.
+            let step: Float = taken > 0.995 ? 1.15 : taken / 0.94
+            let distance = simd_length(cameraNode.simdPosition - centre)
+            cameraNode.simdPosition = centre + direction * (distance * step)
+        }
+    }
+
+    /// Where the device is in the picture, as fractions of it, or nil when it is not in it at all.
+    private func measureOnScreen() -> (minX: Float, maxX: Float, minY: Float, maxY: Float)? {
+        guard let scene else { return nil }
+        probe.scene = scene
+        probe.pointOfView = cameraNode
+        let aspect = Float(max(bounds.width, 1) / max(bounds.height, 1))
+        let size = CGSize(width: 160, height: 160 / CGFloat(aspect))
+        let image = probe.snapshot(atTime: 0, with: size, antialiasingMode: .none)
+        guard let raster = NSBitmapImageRep(data: image.tiffRepresentation ?? Data()) else { return nil }
+
+        var minX = raster.pixelsWide, maxX = -1, minY = raster.pixelsHigh, maxY = -1
+        for y in 0..<raster.pixelsHigh {
+            for x in 0..<raster.pixelsWide {
+                guard let colour = raster.colorAt(x: x, y: y), colour.alphaComponent > 0.3 else {
+                    continue
+                }
+                minX = min(minX, x)
+                maxX = max(maxX, x)
+                minY = min(minY, y)
+                maxY = max(maxY, y)
+            }
+        }
+        guard maxX >= minX, maxY >= minY else { return nil }
+        return (
+            Float(minX) / Float(raster.pixelsWide),
+            Float(maxX + 1) / Float(raster.pixelsWide),
+            Float(minY) / Float(raster.pixelsHigh),
+            Float(maxY + 1) / Float(raster.pixelsHigh)
+        )
+    }
+
+    /// Which way is up for the camera, rolled by however the device is standing. The model's own up
+    /// is the negative z axis; a quarter turn takes it to the axis across the view instead.
+    nonisolated static func cameraUp(quarterTurns: Int, direction: SIMD3<Float>) -> SIMD3<Float> {
+        let modelUp = SIMD3<Float>(0, 0, -1)
+        let across = simd_normalize(simd_cross(modelUp, direction))
+        switch ((quarterTurns % 4) + 4) % 4 {
+        case 1: return -across
+        case 2: return -modelUp
+        case 3: return across
+        default: return modelUp
+        }
     }
 
     /// Nudges the camera until the device sits in the middle of the picture.
@@ -275,32 +391,14 @@ public final class DuoModelView: SCNView {
     /// bounding box is the rest pose, and the cover panel hangs off a single bone sitting near the
     /// origin. What the camera sees cannot be wrong.
     private func recentre() {
-        guard let scene else { return }
-        probe.scene = scene
-        probe.pointOfView = cameraNode
         let aspect = Float(max(bounds.width, 1) / max(bounds.height, 1))
-
-        for _ in 0..<3 {
-            let size = CGSize(width: 160, height: 160 / CGFloat(aspect))
-            let image = probe.snapshot(atTime: 0, with: size, antialiasingMode: .none)
-            guard let raster = NSBitmapImageRep(data: image.tiffRepresentation ?? Data()) else { return }
-
-            var minX = raster.pixelsWide, maxX = -1, minY = raster.pixelsHigh, maxY = -1
-            for y in 0..<raster.pixelsHigh {
-                for x in 0..<raster.pixelsWide {
-                    guard let colour = raster.colorAt(x: x, y: y), colour.alphaComponent > 0.3 else {
-                        continue
-                    }
-                    minX = min(minX, x)
-                    maxX = max(maxX, x)
-                    minY = min(minY, y)
-                    maxY = max(maxY, y)
-                }
-            }
-            guard maxX >= minX, maxY >= minY else { return }
-
-            let offsetX = Float((minX + maxX) / 2) / Float(raster.pixelsWide) - 0.5
-            let offsetY = Float((minY + maxY) / 2) / Float(raster.pixelsHigh) - 0.5
+        // A shut device starts a long way from the middle, and while it is off the edge of the
+        // picture the measured box is cut short, so each pass corrects less than it should and it
+        // takes several to walk it in. Each pass is a small render, so the extra ones are cheap.
+        for _ in 0..<8 {
+            guard let seen = measureOnScreen() else { return }
+            let offsetX = (seen.minX + seen.maxX) / 2 - 0.5
+            let offsetY = (seen.minY + seen.maxY) / 2 - 0.5
             if abs(offsetX) < 0.004, abs(offsetY) < 0.004 { return }
 
             let transform = cameraNode.simdTransform
@@ -380,8 +478,52 @@ public final class DuoModelView: SCNView {
         }
     }
 
+    /// The device as it is drawn, for a screenshot. Nil before the view has rendered once.
+    public func screenshotPNG() -> Data? {
+        let image = snapshot()
+        guard image.size.width > 1,
+              let tiff = image.tiffRepresentation,
+              let raster = NSBitmapImageRep(data: tiff) else { return nil }
+        return raster.representation(using: .png, properties: [:])
+    }
+
     /// Where a click landed on the shown screen, 0 to 1 across and down.
     public var onTouch: ((CGPoint, TouchEvent.Phase) -> Void)?
+
+    /// A scroll is sent as a finger dragging the content: down on the screen begins a contact under
+    /// the pointer, each turn of the wheel moves it, and a pause lifts it. The moved pointer is hit
+    /// tested each time, so the drag follows the screen however the device is posed or turned.
+    public override func scrollWheel(with event: NSEvent) {
+        let pointer = convert(event.locationInWindow, from: nil)
+        if scrollDrag == nil {
+            guard let start = screenPoint(at: pointer) else { return }
+            scrollDrag = ScrollDrag(anchor: pointer, start: start)
+            onTouch?(start, .began)
+        }
+        guard var drag = scrollDrag else { return }
+        let moved = drag.move(
+            deltaX: event.scrollingDeltaX,
+            deltaY: event.scrollingDeltaY,
+            precise: event.hasPreciseScrollingDeltas
+        )
+        if let point = screenPoint(at: moved) {
+            drag.last = point
+            onTouch?(point, .moved)
+        }
+        scrollDrag = drag
+
+        scrollLift?.cancel()
+        let lift = DispatchWorkItem { [weak self] in
+            guard let self, let drag = scrollDrag else { return }
+            scrollDrag = nil
+            onTouch?(drag.last, .ended)
+        }
+        scrollLift = lift
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: lift)
+    }
+
+    private var scrollDrag: ScrollDrag?
+    private var scrollLift: DispatchWorkItem?
 
     public override func mouseDown(with event: NSEvent) { report(event, phase: .began) }
     public override func mouseDragged(with event: NSEvent) { report(event, phase: .moved) }
@@ -389,13 +531,74 @@ public final class DuoModelView: SCNView {
 
     private func report(_ event: NSEvent, phase: TouchEvent.Phase) {
         let point = convert(event.locationInWindow, from: nil)
-        let hits = hitTest(point, options: [
-            .searchMode: SCNHitTestSearchMode.all.rawValue,
-            .ignoreHiddenNodes: true,
-            .backFaceCulling: false,
-        ])
-        guard let hit = hits.first(where: { $0.node === activeScreen }) else { return }
-        let uv = hit.textureCoordinates(withMappingChannel: 0)
-        onTouch?(CGPoint(x: uv.x, y: 1 - uv.y), phase)
+        guard let guestPoint = screenPoint(at: point) else { return }
+        onTouch?(guestPoint, phase)
+    }
+
+    /// Where a click on the window lands on the guest's screen, 0 to 1 across and down.
+    func screenPoint(at point: CGPoint) -> CGPoint? {
+        let mesh = hitMesh()
+        let near = unprojectPoint(SCNVector3(point.x, point.y, 0))
+        let far = unprojectPoint(SCNVector3(point.x, point.y, 1))
+        guard let uv = mesh?.hit(
+            from: SIMD3<Float>(Float(near.x), Float(near.y), Float(near.z)),
+            to: SIMD3<Float>(Float(far.x), Float(far.y), Float(far.z)),
+            bones: activeScreen.skinner?.bones ?? []
+        ) else { return nil }
+
+        // The picture was turned to meet the panel, so the same turn is undone to get back to what
+        // the guest thinks it is showing. This asset's texture coordinates already run down the
+        // picture, the way the guest counts, so nothing is flipped after it: measured on 27A266a by
+        // sampling the device's own framebuffer through each turn and flip and keeping the one whose
+        // colours match what is drawn under the pointer.
+        let turned = Self.unturn(SIMD2<Float>(uv.x, uv.y), quarterTurns: nativeQuarterTurns)
+        return CGPoint(x: CGFloat(turned.x), y: CGFloat(turned.y))
+    }
+
+    /// The inverse of the turn put on the texture.
+    nonisolated static func unturn(_ uv: SIMD2<Float>, quarterTurns: Int) -> SIMD2<Float> {
+        switch ((quarterTurns % 4) + 4) % 4 {
+        case 1: SIMD2<Float>(uv.y, 1 - uv.x)
+        case 2: SIMD2<Float>(1 - uv.x, 1 - uv.y)
+        case 3: SIMD2<Float>(1 - uv.y, uv.x)
+        default: uv
+        }
+    }
+
+    var activeScreenForTesting: SCNNode { activeScreen }
+
+    func hitMesh() -> DuoScreenHitMesh? {
+        hitMesh(for: activeScreen)
+    }
+
+    private func hitMesh(for screen: SCNNode) -> DuoScreenHitMesh? {
+        let key = ObjectIdentifier(screen)
+        if let cached = hitMeshes[key] { return cached }
+        guard let made = DuoScreenHitMesh(node: screen) else { return nil }
+        hitMeshes[key] = made
+        return made
+    }
+}
+
+/// The finger a scroll stands in for: where it went down in the view, how far the scrolling has
+/// carried it since, and the last point of it that was on the screen, which is where it lifts.
+struct ScrollDrag {
+    let anchor: CGPoint
+    private(set) var offset = CGSize.zero
+    var last: CGPoint
+
+    init(anchor: CGPoint, start: CGPoint) {
+        self.anchor = anchor
+        last = start
+    }
+
+    /// Where the finger is now, in the view. A mouse wheel reports lines rather than points, and a
+    /// line is about a dozen of them. The view counts up and a scroll counts down, so a scroll down
+    /// moves the finger down.
+    mutating func move(deltaX: CGFloat, deltaY: CGFloat, precise: Bool) -> CGPoint {
+        let factor: CGFloat = precise ? 1 : 12
+        offset.width += deltaX * factor
+        offset.height -= deltaY * factor
+        return CGPoint(x: anchor.x + offset.width, y: anchor.y + offset.height)
     }
 }

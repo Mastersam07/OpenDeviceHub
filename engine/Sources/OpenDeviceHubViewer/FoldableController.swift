@@ -56,6 +56,23 @@ public final class FoldableController {
         send(degrees, to: control, for: udid)
     }
 
+    /// Turns a foldable, which only its own provider can do.
+    public func setOrientation(_ orientation: DeviceOrientation, for udid: String) throws {
+        guard let control = control(for: udid) else {
+            throw EngineError.capabilityUnavailable(name: "hinge on \(udid)")
+        }
+        guard ready.contains(udid) else {
+            // The feature has to be on first, and that is a round trip, so this lands just after.
+            Task { [weak self] in
+                try? await control.activate()
+                self?.ready.insert(udid)
+                try? control.setOrientation(orientation)
+            }
+            return
+        }
+        try control.setOrientation(orientation)
+    }
+
     public func forget(_ udid: String) {
         controls[udid] = nil
         ready.remove(udid)

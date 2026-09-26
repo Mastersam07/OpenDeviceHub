@@ -113,6 +113,43 @@ struct ODHubViewer: ParsableCommand {
 
             // A foldable has two screens and only one can be in a window, so the choice is
             // remembered per device. Anything else has one screen and this is always nil.
+            // A foldable takes its orientation from the same provider as its hinge, which overwrites
+            // an ordinary rotation the moment it is sent. So it is turned through the fold control
+            // and everything else the usual way.
+            let turn: @MainActor (DeviceOrientation, String) -> Void = { orientation, udid in
+                guard let controller = manager.controller(for: udid) else { return }
+                do {
+                    if controller.foldsAtHinge {
+                        try foldables.setOrientation(orientation, for: udid)
+                    } else {
+                        try adapter.setOrientation(orientation, udid: udid)
+                    }
+                    controller.setOrientation(orientation)
+                } catch {
+                    print("rotate failed: \(error.localizedDescription)")
+                }
+            }
+
+            // The guest moves its own picture between the two panels. The window follows by being
+            // pointed at the other one, keeping the window itself: rebuilding it blinks.
+            let followPanel: @MainActor (String, DevicePanel) -> Void = { udid, panel in
+                guard let controller = manager.controller(for: udid) else { return }
+                do {
+                    let session = try adapter.openDisplay(udid, panel: panel)
+                    session.setBezelEnabled(bezel)
+                    let input = try? adapter.openInput(udid, screenID: panel.screenID)
+                    controller.showPanel(
+                        session: session,
+                        input: input,
+                        chrome: panel.chromeIdentifier.flatMap { ChromeLocator.chrome(identifier: $0) },
+                        nativeRotation: panel.nativeRotation,
+                        showingCover: panel.name != "Unfolded"
+                    )
+                } catch {
+                    print("could not show \(panel.name): \(error.localizedDescription)")
+                }
+            }
+
             let rememberedPanel: @MainActor (String) -> DevicePanel? = { udid in
                 guard let panels = try? adapter.panels(udid), panels.count > 1 else { return nil }
                 if let index = settings.panelIndex(for: udid),
@@ -134,6 +171,7 @@ struct ODHubViewer: ParsableCommand {
                     manager: manager,
                     allowBoot: allowBoot,
                     panel: rememberedPanel(udid),
+                    rotate: turn,
                     present: present
                 )
                 recent.remember(udid)
@@ -157,12 +195,7 @@ struct ODHubViewer: ParsableCommand {
                       let target = panels.first(where: { $0.name == (unfolded ? "Unfolded" : "Cover") }),
                       settings.panelIndex(for: udid) != target.index else { return }
                 settings.setPanelIndex(target.index, for: udid)
-                manager.closeKeepingDevice(udid)
-                do {
-                    try show(udid, false)
-                } catch {
-                    print("could not follow the fold: \(error.localizedDescription)")
-                }
+                followPanel(udid, target)
             }
 
             for udid in plan.udids {
@@ -287,8 +320,8 @@ struct ODHubViewer: ParsableCommand {
                     for udid in manager.openUDIDs {
                         Task {
                             do {
-                                let session = try adapter.openInput(udid)
-                                defer { session.close() }
+                                guard let session = manager.controller(for: udid)?.inputSession
+                                else { return }
                                 try await session.button(button, phase: .down)
                                 try await Task.sleep(for: .milliseconds(15))
                                 try await session.button(button, phase: .up)
@@ -304,12 +337,7 @@ struct ODHubViewer: ParsableCommand {
                         let next = left
                             ? controller.currentOrientation.rotatedLeft
                             : controller.currentOrientation.rotatedRight
-                        do {
-                            try adapter.setOrientation(next, udid: udid)
-                            controller.setOrientation(next)
-                        } catch {
-                            print("rotate failed: \(error.localizedDescription)")
-                        }
+                        turn(next, udid)
                     }
                 },
                 restart: {
@@ -422,14 +450,7 @@ struct ODHubViewer: ParsableCommand {
                 showPanel: { panel in
                     guard let udid = manager.frontmostUDID else { return }
                     settings.setPanelIndex(panel.index, for: udid)
-                    // The window is rebuilt rather than re-pointed: the two panels have different
-                    // shapes, so the frame, the scaling and the input mapping all follow the screen.
-                    manager.closeKeepingDevice(udid)
-                    do {
-                        try show(udid, false)
-                    } catch {
-                        print("could not show \(panel.name): \(error.localizedDescription)")
-                    }
+                    followPanel(udid, panel)
                 },
                 newSimulator: {
                     let simctl = SimctlService()
@@ -451,22 +472,17 @@ struct ODHubViewer: ParsableCommand {
                 },
                 setOrientation: { orientation in
                     for udid in manager.openUDIDs {
-                        guard let controller = manager.controller(for: udid) else { continue }
-                        do {
-                            try adapter.setOrientation(orientation, udid: udid)
-                            controller.setOrientation(orientation)
-                        } catch {
-                            print("rotate failed: \(error.localizedDescription)")
-                        }
+                        turn(orientation, udid)
                     }
                 },
                 appSwitcher: {
                     for udid in manager.openUDIDs {
+                        guard let controller = manager.controller(for: udid),
+                              let session = controller.inputSession else { continue }
+                        let turn = controller.layoutTurn
                         Task {
                             do {
-                                let session = try adapter.openInput(udid)
-                                defer { session.close() }
-                                try await openAppSwitcher(session)
+                                try await SystemGesture.appSwitcher(on: session, turn: turn)
                             } catch {
                                 print("app switcher failed: \(error.localizedDescription)")
                             }
@@ -565,6 +581,7 @@ struct ODHubViewer: ParsableCommand {
         manager: DeviceWindowManager,
         allowBoot: Bool,
         panel: DevicePanel? = nil,
+        rotate: @escaping @MainActor (DeviceOrientation, String) -> Void,
         present: @escaping @MainActor ([URL]) -> Void
     ) throws {
         guard var device = devices.first(where: {
@@ -589,7 +606,9 @@ struct ODHubViewer: ParsableCommand {
         let foldsAtHinge = ((try? adapter.panels(device.udid))?.count ?? 1) > 1
         let input: (any InputSession)?
         do {
-            input = try adapter.openInput(device.udid)
+            // Aimed at the panel being shown. On a foldable the default screen is the cover, so
+            // taps on the unfolded panel would otherwise land on the other side of the device.
+            input = try adapter.openInput(device.udid, screenID: panel?.screenID ?? 0)
         } catch {
             input = nil
             print("\(device.name): clicking will not send taps, \(error.localizedDescription)")
@@ -614,7 +633,13 @@ struct ODHubViewer: ParsableCommand {
         if let panel, !controller.foldsAtHinge {
             controller.nativeRotation = panel.nativeRotation
         }
-        installToolbar(udid: device.udid, manager: manager, adapter: adapter, present: present)
+        installToolbar(
+            udid: device.udid,
+            manager: manager,
+            adapter: adapter,
+            rotate: rotate,
+            present: present
+        )
         if case .largerThanScreen(let size) = controller.applyScaleMode(scale) {
             print("\(device.name): \(scale.displayName) needs \(Int(size.width))x\(Int(size.height)) points, which is larger than this display.")
         }
@@ -733,6 +758,7 @@ private func installToolbar(
     udid: String,
     manager: DeviceWindowManager,
     adapter: any SimulatorAdapter,
+    rotate: @escaping @MainActor (DeviceOrientation, String) -> Void,
     present: @escaping @MainActor ([URL]) -> Void
 ) {
     guard let controller = manager.controller(for: udid) else { return }
@@ -741,8 +767,7 @@ private func installToolbar(
             guard let controller else { return }
             Task {
                 do {
-                    let session = try adapter.openInput(udid)
-                    defer { session.close() }
+                    guard let session = manager.controller(for: udid)?.inputSession else { return }
                     if controller.hasHomeButton {
                         try await session.button(.home, phase: .down)
                         try await Task.sleep(for: .milliseconds(15))
@@ -750,7 +775,7 @@ private func installToolbar(
                     } else {
                         // A Face ID device has no Home button, so it goes home the way a hand
                         // would, by swiping up from the bottom edge.
-                        try await swipeHome(session)
+                        try await SystemGesture.home(on: session, turn: controller.layoutTurn)
                     }
                 } catch {
                     print("home failed: \(error.localizedDescription)")
@@ -765,46 +790,13 @@ private func installToolbar(
         },
         rotate: { [weak controller] toLeft in
             guard let controller else { return }
-            let next = toLeft
-                ? controller.currentOrientation.rotatedLeft
-                : controller.currentOrientation.rotatedRight
-            do {
-                try adapter.setOrientation(next, udid: udid)
-                controller.setOrientation(next)
-            } catch {
-                print("rotate failed: \(error.localizedDescription)")
-            }
+            rotate(
+                toLeft ? controller.currentOrientation.rotatedLeft
+                       : controller.currentOrientation.rotatedRight,
+                udid
+            )
         }
     ))
-}
-
-private func openAppSwitcher(_ session: any InputSession) async throws {
-    let path = HomeGesture.appSwitcherPath()
-    try await session.touch(TouchEvent(phase: .began, points: [path[0]], edge: .bottom))
-    for point in path.dropFirst() {
-        try await Task.sleep(for: .milliseconds(10))
-        try await session.touch(TouchEvent(phase: .moved, points: [point], edge: .bottom))
-    }
-    let settle = HomeGesture.settlePath(around: path[path.count - 1])
-    for point in settle {
-        try await Task.sleep(for: .milliseconds(40))
-        try await session.touch(TouchEvent(phase: .moved, points: [point], edge: .bottom))
-    }
-    try await session.touch(
-        TouchEvent(phase: .ended, points: [settle[settle.count - 1]], edge: .bottom)
-    )
-}
-
-private func swipeHome(_ session: any InputSession) async throws {
-    let path = HomeGesture.swipePath()
-    try await session.touch(TouchEvent(phase: .began, points: [path[0]], edge: .bottom))
-    for point in path.dropFirst() {
-        try await Task.sleep(for: .milliseconds(10))
-        try await session.touch(TouchEvent(phase: .moved, points: [point], edge: .bottom))
-    }
-    try await session.touch(
-        TouchEvent(phase: .ended, points: [path[path.count - 1]], edge: .bottom)
-    )
 }
 
 /// Off the main thread, because every one of these blocks for a second or more and they run from a

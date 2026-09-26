@@ -173,12 +173,6 @@ public final class DeviceWindowManager {
         close(udid, shuttingDown: true)
     }
 
-    /// Closes the window and leaves the device running, which is what showing another of its screens
-    /// needs: the window goes, the device does not.
-    public func closeKeepingDevice(_ udid: String) {
-        close(udid, shuttingDown: false)
-    }
-
     private func close(_ udid: String, shuttingDown: Bool) {
         guard let controller = controllers.removeValue(forKey: udid) else { return }
         controller.onClose = nil
