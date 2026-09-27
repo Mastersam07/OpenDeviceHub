@@ -167,8 +167,14 @@ public final class DeviceWindowManager {
         case .reattach:
             do {
                 let attachment = try attach(change.udid)
-                controller.reattach(session: attachment.session, input: attachment.input)
+                controller.reattach(
+                    session: attachment.session,
+                    input: attachment.input,
+                    cover: attachment.cover,
+                    retarget: attachment.retarget
+                )
                 report("\(controller.deviceTitle) reattached")
+                onReattached?(change.udid)
             } catch {
                 let reason = DetachReason.failed(error.localizedDescription)
                 controller.detach(reason: reason)
@@ -249,6 +255,9 @@ public final class DeviceWindowManager {
     /// The UDIDs of every open window, so a menu action can reach all of them.
     /// Called after a window has closed, so anything held per device can be let go of.
     public var onDeviceClosed: ((String) -> Void)?
+    /// Called once a window has fresh sessions after its device came back, so whatever else was
+    /// opened for the boot that ended can be opened again.
+    public var onReattached: ((String) -> Void)?
 
     public var openUDIDs: [String] { Array(controllers.keys) }
 
@@ -393,13 +402,22 @@ public final class DeviceWindowManager {
     }
 }
 
-/// The pair of sessions a window needs, so reattaching after a reboot is one call.
+/// The sessions a window needs, so reattaching after a reboot is one call.
 public struct DeviceAttachment {
     public let session: any DisplaySession
     public let input: (any InputSession)?
+    public let cover: FoldableCover?
+    public let retarget: ((Int) -> Void)?
 
-    public init(session: any DisplaySession, input: (any InputSession)?) {
+    public init(
+        session: any DisplaySession,
+        input: (any InputSession)?,
+        cover: FoldableCover? = nil,
+        retarget: ((Int) -> Void)? = nil
+    ) {
         self.session = session
         self.input = input
+        self.cover = cover
+        self.retarget = retarget
     }
 }

@@ -138,6 +138,25 @@ struct ODHubViewer: ParsableCommand {
                 }
             }
 
+            // Opens unfolded unless told otherwise, which is where the device's own tooling starts.
+            let followFold: @MainActor (String, DeviceWindowController, Double?) -> Void = { udid, controller, angle in
+                let angle = angle ?? DeviceControlBar.FoldMode.fullyOpen.angle
+                controller.showHingeAngle(angle)
+                controller.onHingeAngle = { angle in foldables.setAngle(angle, for: udid) }
+                controller.onFoldPreset = { angle in foldables.setAngle(angle, for: udid, eased: true) }
+                foldables.setAngle(angle, for: udid)
+                foldables.follow(
+                    udid,
+                    nudges: controller.screenChanges,
+                    onPanel: { [weak controller] panel in
+                        controller?.setActivePanel(screenID: panel.displayID)
+                    },
+                    onHinge: { [weak controller] degrees in
+                        controller?.showHingeAngle(degrees)
+                    }
+                )
+            }
+
             let show: @MainActor (String, Bool) throws -> Void = { udid, allowBoot in
                 let current = try adapter.devices()
                 try self.open(
@@ -151,25 +170,20 @@ struct ODHubViewer: ParsableCommand {
                 )
                 recent.remember(udid)
                 pasteboard.adopt(udid)
-
-                // Opens unfolded, which is where the device's own tooling starts.
                 if let controller = manager.controller(for: udid), controller.foldsAtHinge {
-                    let angle = foldables.angle(for: udid) ?? DeviceControlBar.FoldMode.fullyOpen.angle
-                    controller.showHingeAngle(angle)
-                    controller.onHingeAngle = { angle in foldables.setAngle(angle, for: udid) }
-                    controller.onFoldPreset = { angle in foldables.setAngle(angle, for: udid, eased: true) }
-                    foldables.setAngle(angle, for: udid)
-                    foldables.follow(
-                        udid,
-                        nudges: controller.screenChanges,
-                        onPanel: { [weak controller] panel in
-                            controller?.setActivePanel(screenID: panel.displayID)
-                        },
-                        onHinge: { [weak controller] degrees in
-                            controller?.showHingeAngle(degrees)
-                        }
-                    )
+                    followFold(udid, controller, foldables.angle(for: udid))
                 }
+            }
+
+            // The hinge, its readings and the clipboard connection all belong to the boot that
+            // ended, so they are opened again. The window keeps the fold it was showing.
+            manager.onReattached = { udid in
+                pasteboard.forget(udid)
+                pasteboard.adopt(udid)
+                guard let controller = manager.controller(for: udid), controller.foldsAtHinge else { return }
+                let angle = foldables.angle(for: udid)
+                foldables.forget(udid)
+                followFold(udid, controller, angle)
             }
 
             for udid in plan.udids {
@@ -525,13 +539,8 @@ struct ODHubViewer: ParsableCommand {
                 manager.follow(
                     notifier,
                     attach: { udid in
-                        let panels = (try? adapter.panels(udid)) ?? []
-                        let session = try adapter.openDisplay(udid, panel: panels.first { $0.name == "Unfolded" })
-                        session.setBezelEnabled(bezel)
-                        return DeviceAttachment(
-                            session: session,
-                            input: try? adapter.openInput(udid)
-                        )
+                        adapter.forgetConnections(udid)
+                        return try openSessions(udid, adapter: adapter, bezel: bezel).attachment
                     },
                     boot: { udid in try SimctlService().boot(udid: udid) },
                     // Only when no simulator was named. `odhub view <udid>` asked for one window and
@@ -603,46 +612,29 @@ struct ODHubViewer: ParsableCommand {
             device = try adapter.devices().first { $0.udid == device.udid } ?? device
         }
 
-        // More than one built in screen means a hinge between them.
-        let panels = (try? adapter.panels(device.udid)) ?? []
-        let foldsAtHinge = panels.count > 1
-        let unfolded = foldsAtHinge ? panels.first { $0.name == "Unfolded" } : nil
-        let coverPanel = foldsAtHinge ? panels.first { $0.name == "Cover" } : nil
-        let panel = unfolded
-        let session = try adapter.openDisplay(device.udid, panel: panel)
-        session.setBezelEnabled(bezel)
-        var cover: FoldableCover?
-        if let coverPanel, let coverSession = try? adapter.openDisplay(device.udid, panel: coverPanel) {
-            coverSession.setBezelEnabled(bezel)
-            cover = FoldableCover(panel: coverPanel, session: coverSession)
+        let opened = try openSessions(device.udid, adapter: adapter, bezel: bezel)
+        if let failure = opened.inputFailure {
+            print("\(device.name): clicking will not send taps, \(failure)")
         }
-        let input: (any InputSession)?
-        do {
-            input = try adapter.openInput(device.udid, screenID: panel?.screenID ?? 0)
-        } catch {
-            input = nil
-            print("\(device.name): clicking will not send taps, \(error.localizedDescription)")
-        }
-        let retarget: ((Int) -> Void)? = (input as? PanelInputSession).map { targeted in
-            { targeted.setTarget(screenID: $0) }
-        }
+        let panel = opened.unfolded
+        let session = opened.session
         let orientation = DevicectlService().orientation(udid: device.udid) ?? .portrait
 
         let controller = try manager.open(
             device: device,
             session: session,
-            input: input,
+            input: opened.input,
             scaleMode: scale,
             bezelEnabled: bezel,
             keepOnTop: keepOnTop,
             showFPS: fps,
-            foldsAtHinge: foldsAtHinge,
+            foldsAtHinge: opened.foldsAtHinge,
             // The device type's chrome names only the cover's body, so the panel's own is used.
             chrome: panel?.chromeIdentifier.flatMap { ChromeLocator.chrome(identifier: $0) },
             panelNativeRotation: panel?.nativeRotation ?? 0,
-            unfoldedPanel: unfolded,
-            cover: cover,
-            retarget: retarget,
+            unfoldedPanel: panel,
+            cover: opened.cover,
+            retarget: opened.retarget,
             orientation: orientation
         )
         // The model turns the picture itself; setting this too turns the unfolded panel twice.
@@ -819,6 +811,57 @@ private func installToolbar(
             )
         }
     ))
+}
+
+/// What a window is opened with, and opened with again when its device comes back from a reboot.
+@MainActor
+private struct DeviceSessions {
+    let foldsAtHinge: Bool
+    let unfolded: DevicePanel?
+    let session: any DisplaySession
+    let cover: FoldableCover?
+    let input: (any InputSession)?
+    let inputFailure: String?
+    let retarget: ((Int) -> Void)?
+
+    var attachment: DeviceAttachment {
+        DeviceAttachment(session: session, input: input, cover: cover, retarget: retarget)
+    }
+}
+
+@MainActor
+private func openSessions(_ udid: String, adapter: any SimulatorAdapter, bezel: Bool) throws -> DeviceSessions {
+    // More than one built in screen means a hinge between them.
+    let panels = (try? adapter.panels(udid)) ?? []
+    let foldsAtHinge = panels.count > 1
+    let unfolded = foldsAtHinge ? panels.first { $0.name == "Unfolded" } : nil
+    let coverPanel = foldsAtHinge ? panels.first { $0.name == "Cover" } : nil
+    let session = try adapter.openDisplay(udid, panel: unfolded)
+    session.setBezelEnabled(bezel)
+    var cover: FoldableCover?
+    if let coverPanel, let coverSession = try? adapter.openDisplay(udid, panel: coverPanel) {
+        coverSession.setBezelEnabled(bezel)
+        cover = FoldableCover(panel: coverPanel, session: coverSession)
+    }
+    var input: (any InputSession)?
+    var inputFailure: String?
+    do {
+        input = try adapter.openInput(udid, screenID: unfolded?.screenID ?? 0)
+    } catch {
+        inputFailure = error.localizedDescription
+    }
+    let retarget: ((Int) -> Void)? = (input as? PanelInputSession).map { targeted in
+        { targeted.setTarget(screenID: $0) }
+    }
+    return DeviceSessions(
+        foldsAtHinge: foldsAtHinge,
+        unfolded: unfolded,
+        session: session,
+        cover: cover,
+        input: input,
+        inputFailure: inputFailure,
+        retarget: retarget
+    )
 }
 
 /// Off the main thread, because every one of these blocks for a second or more and they run from a
