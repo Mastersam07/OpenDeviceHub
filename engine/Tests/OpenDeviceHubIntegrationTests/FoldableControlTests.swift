@@ -30,13 +30,14 @@ final class FoldableControlTests: XCTestCase {
     private func hasPicture(udid: String, panel: DevicePanel) async throws -> Bool {
         let session = try makeAdapter().openDisplay(udid, panel: panel)
         defer { session.close() }
-        // Xcode 26.6's Swift cannot check a task closure that hands a frame's reading back as its
-        // value, so the reading goes into a lock and the wait is an expectation.
+        // Xcode 26.6's Swift cannot check this task closure if it captures the test case, which
+        // `Self.isLit` would, so the closure takes only the stream, names the type outright and
+        // hands the reading back through a lock and an expectation.
         let lit = OSAllocatedUnfairLock(initialState: false)
         let arrived = XCTestExpectation(description: "a frame arrives")
-        let watcher = Task {
-            for await frame in session.frames {
-                lit.withLock { $0 = Self.isLit(frame.surface) }
+        let watcher = Task { [frames = session.frames] in
+            for await frame in frames {
+                lit.withLock { $0 = FoldableControlTests.isLit(frame.surface) }
                 arrived.fulfill()
                 return
             }
