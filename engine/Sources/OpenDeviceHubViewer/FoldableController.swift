@@ -1,5 +1,12 @@
+import AppKit
 import Foundation
 import OpenDeviceHubEngine
+
+public enum HingeMoveEvent: Sendable, Hashable {
+    case began(target: Double)
+    case angle(Double)
+    case ended
+}
 
 /// The active panel is never inferred from the angle sent: the guest reports it.
 @MainActor
@@ -11,6 +18,9 @@ public final class FoldableController {
     private var ready: Set<String> = []
     private var activating: Set<String> = []
     private var wanted: [String: Double] = [:]
+    /// The last angle sent, or between moves the last the guest reported.
+    private var shown: [String: Double] = [:]
+    private var moves: [String: Task<Void, Never>] = [:]
     private var followers: [String: Follower] = [:]
 
     private struct Follower {
@@ -20,6 +30,11 @@ public final class FoldableController {
     }
 
     public var report: ((String) -> Void)?
+    /// A move as it happens, so the window draws the same fold the guest is given.
+    public var onMove: ((String, HingeMoveEvent) -> Void)?
+    /// Whether a move should jump instead: the Mac's Reduce Motion setting, which a headless
+    /// machine reports as on.
+    public var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     public init(
         open: @escaping (String) throws -> any HingeControl,
@@ -35,8 +50,10 @@ public final class FoldableController {
         wanted[udid]
     }
 
-    public func setAngle(_ degrees: Double, for udid: String) {
+    /// Eased, the hinge is walked there over a moment; otherwise sent at once, as a pinch wants.
+    public func setAngle(_ degrees: Double, for udid: String, eased: Bool = false) {
         wanted[udid] = degrees
+        stopMove(for: udid)
         guard let control = control(for: udid) else { return }
 
         guard ready.contains(udid) else {
@@ -58,7 +75,41 @@ public final class FoldableController {
             }
             return
         }
-        send(degrees, to: control, for: udid)
+        guard eased, let start = shown[udid], abs(start - degrees) > 0.1, !reducesMotion() else {
+            send(degrees, to: control, for: udid)
+            return
+        }
+        move(HingeMove(start: start, target: degrees), on: control, for: udid)
+    }
+
+    private func stopMove(for udid: String) {
+        guard let running = moves.removeValue(forKey: udid) else { return }
+        running.cancel()
+        onMove?(udid, .ended)
+    }
+
+    private func move(_ move: HingeMove, on control: any HingeControl, for udid: String) {
+        followers[udid]?.watcher.poke()
+        onMove?(udid, .began(target: move.target))
+        let task = Task { @MainActor [weak self] in
+            let started = ContinuousClock.now
+            while !Task.isCancelled {
+                let elapsed = ContinuousClock.now - started
+                let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+                let progress = min(1, seconds / move.duration)
+                let angle = move.angle(at: progress)
+                guard let self else { return }
+                send(angle, to: control, for: udid, poke: false)
+                onMove?(udid, .angle(angle))
+                if progress >= 1 { break }
+                try? await Task.sleep(for: HingeMove.stepInterval)
+            }
+            guard let self, !Task.isCancelled else { return }
+            moves[udid] = nil
+            onMove?(udid, .ended)
+            followers[udid]?.watcher.poke()
+        }
+        moves[udid] = task
     }
 
     /// Turns a foldable, which only its own provider can do.
@@ -97,8 +148,13 @@ public final class FoldableController {
         let watcher = ActivePanelWatcher(
             read: { try await readDisplays(udid) },
             hinge: hinge,
-            onHinge: { sample in
-                Task { @MainActor in onHinge(sample.degrees) }
+            onHinge: { [weak self] sample in
+                Task { @MainActor in
+                    // While a move runs, the stream only echoes what was just sent.
+                    guard let self, self.moves[udid] == nil else { return }
+                    self.shown[udid] = sample.degrees
+                    onHinge(sample.degrees)
+                }
             }
         )
         var tasks = [Task { @MainActor in
@@ -121,6 +177,8 @@ public final class FoldableController {
     }
 
     public func forget(_ udid: String) {
+        stopMove(for: udid)
+        shown[udid] = nil
         controls[udid] = nil
         ready.remove(udid)
         activating.remove(udid)
@@ -132,15 +190,16 @@ public final class FoldableController {
         }
     }
 
-    private func send(_ degrees: Double, to control: any HingeControl, for udid: String) {
+    private func send(_ degrees: Double, to control: any HingeControl, for udid: String, poke: Bool = true) {
         do {
             try control.setHingeAngle(degrees)
         } catch {
             report?("the hinge did not move: \(error.localizedDescription)")
             return
         }
+        shown[udid] = degrees
         // The guest switches panels at its own threshold, so the watcher looks now.
-        followers[udid]?.watcher.poke()
+        if poke { followers[udid]?.watcher.poke() }
     }
 
     private func control(for udid: String) -> (any HingeControl)? {

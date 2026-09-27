@@ -49,6 +49,10 @@ The device toolbar in `engine/Sources/OpenDeviceHubViewer/DeviceToolbar.swift` f
 Siniulator's `SimulatorToolbar`: the shortcut in each tooltip, Option on the rotate button turning
 the device the other way, and the screenshot button becoming a stop button while a recording runs.
 
+`engine/Sources/OpenDeviceHubEngine/Input/HingeMove.swift` is adapted from Siniulator's
+`DuoHingeAnimation`: a fold to a preset takes between 0.35 and 1 second by the distance moved, and
+follows a quintic ease in and out, with one clock driving the guest's hinge and the model.
+
 ## Dependencies
 
 ### swift-argument-parser

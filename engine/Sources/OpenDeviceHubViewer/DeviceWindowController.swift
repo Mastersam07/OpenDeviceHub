@@ -21,12 +21,24 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     /// Reports the angle the user asked for, from the positions in the bar or from a pinch.
     public var onHingeAngle: ((Double) -> Void)?
+    /// A fold position chosen from the bar or the toolbar. When set, the fold is not drawn here:
+    /// whoever moves the hinge reports each angle back through `showHingeAngle`.
+    public var onFoldPreset: ((Double) -> Void)?
 
     public func showHingeAngle(_ degrees: Double) {
         foldAngle = degrees
         controlBar.showFoldAngle(degrees)
         toolbar?.showFoldAngle(degrees)
         modelView?.setHingeAngle(degrees)
+    }
+
+    /// The fold is about to be walked to `target`; the model frames the move from its two ends.
+    public func beginFold(to target: Double) {
+        modelView?.beginMove(to: target)
+    }
+
+    public func endFold() {
+        modelView?.endMove()
     }
     private let presentationView: DevicePresentationView
     private var chrome: DeviceChrome?
@@ -157,6 +169,10 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             controlBar.addFoldModes()
             controlBar.onFoldMode = { [weak self] mode in
                 guard let self else { return }
+                if let onFoldPreset {
+                    onFoldPreset(mode.angle)
+                    return
+                }
                 foldAngle = mode.angle
                 controlBar.showFoldAngle(mode.angle)
                 toolbar?.showFoldAngle(mode.angle)
@@ -824,7 +840,9 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
                 if Task.isCancelled { return }
                 renderer.accept(frame)
                 await MainActor.run { [weak self] in
-                    screenView.needsDisplay = true
+                    // The flat view sits under the model and is not seen; drawing it costs the
+                    // main thread a draw per frame.
+                    if self?.modelView == nil { screenView.needsDisplay = true }
                     if let rotation = self?.unfoldedPanel?.nativeRotation {
                         self?.modelView?.setScreen(frame.surface, onCover: false, nativeRotation: rotation)
                     } else {

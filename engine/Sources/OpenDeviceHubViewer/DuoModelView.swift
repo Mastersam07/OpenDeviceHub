@@ -27,7 +27,37 @@ public final class DuoModelView: SCNView {
     }
 
     private let content: SCNNode
-    private let poses: [FrozenAnimation]
+    private let tracks: [PoseTrack]
+    /// A copy only the probe renders: measuring on it never changes the pose on screen.
+    private struct Twin {
+        let scene: SCNScene
+        let camera: SCNNode
+        let bones: [SCNNode]
+        let tracks: [PoseTrack]
+    }
+    private let twin: Twin
+    private struct Framing {
+        let centre: SIMD3<Float>
+        let correction: SIMD3<Float>
+        let silhouette: (width: Int, height: Int, pixels: [Bool])?
+    }
+    private var framings: [Int: Framing] = [:]
+    private var measuredTurns = 0
+    private struct Move {
+        let from: Double
+        let to: Double
+        let start: SIMD3<Float>
+        let end: SIMD3<Float>
+        func fraction(of angle: Double) -> Double? {
+            guard to != from else { return nil }
+            let fraction = (angle - from) / (to - from)
+            guard fraction > -0.001, fraction < 1.001 else { return nil }
+            return min(max(fraction, 0), 1)
+        }
+    }
+    private var move: Move?
+    /// How many probe renders have been made, for a test that expects a move to make none.
+    var probeRenders = 0
     private let cameraNode = SCNNode()
     private let innerScreen: SCNNode
     private let coverScreen: SCNNode
@@ -82,7 +112,32 @@ public final class DuoModelView: SCNView {
         lifts = Self.lifts(for: hardwareButtons, in: scene.rootNode)
         activeScreen = showingCover ? cover : inner
         content = scene.rootNode
-        poses = Self.freeze(scene.rootNode)
+        // No animation players: a player churn per pose blocks behind the render thread for most
+        // of a frame, while setting thirty transforms by hand is free.
+        tracks = Self.freeze(scene.rootNode).flatMap { PoseTrack.tracks(of: $0.animation, on: $0.node) }
+        // A source hands out its clips once, so the twin comes from a source of its own.
+        guard let twinSource = SCNSceneSource(url: asset, options: nil),
+              let twinScene = twinSource.scene(options: [
+                  .animationImportPolicy: SCNSceneSource.AnimationImportPolicy.play,
+              ]) else { return nil }
+        let twinFaces = Self.flatFaces(in: twinScene.rootNode)
+        guard let twinInner = Self.closest(to: CGSize(width: 15.797, height: 11.082), among: twinFaces),
+              let twinCover = Self.closest(to: CGSize(width: 11.230, height: 7.739), among: twinFaces) else { return nil }
+        let twinCamera = SCNNode()
+        twinCamera.camera = SCNCamera()
+        twinCamera.camera?.fieldOfView = 31
+        twinCamera.camera?.zNear = 0.01
+        twinCamera.camera?.zFar = 200
+        twinScene.rootNode.addChildNode(twinCamera)
+        // No renderer that only takes snapshots evaluates a clip, so the twin's clips are read as
+        // keyframe tracks and its nodes are posed by hand.
+        let twinTracks = Self.freeze(twinScene.rootNode).flatMap { PoseTrack.tracks(of: $0.animation, on: $0.node) }
+        twin = Twin(
+            scene: twinScene,
+            camera: twinCamera,
+            bones: (twinInner.skinner?.bones ?? []) + (twinCover.skinner?.bones ?? []),
+            tracks: twinTracks
+        )
 
         super.init(frame: .zero, options: [
             SCNView.Option.preferredRenderingAPI.rawValue: SCNRenderingAPI.metal.rawValue,
@@ -106,7 +161,9 @@ public final class DuoModelView: SCNView {
         antialiasingMode = .multisampling4X
         allowsCameraControl = false
         rendersContinuously = true
-        preferredFramesPerSecond = 30
+        // Asked for 30, SceneKit draws at 24 on a 120 Hz display, and the rate cannot be changed
+        // once the view exists; a fold needs 60 to look like one.
+        preferredFramesPerSecond = 60
         isPlaying = false
         loops = false
 
@@ -123,7 +180,27 @@ public final class DuoModelView: SCNView {
         hingeAngle = min(max(degrees, 0), 180)
         applyPose(at: Pose.time(forHingeAngle: hingeAngle))
         settleLifts()
-        SCNTransaction.flush()
+        if let move, let fraction = move.fraction(of: hingeAngle) {
+            let correction = move.start + (move.end - move.start) * Float(fraction)
+            // The twin's bones, not this scene's: a read here waits behind the render thread.
+            place(cameraNode, angle: hingeAngle, centre: twinCentre(at: hingeAngle), correction: correction)
+        } else {
+            frameCamera()
+        }
+    }
+
+    /// Framed from both ends, measured on the twin now; a probe render costs more than a frame, so
+    /// none happens per step.
+    public func beginMove(to target: Double) {
+        let to = min(max(target, 0), 180)
+        guard abs(to - hingeAngle) > 0.01 else { return }
+        settleFraming()
+        move = Move(from: hingeAngle, to: to, start: framing(at: hingeAngle).correction, end: framing(at: to).correction)
+    }
+
+    public func endMove() {
+        guard move != nil else { return }
+        move = nil
         frameCamera()
     }
 
@@ -149,7 +226,8 @@ public final class DuoModelView: SCNView {
     public func setShowingCover(_ showingCover: Bool, nativeRotation: Int) {
         activeScreen = showingCover ? coverScreen : innerScreen
         nativeQuarterTurns = ((-nativeRotation / 90) % 4 + 4) % 4
-        frameCamera()
+        // The guest changes screens part way through a move; the move's end frames the pose.
+        if move == nil { frameCamera() }
     }
 
     /// Read from a render: SceneKit's hit test uses a skinned mesh's authored pose and misses.
@@ -204,14 +282,7 @@ public final class DuoModelView: SCNView {
 
     /// Frozen players rather than the view's scene time, which the view advances itself.
     private func applyPose(at time: TimeInterval) {
-        for pose in poses {
-            pose.node.removeAnimation(forKey: pose.key, blendOutDuration: 0)
-            pose.animation.timeOffset = time
-            let player = SCNAnimationPlayer(animation: pose.animation)
-            player.speed = 0
-            pose.node.addAnimationPlayer(player, forKey: pose.key)
-            player.play()
-        }
+        for track in tracks { track.apply(at: time) }
     }
 
     private static func freeze(_ root: SCNNode) -> [FrozenAnimation] {
@@ -239,11 +310,14 @@ public final class DuoModelView: SCNView {
     }
 
     /// The bones are the only part of a skinned mesh that moves with the pose.
-    private func posedCentre() -> SIMD3<Float> {
-        let bones = (innerScreen.skinner?.bones ?? []) + (coverScreen.skinner?.bones ?? [])
+    private var visibleBones: [SCNNode] {
+        (innerScreen.skinner?.bones ?? []) + (coverScreen.skinner?.bones ?? [])
+    }
+
+    private func posedCentre(of bones: [SCNNode]) -> SIMD3<Float> {
         guard !bones.isEmpty else { return .zero }
         let points = bones.map { node -> SIMD3<Float> in
-            let transform = node.presentation.worldTransform
+            let transform = node.worldTransform
             return SIMD3<Float>(Float(transform.m41), Float(transform.m42), Float(transform.m43))
         }
         return points.reduce(SIMD3<Float>.zero, +) / Float(points.count)
@@ -279,10 +353,10 @@ public final class DuoModelView: SCNView {
         Float(max(sin(min(max(hingeAngle, 0), 180) * .pi / 360), abs(orbit) / .pi))
     }
 
-    private func heldDistance() -> Float {
-        let orbit = Self.cameraOrbit(forHingeAngle: hingeAngle)
+    private func heldDistance(at angle: Double) -> Float {
+        let orbit = Self.cameraOrbit(forHingeAngle: angle)
         let orbitProgress = Float(min(1, abs(orbit) / (.pi / 2)))
-        let fraction = Self.projectedWidthFraction(hingeAngle: hingeAngle, orbit: orbit)
+        let fraction = Self.projectedWidthFraction(hingeAngle: angle, orbit: orbit)
         let halfAcross = referenceHalfAcross * (1 - orbitProgress * (1 - fraction))
 
         let aspect = Float(max(bounds.width, 1) / max(bounds.height, 1))
@@ -296,33 +370,72 @@ public final class DuoModelView: SCNView {
     }
 
     private func frameCamera() {
-        if referenceHalfAcross == 0 || bounds.size != measuredSize {
-            measuredSize = bounds.size
-            measureFlat()
-        }
-        let orbit = Self.cameraOrbit(forHingeAngle: hingeAngle)
+        settleFraming()
+        let framing = framing(at: hingeAngle)
+        // The twin's centre, not this scene's: off screen, nothing has drawn this pose yet.
+        place(cameraNode, angle: hingeAngle, centre: framing.centre, correction: framing.correction)
+        silhouette = framing.silhouette
+        projectButtons()
+    }
+
+    /// Measurements belong to a window size and a way up; either changing throws them away.
+    private func settleFraming() {
+        guard referenceHalfAcross == 0 || bounds.size != measuredSize || guestQuarterTurns != measuredTurns else { return }
+        measuredSize = bounds.size
+        measuredTurns = guestQuarterTurns
+        measureFlat()
+        framings.removeAll()
+    }
+
+    /// Measured on the twin once per angle and kept.
+    private func framing(at angle: Double) -> Framing {
+        let key = Int((angle * 100).rounded())
+        if let kept = framings[key] { return kept }
+        let centre = twinCentre(at: angle)
+        let analytic = place(twin.camera, angle: angle, centre: centre, correction: .zero)
+        let seen = recentre(twin.camera, in: twin.scene)
+        let made = Framing(centre: centre, correction: twin.camera.simdPosition - analytic, silhouette: seen)
+        framings[key] = made
+        return made
+    }
+
+    /// Where the hinge is once the twin is posed at this angle.
+    private func twinCentre(at angle: Double) -> SIMD3<Float> {
+        let time = Pose.time(forHingeAngle: angle)
+        for track in twin.tracks { track.apply(at: time) }
+        return posedCentre(of: twin.bones)
+    }
+
+    @discardableResult
+    private func place(_ camera: SCNNode, angle: Double, centre: SIMD3<Float>, correction: SIMD3<Float>) -> SIMD3<Float> {
+        let orbit = Self.cameraOrbit(forHingeAngle: angle)
         let direction = SIMD3<Float>(Float(sin(orbit)), Float(cos(orbit)), 0)
-        let centre = posedCentre()
         // A bent device stands taller and needs more room; open stays tight to the window.
-        let bend = Float(sin(.pi * (180 - min(max(hingeAngle, 0), 180)) / 180))
-        cameraNode.simdPosition = centre + direction * (heldDistance() * (1 + 0.2 * bend))
-        cameraNode.look(
+        let bend = Float(sin(.pi * (180 - min(max(angle, 0), 180)) / 180))
+        let analytic = centre + direction * (heldDistance(at: angle) * (1 + 0.2 * bend))
+        camera.simdPosition = analytic
+        camera.look(
             at: SCNVector3(centre),
             up: SCNVector3(Self.cameraUp(quarterTurns: guestQuarterTurns, direction: direction)),
             localFront: SCNVector3(0, 0, -1)
         )
-        recentre()
-        projectButtons()
+        camera.simdPosition = analytic + correction
+        return analytic
     }
 
-    private func measureOnScreen() -> (minX: Float, maxX: Float, minY: Float, maxY: Float)? {
-        guard let scene else { return nil }
+    private func measureOnScreen(
+        _ scene: SCNScene,
+        from camera: SCNNode
+    ) -> (box: (minX: Float, maxX: Float, minY: Float, maxY: Float)?, silhouette: (width: Int, height: Int, pixels: [Bool])) {
+        probeRenders += 1
         probe.scene = scene
-        probe.pointOfView = cameraNode
+        probe.pointOfView = camera
         let aspect = Float(max(bounds.width, 1) / max(bounds.height, 1))
         let size = CGSize(width: 160, height: 160 / CGFloat(aspect))
         let image = probe.snapshot(atTime: 0, with: size, antialiasingMode: .none)
-        guard let raster = NSBitmapImageRep(data: image.tiffRepresentation ?? Data()) else { return nil }
+        guard let raster = NSBitmapImageRep(data: image.tiffRepresentation ?? Data()) else {
+            return (nil, (0, 0, []))
+        }
 
         var minX = raster.pixelsWide, maxX = -1, minY = raster.pixelsHigh, maxY = -1
         var pixels = [Bool](repeating: false, count: raster.pixelsWide * raster.pixelsHigh)
@@ -338,14 +451,14 @@ public final class DuoModelView: SCNView {
                 maxY = max(maxY, y)
             }
         }
-        silhouette = (raster.pixelsWide, raster.pixelsHigh, pixels)
-        guard maxX >= minX, maxY >= minY else { return nil }
-        return (
+        let seen = (raster.pixelsWide, raster.pixelsHigh, pixels)
+        guard maxX >= minX, maxY >= minY else { return (nil, seen) }
+        return ((
             Float(minX) / Float(raster.pixelsWide),
             Float(maxX + 1) / Float(raster.pixelsWide),
             Float(minY) / Float(raster.pixelsHigh),
             Float(maxY + 1) / Float(raster.pixelsHigh)
-        )
+        ), seen)
     }
 
     /// The model's own up is negative z.
@@ -361,23 +474,28 @@ public final class DuoModelView: SCNView {
     }
 
     /// Measured from a render: a skinned node's transform and bounding box are its rest pose.
-    private func recentre() {
+    /// Walks the camera until the device is centred, and hands back the silhouette seen from there.
+    private func recentre(_ camera: SCNNode, in scene: SCNScene) -> (width: Int, height: Int, pixels: [Bool])? {
         let aspect = Float(max(bounds.width, 1) / max(bounds.height, 1))
+        var last: (width: Int, height: Int, pixels: [Bool])?
         // A box cut off by the picture's edge under-corrects; several passes walk it in.
         for _ in 0..<8 {
-            guard let seen = measureOnScreen() else { return }
-            let offsetX = (seen.minX + seen.maxX) / 2 - 0.5
-            let offsetY = (seen.minY + seen.maxY) / 2 - 0.5
-            if abs(offsetX) < 0.004, abs(offsetY) < 0.004 { return }
+            let (box, seen) = measureOnScreen(scene, from: camera)
+            last = seen
+            guard let box else { return last }
+            let offsetX = (box.minX + box.maxX) / 2 - 0.5
+            let offsetY = (box.minY + box.maxY) / 2 - 0.5
+            if abs(offsetX) < 0.004, abs(offsetY) < 0.004 { return last }
 
-            let transform = cameraNode.simdTransform
+            let transform = camera.simdTransform
             let right = simd_normalize(simd_make_float3(transform.columns.0))
             let up = simd_normalize(simd_make_float3(transform.columns.1))
-            let distance = simd_length(cameraNode.simdPosition)
+            let distance = simd_length(camera.simdPosition)
             let visibleHeight = 2 * distance * tan(Float(31) * .pi / 360)
-            cameraNode.simdPosition += right * (offsetX * visibleHeight * aspect)
+            camera.simdPosition += right * (offsetX * visibleHeight * aspect)
                 - up * (offsetY * visibleHeight)
         }
+        return last
     }
 
     private func installLighting(in scene: SCNScene) {
@@ -567,7 +685,7 @@ public final class DuoModelView: SCNView {
             var minX = CGFloat.greatestFiniteMagnitude, minY = CGFloat.greatestFiniteMagnitude
             var maxX = -CGFloat.greatestFiniteMagnitude, maxY = -CGFloat.greatestFiniteMagnitude
             for position in posed {
-                let projected = projectPoint(SCNVector3(position.x, position.y, position.z))
+                let projected = viewPoint(of: position)
                 minX = min(minX, CGFloat(projected.x))
                 maxX = max(maxX, CGFloat(projected.x))
                 minY = min(minY, CGFloat(projected.y))
@@ -665,11 +783,20 @@ public final class DuoModelView: SCNView {
     private func lift(_ button: HardwareButton, by rise: Float) {
         guard let lift = lifts[button] else { return }
         let amount = restLift(of: button) + rise
-        SCNTransaction.begin()
-        SCNTransaction.animationDuration = liftDuration
-        lift.node.simdPosition = lift.outward * amount
-        lift.node.simdScale = SIMD3<Float>(repeating: 1) + abs(lift.outward) * (amount / lift.depth)
-        SCNTransaction.commit()
+        let position = lift.outward * amount
+        let scale = SIMD3<Float>(repeating: 1) + abs(lift.outward) * (amount / lift.depth)
+        // An explicit transaction commits behind the render thread, which costs most of a frame
+        // in a live window; a plain set costs nothing and the run loop commits it.
+        if liftDuration > 0 {
+            SCNTransaction.begin()
+            SCNTransaction.animationDuration = liftDuration
+            lift.node.simdPosition = position
+            lift.node.simdScale = scale
+            SCNTransaction.commit()
+        } else {
+            lift.node.simdPosition = position
+            lift.node.simdScale = scale
+        }
         liftedReach = rise > 0 ? reach(of: button, lifted: amount) : nil
     }
 
@@ -688,11 +815,11 @@ public final class DuoModelView: SCNView {
     private func reach(of button: HardwareButton, lifted amount: Float) -> CGRect? {
         guard let rect = hardwareButtonRect(button), let lift = lifts[button],
               let bone = lift.node.parent else { return nil }
-        let transform = simd_float4x4(bone.presentation.worldTransform)
+        let transform = simd_float4x4(bone.worldTransform)
         let origin = simd_make_float3(transform.columns.3)
         let tip = origin + simd_make_float3(transform * SIMD4<Float>(lift.outward, 0)) * amount
-        let from = projectPoint(SCNVector3(origin))
-        let to = projectPoint(SCNVector3(tip))
+        let from = viewPoint(of: origin)
+        let to = viewPoint(of: tip)
         return rect.union(rect.offsetBy(dx: CGFloat(to.x - from.x), dy: CGFloat(to.y - from.y)))
     }
 
@@ -854,8 +981,7 @@ public final class DuoModelView: SCNView {
     /// 0 to 1 across and down the guest's screen.
     func screenPoint(at point: CGPoint) -> CGPoint? {
         guard let mesh = hitMesh(), let posed = posedScreen(mesh) else { return nil }
-        let near = unprojectPoint(SCNVector3(point.x, point.y, 0))
-        let far = unprojectPoint(SCNVector3(point.x, point.y, 1))
+        let (near, far) = ray(through: point)
         guard let uv = mesh.hit(
             from: SIMD3<Float>(Float(near.x), Float(near.y), Float(near.z)),
             to: SIMD3<Float>(Float(far.x), Float(far.y), Float(far.z)),
@@ -970,3 +1096,89 @@ final class HardwareButtonBadge: NSView {
         symbol.frame = bounds.insetBy(dx: 5, dy: 5)
     }
 }
+
+/// One node property of the closing clip, read from its keyframes so a pose can be set by hand.
+struct PoseTrack {
+    enum Property { case position, orientation, scale }
+    let node: SCNNode
+    let property: Property
+    let duration: Double
+    let keyTimes: [Double]
+    let values: [SIMD4<Float>]
+
+    /// The clip is a group of keyframe tracks, each keyed by a path naming the node it drives.
+    static func tracks(of animation: SCNAnimation, on attached: SCNNode) -> [PoseTrack] {
+        guard let group = CAAnimation(scnAnimation: animation) as? CAAnimationGroup else { return [] }
+        return (group.animations ?? []).compactMap { member -> PoseTrack? in
+            guard let keyframes = member as? CAKeyframeAnimation, let path = keyframes.keyPath,
+                  let dot = path.lastIndex(of: "."), keyframes.duration > 0 else { return nil }
+            let name = String(path[path.index(after: path.startIndex)..<dot])
+            let property: Property
+            switch path[path.index(after: dot)...] {
+            case "position": property = .position
+            case "orientation": property = .orientation
+            case "scale": property = .scale
+            default: return nil
+            }
+            guard let node = attached.name == name ? attached : attached.childNode(withName: name, recursively: true) else { return nil }
+            let keyTimes = (keyframes.keyTimes ?? []).map(\.doubleValue)
+            let values = (keyframes.values ?? []).compactMap { value -> SIMD4<Float>? in
+                // SceneKit keeps a clip's vectors as four doubles in a rect shaped value.
+                guard let rect = (value as? NSValue)?.rectValue else { return nil }
+                return SIMD4<Float>(Float(rect.origin.x), Float(rect.origin.y), Float(rect.size.width), Float(rect.size.height))
+            }
+            guard keyTimes.count == values.count, !values.isEmpty else { return nil }
+            return PoseTrack(node: node, property: property, duration: keyframes.duration, keyTimes: keyTimes, values: values)
+        }
+    }
+
+    func apply(at time: TimeInterval) {
+        let fraction = min(max(time / duration, 0), 1)
+        var upper = keyTimes.firstIndex { $0 >= fraction } ?? keyTimes.count - 1
+        upper = max(upper, 0)
+        let lower = max(upper - 1, 0)
+        let span = keyTimes[upper] - keyTimes[lower]
+        let mix = span > 0 ? Float((fraction - keyTimes[lower]) / span) : 0
+        var a = values[lower]
+        let b = values[upper]
+        if property == .orientation, simd_dot(a, b) < 0 { a = -a }
+        var value = a + (b - a) * mix
+        switch property {
+        case .position: node.simdPosition = SIMD3(value.x, value.y, value.z)
+        case .scale: node.simdScale = SIMD3(value.x, value.y, value.z)
+        case .orientation:
+            value = simd_normalize(value)
+            node.simdOrientation = simd_quatf(ix: value.x, iy: value.y, iz: value.z, r: value.w)
+        }
+    }
+}
+
+/// The view's own projection reads the camera as last drawn, which off screen is never; these read
+/// the camera as placed.
+extension DuoModelView {
+    private var cameraFrame: (world: simd_float4x4, tanHalfWidth: Float, tanHalfHeight: Float) {
+        let tanHalfHeight = tan(Float(pointOfView?.camera?.fieldOfView ?? 31) * .pi / 360)
+        let aspect = Float(max(bounds.width, 1) / max(bounds.height, 1))
+        return (pointOfView?.simdWorldTransform ?? matrix_identity_float4x4, tanHalfHeight * aspect, tanHalfHeight)
+    }
+
+    func viewPoint(of world: SIMD3<Float>) -> CGPoint {
+        let frame = cameraFrame
+        let local = simd_inverse(frame.world) * SIMD4<Float>(world, 1)
+        let depth = max(-local.z, 0.0001)
+        let x = local.x / depth / frame.tanHalfWidth
+        let y = local.y / depth / frame.tanHalfHeight
+        return CGPoint(x: CGFloat(x + 1) / 2 * bounds.width, y: CGFloat(y + 1) / 2 * bounds.height)
+    }
+
+    func ray(through point: CGPoint) -> (SCNVector3, SCNVector3) {
+        let frame = cameraFrame
+        let x = Float(point.x / max(bounds.width, 1)) * 2 - 1
+        let y = Float(point.y / max(bounds.height, 1)) * 2 - 1
+        let direction = SIMD4<Float>(x * frame.tanHalfWidth, y * frame.tanHalfHeight, -1, 0)
+        let origin = simd_make_float3(frame.world.columns.3)
+        let far = origin + simd_normalize(simd_make_float3(frame.world * direction)) * 200
+        return (SCNVector3(origin), SCNVector3(far))
+    }
+}
+
