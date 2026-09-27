@@ -52,7 +52,8 @@ public final class DeviceWindowManager {
         panelNativeRotation: Int = 0,
         unfoldedPanel: DevicePanel? = nil,
         cover: FoldableCover? = nil,
-        retarget: ((Int) -> Void)? = nil
+        retarget: ((Int) -> Void)? = nil,
+        orientation: DeviceOrientation = .portrait
     ) throws -> DeviceWindowController {
         if let existing = controllers[device.udid] {
             existing.window?.makeKeyAndOrderFront(nil)
@@ -92,6 +93,10 @@ public final class DeviceWindowManager {
         }
         controllers[device.udid] = controller
         deviceTypes[device.udid] = device.deviceTypeIdentifier
+        // Turned before it is placed, so the window is placed and shown in the shape it keeps.
+        if orientation != .portrait {
+            controller.setOrientation(orientation)
+        }
 
         // Only place the window when nothing was remembered for this device, so a window the user
         // moved stays where they put it.
