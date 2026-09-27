@@ -134,6 +134,7 @@ enum IndigoHID {
         static let consumerUsages: [HardwareButton: UInt32] = [
             .volumeUp: 0xe9,
             .volumeDown: 0xea,
+            .cameraControl: 0x65,
         ]
     }
 

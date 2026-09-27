@@ -62,6 +62,32 @@ public enum DeviceTypeProfile {
             }
     }
 
+    /// Nothing in a device type's bundle records a camera control, so this is Apple's list of the
+    /// models that have one.
+    static let cameraControlModels: Set<String> = [
+        "iPhone17,1", "iPhone17,2", "iPhone17,3", "iPhone17,4",
+        "iPhone18,1", "iPhone18,2", "iPhone18,3", "iPhone18,4",
+        "iPhone19,2", "iPhone19,3", "iPhone19,4",
+    ]
+
+    public static func hasCameraControl(deviceType identifier: String) -> Bool {
+        guard let model = modelIdentifier(forDeviceType: identifier) else { return false }
+        return cameraControlModels.contains(model)
+    }
+
+    public static func modelIdentifier(forDeviceType identifier: String) -> String? {
+        guard let bundle = bundlesByIdentifier[identifier] else { return nil }
+        let file = bundle
+            .appending(path: "Contents")
+            .appending(path: "Resources")
+            .appending(path: "profile.plist")
+        guard let data = try? Data(contentsOf: file),
+              let plist = try? PropertyListSerialization.propertyList(
+                  from: data, options: [], format: nil
+              ) as? [String: Any] else { return nil }
+        return plist["modelIdentifier"] as? String
+    }
+
     /// Matched on size, because that is the only thing an IO port and a profile entry both state.
     public static func display(
         forDeviceType identifier: String,

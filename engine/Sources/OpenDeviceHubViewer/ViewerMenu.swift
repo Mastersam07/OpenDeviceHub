@@ -38,6 +38,8 @@ public enum ViewerMenu {
         public var toggleSlowAnimations: () -> Void
         public var toggleLatencyOverlay: () -> Void
         public var pressButton: (HardwareButton) -> Void
+        /// Whether the device in front has a camera control.
+        public var hasCameraControl: () -> Bool
         public var rotate: (Bool) -> Void
         public var restart: () -> Void
         public var erase: () -> Void
@@ -82,6 +84,7 @@ public enum ViewerMenu {
             toggleSlowAnimations: @escaping () -> Void,
             toggleLatencyOverlay: @escaping () -> Void,
             pressButton: @escaping (HardwareButton) -> Void,
+            hasCameraControl: @escaping () -> Bool = { false },
             rotate: @escaping (Bool) -> Void,
             restart: @escaping () -> Void,
             erase: @escaping () -> Void,
@@ -123,6 +126,7 @@ public enum ViewerMenu {
             self.toggleSlowAnimations = toggleSlowAnimations
             self.toggleLatencyOverlay = toggleLatencyOverlay
             self.pressButton = pressButton
+            self.hasCameraControl = hasCameraControl
             self.rotate = rotate
             self.restart = restart
             self.erase = erase
@@ -314,11 +318,13 @@ public enum ViewerMenu {
         let home = target.item("Home", #selector(MenuTarget.home), "h", [.command, .shift])
         let lockItem = target.item("Lock", #selector(MenuTarget.lock), "l", [.command])
         let actionButton = target.item("Action Button", #selector(MenuTarget.actionButton), "", [])
+        let cameraControl = target.item("Camera Control", #selector(MenuTarget.cameraControl), "", [])
         let siri = target.item("Siri", #selector(MenuTarget.siri), "h", [.command, .shift, .option])
-        for item in [home, lockItem, actionButton, siri] {
+        for item in [home, lockItem, actionButton, cameraControl, siri] {
             disable(item, unless: capabilities.contains(.hardwareButtons), reason: "not available on this Xcode")
             deviceMenu.addItem(item)
         }
+        target.trackCameraControlItem(cameraControl)
         let deviceShake = target.item("Shake", #selector(MenuTarget.shake), "z", [.control, .command])
         disable(deviceShake, unless: capabilities.contains(.shake), reason: "not available on this Xcode")
         deviceMenu.addItem(deviceShake)
@@ -516,6 +522,7 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private weak var sendPasteboardItem: NSMenuItem?
     private lazy var syncsPasteboardNow = actions.syncsPasteboard()
     private weak var screenItem: NSMenuItem?
+    private weak var cameraControlItem: NSMenuItem?
     private weak var deviceMenu: NSMenu?
 
     init(actions: ViewerMenu.Actions, commandLineTool: CommandLineToolMenu? = nil) {
@@ -537,8 +544,14 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
         menu.delegate = self
     }
 
+    func trackCameraControlItem(_ item: NSMenuItem) {
+        cameraControlItem = item
+        item.isHidden = !actions.hasCameraControl()
+    }
+
     public func menuNeedsUpdate(_ menu: NSMenu) {
         if menu === deviceMenu {
+            cameraControlItem?.isHidden = !actions.hasCameraControl()
             rebuildScreenMenu()
             return
         }
@@ -641,6 +654,7 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
 
     @objc func siri() { actions.pressButton(.siri) }
     @objc func actionButton() { actions.pressButton(.actionButton) }
+    @objc func cameraControl() { actions.pressButton(.cameraControl) }
     @objc func appSwitcher() { actions.appSwitcher() }
     @objc func restart() { actions.restart() }
     @objc func erase() { actions.erase() }

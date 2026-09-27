@@ -291,7 +291,7 @@ struct ODHubViewer: ParsableCommand {
                 },
                 toggleLatencyOverlay: { manager.toggleLatencyOverlay() },
                 pressButton: { button in
-                    for udid in manager.openUDIDs {
+                    for udid in manager.openUDIDs where button != .cameraControl || manager.hasCameraControl(udid) {
                         Task {
                             do {
                                 guard let session = manager.controller(for: udid)?.inputSession
@@ -304,6 +304,9 @@ struct ODHubViewer: ParsableCommand {
                             }
                         }
                     }
+                },
+                hasCameraControl: {
+                    manager.frontmostUDID.map { manager.hasCameraControl($0) } ?? false
                 },
                 rotate: { left in
                     for udid in manager.openUDIDs {
