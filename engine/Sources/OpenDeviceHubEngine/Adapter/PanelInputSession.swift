@@ -100,7 +100,9 @@ public final class PanelInputSession: InputSession, @unchecked Sendable {
     }
 
     /// Every button on this path is a consumer page usage, unlike the legacy one, where Home, Lock
-    /// and Siri are event sources instead. Confirmed on Xcode 27 (27A266a).
+    /// and Siri are event sources instead. Confirmed on Xcode 27 (27A266a). The camera control is
+    /// the Snapshot usage, the only camera usage CoreDevice's consumer page names; the guest answers
+    /// it by taking a screenshot of itself, shutter sound and all, since it has no camera to open.
     private static let consumerUsagePage: UInt64 = 0x0c
     private static let consumerUsages: [HardwareButton: UInt64] = [
         .home: 0x40,
@@ -108,6 +110,7 @@ public final class PanelInputSession: InputSession, @unchecked Sendable {
         .volumeUp: 0xe9,
         .volumeDown: 0xea,
         .siri: 0xcf,
+        .cameraControl: 0x65,
     ]
 
     private func send(_ type: String, payload: xpc_object_t) {

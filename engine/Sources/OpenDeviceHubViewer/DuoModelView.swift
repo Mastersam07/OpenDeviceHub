@@ -52,6 +52,17 @@ public final class DuoModelView: SCNView {
     private let coverScreen: SCNNode
     /// The buttons on the body, found by where they sit rather than by name, and what each does.
     private let hardwareButtons: [(button: HardwareButton, node: SCNNode)]
+    private struct ButtonLift {
+        let node: SCNNode
+        /// Which way is out of the body, in the node's own frame. One of its axes in this asset.
+        let outward: SIMD3<Float>
+        /// How far the node's origin, which is at the button's outer face, is from its inner face.
+        let depth: Float
+    }
+    private let lifts: [HardwareButton: ButtonLift]
+    /// How long a button takes to come up under the pointer or settle back. Zero for a test that
+    /// wants to look straight away.
+    var liftDuration: TimeInterval = 0.12
     private var hoveredButton: HardwareButton?
     private var pressedButton: HardwareButton?
     private var tracking: NSTrackingArea?
@@ -102,6 +113,7 @@ public final class DuoModelView: SCNView {
         innerScreen = inner
         coverScreen = cover
         hardwareButtons = Self.hardwareButtons(in: scene.rootNode)
+        lifts = Self.lifts(for: hardwareButtons, in: scene.rootNode)
         activeScreen = showingCover ? cover : inner
         content = scene.rootNode
         poses = Self.freeze(scene.rootNode)
@@ -145,6 +157,7 @@ public final class DuoModelView: SCNView {
     public func setHingeAngle(_ degrees: Double) {
         hingeAngle = min(max(degrees, 0), 180)
         applyPose(at: Pose.time(forHingeAngle: hingeAngle))
+        settleLifts()
         SCNTransaction.flush()
         frameCamera()
     }
@@ -515,8 +528,8 @@ public final class DuoModelView: SCNView {
     /// The body's buttons, by shape and place at the authored pose, which is flat open. The two bars
     /// side by side on the top edge are the volume buttons, down then up going right, which is how
     /// Device Hub labels them; the upper of the two parts on the right edge is the power button and
-    /// the lower is the camera control, which this app does not send. Names in this asset are
-    /// obfuscated and change between Xcode releases, so nothing here is looked up by name.
+    /// the lower is the camera control. Names in this asset are obfuscated and change between Xcode
+    /// releases, so nothing here is looked up by name.
     nonisolated static func hardwareButtons(in root: SCNNode) -> [(button: HardwareButton, node: SCNNode)] {
         struct Part {
             let node: SCNNode
@@ -553,19 +566,75 @@ public final class DuoModelView: SCNView {
         let volume = parts
             .filter { isBar($0) && $0.centre.z < -(top - 0.5) && $0.size.x > $0.size.z }
             .sorted { $0.centre.x < $1.centre.x }
-        // The power button is the upper of the parts on the right edge, taken by its thickest face.
-        let side = parts
-            .filter { isBar($0) && $0.centre.x > body - 0.5 && $0.size.z > $0.size.x && $0.centre.z < 0 }
-            .sorted { $0.size.x > $1.size.x }
+        // The parts on the right edge, each taken by its thickest face: the power button stands
+        // above the middle and the camera control below it.
+        let side = parts.filter { isBar($0) && $0.centre.x > body - 0.5 && $0.size.z > $0.size.x }
+        let power = side.filter { $0.centre.z < 0 }.sorted { $0.size.x > $1.size.x }.first
+        let camera = side.filter { $0.centre.z > 0 }.sorted { $0.size.x > $1.size.x }.first
         var found: [(HardwareButton, SCNNode)] = []
         if volume.count == 2 {
             found.append((.volumeDown, volume[0].node))
             found.append((.volumeUp, volume[1].node))
         }
-        if let power = side.first {
+        if let power {
             found.append((.lock, power.node))
         }
+        if let camera {
+            found.append((.cameraControl, camera.node))
+        }
         return found
+    }
+
+    /// A button is moved by moving what it is skinned to. Each button hangs off a bone of its own,
+    /// which the pose animates, so the button is re-skinned to a node under that bone and that node
+    /// is moved instead; the bone's other parts, the two caps on the power button, are re-skinned
+    /// with it and follow. Outward is fixed in the bone's own frame at the authored pose, flat open,
+    /// where the top edge faces negative z and the right edge positive x, so it turns with the half
+    /// the button sits on.
+    private static func lifts(
+        for buttons: [(button: HardwareButton, node: SCNNode)],
+        in root: SCNNode
+    ) -> [HardwareButton: ButtonLift] {
+        var lifts: [HardwareButton: ButtonLift] = [:]
+        for (button, node) in buttons {
+            guard let skinner = node.skinner, skinner.bones.count == 1, let bone = skinner.bones.first else { continue }
+            let raiser = SCNNode()
+            bone.addChildNode(raiser)
+            root.enumerateHierarchy { part, _ in
+                guard let old = part.skinner, old.bones.count == 1, old.bones[0] === bone else { return }
+                let reskinned = SCNSkinner(
+                    baseGeometry: old.baseGeometry,
+                    bones: [raiser],
+                    boneInverseBindTransforms: old.boneInverseBindTransforms,
+                    boneWeights: old.boneWeights,
+                    boneIndices: old.boneIndices
+                )
+                reskinned.baseGeometryBindTransform = old.baseGeometryBindTransform
+                reskinned.skeleton = old.skeleton
+                part.skinner = reskinned
+            }
+            let outward: SIMD3<Float> = Self.isOnTopEdge(button) ? SIMD3(0, 0, -1) : SIMD3(1, 0, 0)
+            let boneWorld = simd_float4x4(bone.worldTransform)
+            let local = simd_make_float3(simd_inverse(boneWorld) * SIMD4<Float>(outward, 0))
+            let (low, high) = node.boundingBox
+            let world = simd_float4x4(node.worldTransform)
+            var innermost = Float.greatestFiniteMagnitude
+            for x in [low.x, high.x] {
+                for y in [low.y, high.y] {
+                    for z in [low.z, high.z] {
+                        let corner = simd_make_float3(world * SIMD4<Float>(Float(x), Float(y), Float(z), 1))
+                        innermost = min(innermost, simd_dot(corner, outward))
+                    }
+                }
+            }
+            let origin = simd_dot(simd_make_float3(boneWorld.columns.3), outward)
+            lifts[button] = ButtonLift(
+                node: raiser,
+                outward: simd_normalize(local),
+                depth: max(origin - innermost, 0.01)
+            )
+        }
+        return lifts
     }
 
     /// How far around a button the pointer still counts as on it, in points. The buttons stand only
@@ -599,7 +668,13 @@ public final class DuoModelView: SCNView {
     /// A point on the screen is a touch whatever button it is near: the reach is for the bezel
     /// side of a button, not the screen side.
     func hardwareButton(at point: CGPoint) -> HardwareButton? {
-        guard let button = buttonRects.first(where: { $0.rect.contains(point) })?.button else { return nil }
+        let button: HardwareButton?
+        if let hoveredButton, let liftedReach, liftedReach.contains(point) {
+            button = hoveredButton
+        } else {
+            button = buttonRects.first(where: { $0.rect.contains(point) })?.button
+        }
+        guard let button else { return nil }
         return screenPoint(at: point) == nil ? button : nil
     }
 
@@ -641,25 +716,99 @@ public final class DuoModelView: SCNView {
         hover(nil)
     }
 
-    /// A button under the pointer lights up, takes the pointing hand, and gets a badge beside it,
-    /// outside the device, saying what it is. The buttons themselves are a few points tall at a
-    /// window's size, so the badge is what makes a hover visible, the way Device Hub's does.
+    /// A button under the pointer comes up out of the body, lights a little, takes the pointing
+    /// hand and gets its symbol beside it, the way Device Hub's does. Coming up is what makes it
+    /// visible: the buttons are a few points tall at a window's size, and a shut device hides the
+    /// volume buttons behind its front edge altogether.
     private func hover(_ button: HardwareButton?) {
         guard button != hoveredButton else { return }
-        if let hoveredButton, let node = hardwareButtons.first(where: { $0.button == hoveredButton })?.node {
-            for material in node.geometry?.materials ?? [] { material.emission.contents = NSColor.black }
+        if let hoveredButton {
+            lift(hoveredButton, by: 0)
+            light(hoveredButton, false)
         }
         hoveredButton = button
-        if let button, let node = hardwareButtons.first(where: { $0.button == button })?.node {
-            for material in node.geometry?.materials ?? [] {
-                material.emission.contents = NSColor(white: 0.8, alpha: 1)
-            }
+        if let button {
+            lift(button, by: Self.hoverRise)
+            light(button, true)
             NSCursor.pointingHand.set()
             showBadge(for: button, pressed: false)
         } else {
             NSCursor.arrow.set()
             badge.isHidden = true
         }
+    }
+
+    /// How far a button comes up under the pointer, and how far it stays up while pressed, in the
+    /// model's units. The buttons stand a tenth of a unit proud of the body, so a hover nearly
+    /// doubles that.
+    private static let hoverRise: Float = 0.08
+    private static let pressRise: Float = 0.03
+
+    /// How far a button is brought out just to be seen. Seen straight on, a shut device hides its
+    /// volume buttons a tenth of a unit behind its front edge and shows the power button edge on,
+    /// so shut, each is brought out to stand a little proud of the edge that hides it, as the
+    /// buttons on a real phone do. Open, nothing hides them and they sit where they were built.
+    private func restLift(of button: HardwareButton) -> Float {
+        let shut = Float(min(max((FoldableControl.handoffAngle - hingeAngle) / FoldableControl.handoffAngle, 0), 1))
+        let hidden: Float = Self.isOnTopEdge(button) ? 0.1 : 0
+        return (hidden + 0.06) * shut
+    }
+
+    private static func isOnTopEdge(_ button: HardwareButton) -> Bool {
+        button == .volumeUp || button == .volumeDown
+    }
+
+    /// Pushes a button out of the body along the direction it faces, or lets it back in. The button
+    /// is stretched as it moves so its inner face stays in the body: it rises out rather than
+    /// floating off. The rise is on top of whatever the pose needs to show the button at all.
+    private func lift(_ button: HardwareButton, by rise: Float) {
+        guard let lift = lifts[button] else { return }
+        let amount = restLift(of: button) + rise
+        SCNTransaction.begin()
+        SCNTransaction.animationDuration = liftDuration
+        lift.node.simdPosition = lift.outward * amount
+        lift.node.simdScale = SIMD3<Float>(repeating: 1) + abs(lift.outward) * (amount / lift.depth)
+        SCNTransaction.commit()
+        liftedReach = rise > 0 ? reach(of: button, lifted: amount) : nil
+    }
+
+    /// Puts every button where the pose wants it, before the pose is measured.
+    private func settleLifts() {
+        let animated = liftDuration
+        liftDuration = 0
+        for button in lifts.keys {
+            lift(button, by: button == pressedButton ? Self.pressRise : button == hoveredButton ? Self.hoverRise : 0)
+        }
+        liftDuration = animated
+    }
+
+    /// The hovered button's rectangle grown to where it is once it has come up, so the pointer can
+    /// follow it out without the hover ending under it.
+    private var liftedReach: CGRect?
+
+    private func reach(of button: HardwareButton, lifted amount: Float) -> CGRect? {
+        guard let rect = hardwareButtonRect(button), let lift = lifts[button],
+              let bone = lift.node.parent else { return nil }
+        let transform = simd_float4x4(bone.presentation.worldTransform)
+        let origin = simd_make_float3(transform.columns.3)
+        let tip = origin + simd_make_float3(transform * SIMD4<Float>(lift.outward, 0)) * amount
+        let from = projectPoint(SCNVector3(origin))
+        let to = projectPoint(SCNVector3(tip))
+        return rect.union(rect.offsetBy(dx: CGFloat(to.x - from.x), dy: CGFloat(to.y - from.y)))
+    }
+
+    private func light(_ button: HardwareButton, _ lit: Bool) {
+        guard let node = hardwareButtons.first(where: { $0.button == button })?.node else { return }
+        for material in node.geometry?.materials ?? [] {
+            material.emission.contents = lit ? NSColor(white: 0.35, alpha: 1) : NSColor.black
+        }
+    }
+
+    /// How far a button stands out beyond where the pose alone puts it, for a test that wants to
+    /// know it moved.
+    func liftOffset(of button: HardwareButton) -> Float {
+        guard let lift = lifts[button] else { return 0 }
+        return simd_length(lift.node.simdPosition) - restLift(of: button)
     }
 
     private let badge = HardwareButtonBadge()
@@ -689,6 +838,7 @@ public final class DuoModelView: SCNView {
         case .home: "house"
         case .siri: "waveform"
         case .actionButton: "button.horizontal"
+        case .cameraControl: "camera"
         }
     }
 
@@ -700,6 +850,7 @@ public final class DuoModelView: SCNView {
         case .home: "Home"
         case .siri: "Siri"
         case .actionButton: "Action Button"
+        case .cameraControl: "Camera Control"
         }
     }
 
@@ -744,6 +895,7 @@ public final class DuoModelView: SCNView {
     public override func mouseDown(with event: NSEvent) {
         if let button = hardwareButton(at: convert(event.locationInWindow, from: nil)) {
             pressedButton = button
+            lift(button, by: Self.pressRise)
             showBadge(for: button, pressed: true)
             onHardwareButton?(button, .down)
             return
@@ -759,6 +911,7 @@ public final class DuoModelView: SCNView {
     public override func mouseUp(with event: NSEvent) {
         if let pressedButton {
             self.pressedButton = nil
+            lift(pressedButton, by: pressedButton == hoveredButton ? Self.hoverRise : 0)
             showBadge(for: pressedButton, pressed: false)
             onHardwareButton?(pressedButton, .up)
             return
@@ -905,23 +1058,19 @@ struct ScrollDrag {
     }
 }
 
-/// A small label that names a hardware button beside it: a symbol and a word on a dark rounded
-/// backing, blue while the button is held.
+/// A hardware button's symbol on a small dark disc beside it, blue while the button is held.
 final class HardwareButtonBadge: NSView {
     private let symbol = NSImageView()
-    private let label = NSTextField(labelWithString: "")
+    private static let diameter: CGFloat = 28
 
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 8
+        layer?.cornerRadius = Self.diameter / 2
         layer?.backgroundColor = NSColor(white: 0.12, alpha: 0.92).cgColor
-        label.font = .systemFont(ofSize: 12, weight: .medium)
-        label.textColor = .white
         symbol.imageScaling = .scaleProportionallyDown
         symbol.contentTintColor = .white
         addSubview(symbol)
-        addSubview(label)
     }
 
     @available(*, unavailable)
@@ -929,23 +1078,23 @@ final class HardwareButtonBadge: NSView {
         fatalError("not supported")
     }
 
+    /// The badge is a label, not a control: the pointer passes straight through it to the button
+    /// it names.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
     func show(_ name: String, symbol symbolName: String, pressed: Bool) {
-        symbol.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: name)
-        label.stringValue = name
-        let tint: NSColor = pressed ? .systemBlue : .white
-        symbol.contentTintColor = tint
-        label.textColor = tint
-        label.sizeToFit()
+        symbol.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: name)?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .medium))
+        symbol.contentTintColor = pressed ? .systemBlue : .white
         needsLayout = true
     }
 
     override var fittingSize: NSSize {
-        NSSize(width: 16 + 18 + 6 + label.frame.width + 2, height: 28)
+        NSSize(width: Self.diameter, height: Self.diameter)
     }
 
     override func layout() {
         super.layout()
-        symbol.frame = CGRect(x: 8, y: 5, width: 18, height: 18)
-        label.frame = CGRect(x: 32, y: (bounds.height - label.frame.height) / 2, width: label.frame.width, height: label.frame.height)
+        symbol.frame = bounds.insetBy(dx: 5, dy: 5)
     }
 }

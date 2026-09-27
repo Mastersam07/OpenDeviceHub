@@ -242,6 +242,13 @@ final class FoldableDriveTests: XCTestCase {
         XCTAssertLessThan(lowered, before, "volume down did nothing")
         XCTAssertGreaterThan(raised, lowered, "volume up did nothing")
 
+        // The guest has no camera to open, so its camera control takes a screenshot of itself.
+        let shots = photos()
+        try await press(.cameraControl)
+        try await settle(3)
+        print("RESULT the camera control took the camera roll from \(shots) to \(photos()) pictures")
+        XCTAssertEqual(photos(), shots + 1, "the camera control did not take a screenshot in the guest")
+
         try await press(.lock)
         try await settle(3)
         let locked = try await adapter.displayReport(device.udid)
@@ -268,6 +275,14 @@ final class FoldableDriveTests: XCTestCase {
         view.mouseDown(with: try Self.mouse(.leftMouseDown, at: model.convert(spot, to: nil)))
         try await Task.sleep(for: .milliseconds(60))
         view.mouseUp(with: try Self.mouse(.leftMouseUp, at: model.convert(spot, to: nil)))
+    }
+
+    /// What the guest keeps in its camera roll, which is where its own screenshots go.
+    private func photos() -> Int {
+        let roll = FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: "Library/Developer/CoreSimulator/Devices/\(device.udid)/data/Media/DCIM")
+        guard let files = FileManager.default.enumerator(at: roll, includingPropertiesForKeys: nil) else { return 0 }
+        return files.compactMap { $0 as? URL }.filter { $0.lastPathComponent.hasPrefix("IMG_") }.count
     }
 
     private func devicectlVolume() throws -> Int {

@@ -102,6 +102,7 @@ public enum HardwareButton: Sendable, Hashable {
     case volumeDown
     case siri
     case actionButton
+    case cameraControl
 }
 
 public enum ButtonPhase: Sendable, Hashable {
