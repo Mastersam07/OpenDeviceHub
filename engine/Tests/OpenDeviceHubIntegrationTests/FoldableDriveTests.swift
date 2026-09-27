@@ -1,4 +1,6 @@
+import AVFoundation
 import AppKit
+import os
 import XCTest
 import OpenDeviceHubEngine
 @testable import OpenDeviceHubViewer
@@ -67,6 +69,16 @@ final class FoldableDriveTests: XCTestCase {
         )
         let udid = device.udid
         controller.onHingeAngle = { [foldables] angle in foldables?.setAngle(angle, for: udid) }
+        controller.onFoldPreset = { [foldables] angle in foldables?.setAngle(angle, for: udid, eased: true) }
+        foldables.onMove = { [weak controller, weak self] _, event in
+            switch event {
+            case .began(let target): controller?.beginFold(to: target)
+            case .angle(let angle):
+                self?.stepTimes.append(ContinuousClock.now)
+                controller?.showHingeAngle(angle)
+            case .ended: controller?.endFold()
+            }
+        }
         foldables.follow(
             udid,
             onPanel: { [weak controller] panel in controller?.setActivePanel(screenID: panel.displayID) },
@@ -184,6 +196,117 @@ final class FoldableDriveTests: XCTestCase {
         let running = try run(["simctl", "spawn", device.udid, "launchctl", "list"])
         print("RESULT after flicking the card away, the app is \(running.contains(IntegrationHost.bundleID) ? "still running" : "gone")")
         XCTAssertFalse(running.contains(IntegrationHost.bundleID), "the app is still running after being dismissed")
+    }
+
+    /// A preset chosen in the bar walks the guest's hinge to its angle rather than jumping it.
+    func testAPresetWalksTheGuestsHingeToItsAngle() async throws {
+        try await fold(to: DeviceControlBar.FoldMode.fullyOpen.angle)
+        let control = try XCTUnwrap(Self.segmentedControl(in: window), "the bar's fold positions")
+        let hinge = try adapter.openHingeStream(device.udid)
+        defer { hinge.close() }
+        let samples = OSAllocatedUnfairLock(initialState: [Double]())
+        let collector = Task { for await sample in hinge.samples { samples.withLock { $0.append(sample.degrees) } } }
+        defer { collector.cancel() }
+        try await settle(2)
+
+        for (mode, wanted, descending) in [(DeviceControlBar.FoldMode.cover, 1, true), (.fullyOpen, 3, false)] {
+            samples.withLock { $0.removeAll() }
+            stepTimes.removeAll()
+            control.selectedSegment = mode.rawValue
+            control.sendAction(control.action, to: control.target)
+            try await settle(3)
+            let run = samples.withLock { $0 }
+            let gaps = zip(stepTimes.dropFirst(), stepTimes).map { later, earlier in
+                let d = later - earlier
+                return Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15
+            }
+            print("RESULT \(mode.label): the window drew \(stepTimes.count) steps, gaps mean \(String(format: "%.1f", gaps.reduce(0, +) / Double(max(gaps.count, 1)))) ms, worst \(String(format: "%.1f", gaps.max() ?? 0)) ms")
+            XCTAssertGreaterThan(stepTimes.count, 15, "a run of drawn steps")
+            XCTAssertLessThan(gaps.max() ?? 0, 60, "no step hitched")
+            let between = run.filter { $0 > 0.5 && $0 < 179.5 }
+            print("RESULT \(mode.label): the guest's hinge reported \(run.count) angles, \(between.count) of them between the ends, ending at \(run.last ?? -1); the guest is on display \(foldables.activePanel(for: device.udid)?.displayID ?? -1)")
+            XCTAssertGreaterThanOrEqual(between.count, 3, "a run of angles, not a jump")
+            XCTAssertEqual(run.last ?? -1, mode.angle, accuracy: 1, "ending on the preset")
+            XCTAssertEqual(run, descending ? run.sorted(by: >) : run.sorted(), "never turning back")
+            XCTAssertEqual(foldables.activePanel(for: device.udid)?.displayID, wanted, "the guest landed on its usual screen")
+            XCTAssertEqual(model.hingeAngle, mode.angle, accuracy: 0.5, "the model ends on the preset too")
+        }
+    }
+
+    private var stepTimes: [ContinuousClock.Instant] = []
+
+    private static func segmentedControl(in window: NSWindow) -> NSSegmentedControl? {
+        func find(_ view: NSView) -> NSSegmentedControl? {
+            if let control = view as? NSSegmentedControl { return control }
+            for child in view.subviews { if let found = find(child) { return found } }
+            return nil
+        }
+        return window.contentView.flatMap(find)
+    }
+
+    /// A recording made shut shows the cover, and carries on with the inner panel once opened.
+    func testARecordingFollowsTheGuestBetweenPanels() async throws {
+        try await fold(to: DeviceControlBar.FoldMode.cover.angle)
+        try await launchHost()
+        let directory = FileManager.default.temporaryDirectory.appending(path: "odh-recording-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        XCTAssertTrue(manager.toggleRecording(into: directory).isEmpty, "a start hands back nothing")
+        XCTAssertTrue(manager.isRecording)
+        try await settle(2)
+        try await fold(to: DeviceControlBar.FoldMode.fullyOpen.angle)
+        try await settle(3)
+        let files = manager.toggleRecording(into: directory)
+        let file = try XCTUnwrap(files.first, "a stop hands back the movie")
+
+        let asset = AVURLAsset(url: file)
+        let tracks = try await asset.loadTracks(withMediaType: .video)
+        let track = try XCTUnwrap(tracks.first)
+        let size = try await track.load(.naturalSize)
+        let duration = try await asset.load(.duration)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        let first = try await generator.image(at: CMTime(seconds: 0.5, preferredTimescale: 600)).image
+        let last = try await generator.image(at: CMTime(seconds: duration.seconds - 0.2, preferredTimescale: 600)).image
+        func lit(_ image: CGImage, band: Int) -> (edge: Double, middle: Double) {
+            guard let data = image.dataProvider?.data as Data? else { return (0, 0) }
+            let rowBytes = image.bytesPerRow
+            func mean(_ columns: Range<Int>) -> Double {
+                var total = 0.0, count = 0.0
+                for y in stride(from: 0, to: image.height, by: 8) {
+                    for x in stride(from: columns.lowerBound, to: columns.upperBound, by: 4) {
+                        let i = y * rowBytes + x * 4
+                        total += Double(Int(data[i]) + Int(data[i + 1]) + Int(data[i + 2])) / 3
+                        count += 1
+                    }
+                }
+                return total / max(count, 1)
+            }
+            return (mean(0..<band), mean(image.width / 2 - band..<image.width / 2 + band))
+        }
+        let cover = lit(first, band: 20)
+        let inner = lit(last, band: 20)
+        print("RESULT the movie is \(Int(size.width))x\(Int(size.height)), \(String(format: "%.1f", duration.seconds))s; shut, the edge reads \(Int(cover.edge)) and the middle \(Int(cover.middle)); open, the edge reads \(Int(inner.edge)) and the middle \(Int(inner.middle))")
+        // The inner panel is built a quarter turn round, so the movie is its size turned; the
+        // encoder wants even dimensions, so an odd panel loses a pixel each way.
+        XCTAssertEqual(size.width, unfoldedPixelSize.height, accuracy: 1, "one movie the size of the inner panel as shown")
+        XCTAssertEqual(size.height, unfoldedPixelSize.width, accuracy: 1)
+        if let out = ProcessInfo.processInfo.environment["ODH_OUT"] {
+            for (name, image) in [("shut", first), ("open", last)] {
+                let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+                try? png?.write(to: URL(fileURLWithPath: out).appending(path: "recorded-\(name).png"))
+            }
+        }
+        XCTAssertGreaterThan(duration.seconds, 4, "the recording spans the fold")
+        XCTAssertLessThan(cover.edge, 25, "shut, the cover is fitted on black and leaves the edge dark")
+        XCTAssertGreaterThan(size.width, size.height, "the movie is landscape, as the open device is")
+        XCTAssertGreaterThan(cover.middle, 25, "and the cover's picture is in the middle")
+        XCTAssertGreaterThan(inner.edge, 25, "open, the inner panel fills the frame to its edge")
+    }
+
+    private var unfoldedPixelSize: CGSize {
+        (try? adapter.panels(device.udid).first { $0.name == "Unfolded" }?.pixelSize) ?? .zero
     }
 
     func testRotationTurnsTheGuestAndTheModel() async throws {

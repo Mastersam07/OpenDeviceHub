@@ -49,6 +49,10 @@ The device toolbar in `engine/Sources/OpenDeviceHubViewer/DeviceToolbar.swift` f
 Siniulator's `SimulatorToolbar`: the shortcut in each tooltip, Option on the rotate button turning
 the device the other way, and the screenshot button becoming a stop button while a recording runs.
 
+`engine/Sources/OpenDeviceHubEngine/Input/HingeMove.swift` is adapted from Siniulator's
+`DuoHingeAnimation`: a fold to a preset takes between 0.35 and 1 second by the distance moved, and
+follows a quintic ease in and out, with one clock driving the guest's hinge and the model.
+
 ## Dependencies
 
 ### swift-argument-parser
@@ -56,3 +60,12 @@ the device the other way, and the screenshot button becoming a stop button while
 Copyright (c) 2020 Apple Inc. and the Swift project authors.
 Licensed under the Apache License, Version 2.0.
 https://github.com/apple/swift-argument-parser
+
+### create-dmg
+
+Copyright (c) Sindre Sorhus. Licensed under the MIT license.
+https://github.com/sindresorhus/create-dmg
+
+The release disk image is made with create-dmg 8.1.0 when it is packaged, and nothing from it is
+kept in this repository. Its window background and layout ship inside every disk image. The disk
+icon is macOS's removable drive icon, as create-dmg carries it, with the app's icon drawn on top.

@@ -6,6 +6,7 @@ import OpenDeviceHubEngine
 @MainActor
 public final class DeviceWindowManager {
     private var controllers: [String: DeviceWindowController] = [:]
+    private var deviceTypes: [String: String] = [:]
     private var followTask: Task<Void, Never>?
     // Held because a notifier closes itself when it goes, which would end the stream silently.
     private var notifier: (any DeviceNotifier)?
@@ -54,7 +55,8 @@ public final class DeviceWindowManager {
         panelNativeRotation: Int = 0,
         unfoldedPanel: DevicePanel? = nil,
         cover: FoldableCover? = nil,
-        retarget: ((Int) -> Void)? = nil
+        retarget: ((Int) -> Void)? = nil,
+        orientation: DeviceOrientation = .portrait
     ) throws -> DeviceWindowController {
         if let existing = controllers[device.udid] {
             existing.window?.makeKeyAndOrderFront(nil)
@@ -82,6 +84,7 @@ public final class DeviceWindowManager {
         )
         controller.onClose = { [weak self] udid in
             self?.controllers.removeValue(forKey: udid)
+            self?.deviceTypes.removeValue(forKey: udid)
             self?.shutdownIfAsked(udid)
             self?.onDeviceClosed?(udid)
         }
@@ -92,6 +95,11 @@ public final class DeviceWindowManager {
             self?.report("\(device.name) stopped taking input")
         }
         controllers[device.udid] = controller
+        deviceTypes[device.udid] = device.deviceTypeIdentifier
+        // Turned before it is placed, so the window is placed and shown in the shape it keeps.
+        if orientation != .portrait {
+            controller.setOrientation(orientation)
+        }
 
         // Only place the window when nothing was remembered for this device, so a window the user
         // moved stays where they put it.
@@ -245,6 +253,10 @@ public final class DeviceWindowManager {
     public var openUDIDs: [String] { Array(controllers.keys) }
 
     public func controller(for udid: String) -> DeviceWindowController? { controllers[udid] }
+
+    public func hasCameraControl(_ udid: String) -> Bool {
+        deviceTypes[udid].map { DeviceTypeProfile.hasCameraControl(deviceType: $0) } ?? false
+    }
     /// The device the user is looking at, which is where an action that can only land on one goes.
     public var frontmostUDID: String? {
         controllers.first { $0.value.window?.isKeyWindow == true }?.key ?? controllers.keys.first
@@ -302,13 +314,14 @@ public final class DeviceWindowManager {
     }
 
     private var recorders: [String: ScreenRecorder] = [:]
+    private var selfRecording: Set<String> = []
 
-    public var isRecording: Bool { !recorders.isEmpty }
+    public var isRecording: Bool { !recorders.isEmpty || !selfRecording.isEmpty }
 
     /// Starts or stops recording every open device. Returns the files finished by a stop.
     @discardableResult
     public func toggleRecording(into directory: URL, date: Date = Date()) -> [URL] {
-        guard recorders.isEmpty else {
+        guard !isRecording else {
             var finished: [URL] = []
             for (udid, recorder) in recorders {
                 let file = recorder.stop()
@@ -318,6 +331,12 @@ public final class DeviceWindowManager {
                 controllers[udid]?.setDraggableFile(file)
             }
             recorders.removeAll()
+            for udid in selfRecording {
+                guard let file = controllers[udid]?.stopRecording() else { continue }
+                finished.append(file)
+                controllers[udid]?.setDraggableFile(file)
+            }
+            selfRecording.removeAll()
             for controller in controllers.values {
                 controller.setRecordingIndicatorVisible(false)
             }
@@ -327,19 +346,25 @@ public final class DeviceWindowManager {
         for (udid, controller) in controllers {
             let name = ScreenshotWriter.fileName(deviceName: controller.deviceTitle, date: date)
                 .replacingOccurrences(of: ".png", with: ".mov")
-            guard let recorder = try? ScreenRecorder(udid: udid, url: directory.appending(path: name)) else {
-                continue
+            let url = directory.appending(path: name)
+            if controller.recordsItself {
+                guard (try? controller.startRecording(to: url)) != nil else { continue }
+                selfRecording.insert(udid)
+            } else {
+                guard let recorder = try? ScreenRecorder(udid: udid, url: url) else { continue }
+                recorders[udid] = recorder
             }
-            recorders[udid] = recorder
             controller.setRecordingIndicatorVisible(true)
         }
         return []
     }
 
     public func stopRecording() {
-        guard !recorders.isEmpty else { return }
+        guard isRecording else { return }
         for recorder in recorders.values { recorder.stop() }
         recorders.removeAll()
+        for udid in selfRecording { _ = controllers[udid]?.stopRecording() }
+        selfRecording.removeAll()
         for controller in controllers.values {
             controller.setRecordingIndicatorVisible(false)
         }

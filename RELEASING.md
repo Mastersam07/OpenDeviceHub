@@ -23,6 +23,9 @@ downloads and are rewritten on every release.
   with `notarytool`, and the failure only shows up at submission.
 - The Sparkle update key pair. The public half is compiled into the app; the private half signs the
   feed.
+- create-dmg 8.1.0, which lays out the disk image window and draws its disk icon:
+  `npm install --global create-dmg@8.1.0` (Node 20 or newer). `scripts/package-dmg.sh` refuses any
+  other version, so a disk image made by hand matches the one the workflow makes.
 
 **If the update private key is lost, no installed copy can ever be updated again.** A later release
 cannot fix it, because the installed app only trusts the public key baked into the copy someone

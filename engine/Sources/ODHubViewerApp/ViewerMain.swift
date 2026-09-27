@@ -97,6 +97,14 @@ struct ODHubViewer: ParsableCommand {
                 displayReport: { try await adapter.displayReport($0) }
             )
             foldables.report = { print($0) }
+            foldables.onMove = { udid, event in
+                guard let controller = manager.controller(for: udid) else { return }
+                switch event {
+                case .began(let target): controller.beginFold(to: target)
+                case .angle(let angle): controller.showHingeAngle(angle)
+                case .ended: controller.endFold()
+                }
+            }
             manager.onDeviceClosed = {
                 pasteboard.forget($0)
                 foldables.forget($0)
@@ -149,6 +157,7 @@ struct ODHubViewer: ParsableCommand {
                     let angle = foldables.angle(for: udid) ?? DeviceControlBar.FoldMode.fullyOpen.angle
                     controller.showHingeAngle(angle)
                     controller.onHingeAngle = { angle in foldables.setAngle(angle, for: udid) }
+                    controller.onFoldPreset = { angle in foldables.setAngle(angle, for: udid, eased: true) }
                     foldables.setAngle(angle, for: udid)
                     foldables.follow(
                         udid,
@@ -286,7 +295,7 @@ struct ODHubViewer: ParsableCommand {
                 },
                 toggleLatencyOverlay: { manager.toggleLatencyOverlay() },
                 pressButton: { button in
-                    for udid in manager.openUDIDs {
+                    for udid in manager.openUDIDs where button != .cameraControl || manager.hasCameraControl(udid) {
                         Task {
                             do {
                                 guard let session = manager.controller(for: udid)?.inputSession
@@ -299,6 +308,9 @@ struct ODHubViewer: ParsableCommand {
                             }
                         }
                     }
+                },
+                hasCameraControl: {
+                    manager.frontmostUDID.map { manager.hasCameraControl($0) } ?? false
                 },
                 rotate: { left in
                     for udid in manager.openUDIDs {
@@ -614,6 +626,7 @@ struct ODHubViewer: ParsableCommand {
         let retarget: ((Int) -> Void)? = (input as? PanelInputSession).map { targeted in
             { targeted.setTarget(screenID: $0) }
         }
+        let orientation = DevicectlService().orientation(udid: device.udid) ?? .portrait
 
         let controller = try manager.open(
             device: device,
@@ -629,7 +642,8 @@ struct ODHubViewer: ParsableCommand {
             panelNativeRotation: panel?.nativeRotation ?? 0,
             unfoldedPanel: unfolded,
             cover: cover,
-            retarget: retarget
+            retarget: retarget,
+            orientation: orientation
         )
         // The model turns the picture itself; setting this too turns the unfolded panel twice.
         if let panel, !controller.foldsAtHinge {
