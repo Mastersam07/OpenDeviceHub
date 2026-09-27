@@ -39,23 +39,48 @@ public final class DuoModelView: SCNView {
     private struct Framing {
         let centre: SIMD3<Float>
         let correction: SIMD3<Float>
+        let distanceScale: Float
         let silhouette: (width: Int, height: Int, pixels: [Bool])?
     }
     private var framings: [Int: Framing] = [:]
+    private var fits: [Int: Float] = [:]
+    /// The most of the picture the device may cover; the shut phone sits at 0.97 down and stays.
+    static let fillLimit: Float = 0.98
+    /// What it is backed off to when it covers more, between 45 and 10 degrees, where it stands.
+    static let fillTarget: Float = 0.95
+    static let standingBand: Double = 50
     private var measuredTurns = 0
     private struct Move {
         let from: Double
         let to: Double
         let start: SIMD3<Float>
         let end: SIMD3<Float>
+        /// How far the camera stands back at the angles sampled along the way, in order.
+        let scales: [(angle: Double, scale: Float)]
         func fraction(of angle: Double) -> Double? {
             guard to != from else { return nil }
             let fraction = (angle - from) / (to - from)
             guard fraction > -0.001, fraction < 1.001 else { return nil }
             return min(max(fraction, 0), 1)
         }
+        func scale(at angle: Double) -> Float {
+            guard let above = scales.firstIndex(where: { $0.angle >= angle }) else { return scales.last?.scale ?? 1 }
+            guard above > 0 else { return scales[above].scale }
+            let below = scales[above - 1]
+            let span = scales[above].angle - below.angle
+            let mix = span > 0 ? Float((angle - below.angle) / span) : 0
+            return below.scale + (scales[above].scale - below.scale) * mix
+        }
     }
     private var move: Move?
+    /// How much of the picture the device covers at this angle from where the camera is now.
+    func drawnExtent(at angle: Double) -> CGSize {
+        twin.camera.simdTransform = cameraNode.simdTransform
+        _ = twinCentre(at: angle)
+        guard let box = measureOnScreen(twin.scene, from: twin.camera).box else { return .zero }
+        return CGSize(width: CGFloat(box.maxX - box.minX), height: CGFloat(box.maxY - box.minY))
+    }
+
     /// How many probe renders have been made, for a test that expects a move to make none.
     var probeRenders = 0
     private let cameraNode = SCNNode()
@@ -183,7 +208,10 @@ public final class DuoModelView: SCNView {
         if let move, let fraction = move.fraction(of: hingeAngle) {
             let correction = move.start + (move.end - move.start) * Float(fraction)
             // The twin's bones, not this scene's: a read here waits behind the render thread.
-            place(cameraNode, angle: hingeAngle, centre: twinCentre(at: hingeAngle), correction: correction)
+            place(
+                cameraNode, angle: hingeAngle, centre: twinCentre(at: hingeAngle),
+                correction: correction, distanceScale: move.scale(at: hingeAngle)
+            )
         } else {
             frameCamera()
         }
@@ -195,7 +223,48 @@ public final class DuoModelView: SCNView {
         let to = min(max(target, 0), 180)
         guard abs(to - hingeAngle) > 0.01 else { return }
         settleFraming()
-        move = Move(from: hingeAngle, to: to, start: framing(at: hingeAngle).correction, end: framing(at: to).correction)
+        let start = framing(at: hingeAngle)
+        let end = framing(at: to)
+        // The device stands tallest below 50 degrees, so that stretch of the way is sampled every
+        // five degrees; above it the open device is the widest thing and always fits.
+        var scales = [(angle: hingeAngle, scale: start.distanceScale), (angle: to, scale: end.distanceScale)]
+        let low = min(hingeAngle, to)
+        let high = min(max(hingeAngle, to), Self.standingBand)
+        for sample in stride(from: (low / 5).rounded(.up) * 5, through: high, by: 5) where sample > low && sample < max(hingeAngle, to) {
+            let fraction = Float((sample - hingeAngle) / (to - hingeAngle))
+            scales.append((sample, fit(at: sample, correction: start.correction + (end.correction - start.correction) * fraction)))
+        }
+        scales.sort { $0.angle < $1.angle }
+        move = Move(from: hingeAngle, to: to, start: start.correction, end: end.correction, scales: scales)
+    }
+
+    /// How far back the camera has to stand at this angle for the device to fit, from one look.
+    private func fit(at angle: Double, correction: SIMD3<Float>) -> Float {
+        let key = Int((angle * 100).rounded())
+        if let kept = fits[key] { return kept }
+        let centre = twinCentre(at: angle)
+        place(twin.camera, angle: angle, centre: centre, correction: correction, distanceScale: 1)
+        let scale = scaleToFit(measureOnScreen(twin.scene, from: twin.camera).box, at: angle, centre: centre, from: 1)
+        fits[key] = scale
+        return scale
+    }
+
+    /// A device cut off by the picture's edge measures as exactly full, so a clipped look is sized
+    /// again from twice as far.
+    private func scaleToFit(
+        _ box: (minX: Float, maxX: Float, minY: Float, maxY: Float)?, at angle: Double, centre: SIMD3<Float>, from scale: Float
+    ) -> Float {
+        guard let box else { return scale }
+        var fill = max(box.maxX - box.minX, box.maxY - box.minY)
+        guard fill > Self.fillLimit else { return scale }
+        if fill >= 0.999 {
+            place(twin.camera, angle: angle, centre: centre, correction: .zero, distanceScale: scale * 2)
+            if let far = measureOnScreen(twin.scene, from: twin.camera).box {
+                fill = max(fill, max(far.maxX - far.minX, far.maxY - far.minY) * 2)
+            }
+        }
+        // A little more than measured: the way between two looks can stand taller than either.
+        return scale * fill / Self.fillTarget * 1.02
     }
 
     public func endMove() {
@@ -373,7 +442,10 @@ public final class DuoModelView: SCNView {
         settleFraming()
         let framing = framing(at: hingeAngle)
         // The twin's centre, not this scene's: off screen, nothing has drawn this pose yet.
-        place(cameraNode, angle: hingeAngle, centre: framing.centre, correction: framing.correction)
+        place(
+            cameraNode, angle: hingeAngle, centre: framing.centre,
+            correction: framing.correction, distanceScale: framing.distanceScale
+        )
         silhouette = framing.silhouette
         projectButtons()
     }
@@ -385,6 +457,7 @@ public final class DuoModelView: SCNView {
         measuredTurns = guestQuarterTurns
         measureFlat()
         framings.removeAll()
+        fits.removeAll()
     }
 
     /// Measured on the twin once per angle and kept.
@@ -392,9 +465,20 @@ public final class DuoModelView: SCNView {
         let key = Int((angle * 100).rounded())
         if let kept = framings[key] { return kept }
         let centre = twinCentre(at: angle)
-        let analytic = place(twin.camera, angle: angle, centre: centre, correction: .zero)
-        let seen = recentre(twin.camera, in: twin.scene)
-        let made = Framing(centre: centre, correction: twin.camera.simdPosition - analytic, silhouette: seen)
+        var scale: Float = 1
+        var analytic = place(twin.camera, angle: angle, centre: centre, correction: .zero, distanceScale: scale)
+        var seen = recentre(twin.camera, in: twin.scene)
+        for _ in 0..<3 {
+            let fitted = scaleToFit(seen.box, at: angle, centre: centre, from: scale)
+            guard fitted > scale else { break }
+            scale = fitted
+            analytic = place(twin.camera, angle: angle, centre: centre, correction: .zero, distanceScale: scale)
+            seen = recentre(twin.camera, in: twin.scene)
+        }
+        let made = Framing(
+            centre: centre, correction: twin.camera.simdPosition - analytic,
+            distanceScale: scale, silhouette: seen.silhouette
+        )
         framings[key] = made
         return made
     }
@@ -407,12 +491,14 @@ public final class DuoModelView: SCNView {
     }
 
     @discardableResult
-    private func place(_ camera: SCNNode, angle: Double, centre: SIMD3<Float>, correction: SIMD3<Float>) -> SIMD3<Float> {
+    private func place(
+        _ camera: SCNNode, angle: Double, centre: SIMD3<Float>, correction: SIMD3<Float>, distanceScale: Float
+    ) -> SIMD3<Float> {
         let orbit = Self.cameraOrbit(forHingeAngle: angle)
         let direction = SIMD3<Float>(Float(sin(orbit)), Float(cos(orbit)), 0)
         // A bent device stands taller and needs more room; open stays tight to the window.
         let bend = Float(sin(.pi * (180 - min(max(angle, 0), 180)) / 180))
-        let analytic = centre + direction * (heldDistance(at: angle) * (1 + 0.2 * bend))
+        let analytic = centre + direction * (heldDistance(at: angle) * (1 + 0.2 * bend) * distanceScale)
         camera.simdPosition = analytic
         camera.look(
             at: SCNVector3(centre),
@@ -474,14 +560,16 @@ public final class DuoModelView: SCNView {
     }
 
     /// Measured from a render: a skinned node's transform and bounding box are its rest pose.
-    /// Walks the camera until the device is centred, and hands back the silhouette seen from there.
-    private func recentre(_ camera: SCNNode, in scene: SCNScene) -> (width: Int, height: Int, pixels: [Bool])? {
+    /// Walks the camera until the device is centred, and hands back what was seen from there.
+    private func recentre(
+        _ camera: SCNNode, in scene: SCNScene
+    ) -> (box: (minX: Float, maxX: Float, minY: Float, maxY: Float)?, silhouette: (width: Int, height: Int, pixels: [Bool])?) {
         let aspect = Float(max(bounds.width, 1) / max(bounds.height, 1))
-        var last: (width: Int, height: Int, pixels: [Bool])?
+        var last: (box: (minX: Float, maxX: Float, minY: Float, maxY: Float)?, silhouette: (width: Int, height: Int, pixels: [Bool])?) = (nil, nil)
         // A box cut off by the picture's edge under-corrects; several passes walk it in.
         for _ in 0..<8 {
             let (box, seen) = measureOnScreen(scene, from: camera)
-            last = seen
+            last = (box, seen)
             guard let box else { return last }
             let offsetX = (box.minX + box.maxX) / 2 - 0.5
             let offsetY = (box.minY + box.maxY) / 2 - 0.5
