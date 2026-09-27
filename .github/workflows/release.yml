@@ -25,6 +25,9 @@ jobs:
   release:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 90
+    # The repository hands workflows a read only token; creating the release needs write.
+    permissions:
+      contents: write
     env:
       ODH_SIGNING_IDENTITY: ${{ secrets.DEVELOPER_ID_IDENTITY }}
       ODH_ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
