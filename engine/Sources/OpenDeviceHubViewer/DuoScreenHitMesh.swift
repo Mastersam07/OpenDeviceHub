@@ -121,7 +121,7 @@ struct DuoScreenHitMesh {
     }
 
     private func skinned(bones: [SCNNode]) -> [SIMD3<Float>] {
-        let boneTransforms = bones.map { simd_float4x4($0.presentation.worldTransform) }
+        let boneTransforms = bones.map { simd_float4x4($0.worldTransform) }
         return restPositions.indices.map { index in
             var result = SIMD4<Float>.zero
             var total: Float = 0

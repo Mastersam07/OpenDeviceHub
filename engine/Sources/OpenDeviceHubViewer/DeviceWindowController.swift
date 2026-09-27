@@ -31,6 +31,15 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         toolbar?.showFoldAngle(degrees)
         modelView?.setHingeAngle(degrees)
     }
+
+    /// The fold is about to be walked to `target`; the model frames the move from its two ends.
+    public func beginFold(to target: Double) {
+        modelView?.beginMove(to: target)
+    }
+
+    public func endFold() {
+        modelView?.endMove()
+    }
     private let presentationView: DevicePresentationView
     private var chrome: DeviceChrome?
     private var toolbar: DeviceToolbar?
@@ -831,7 +840,9 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
                 if Task.isCancelled { return }
                 renderer.accept(frame)
                 await MainActor.run { [weak self] in
-                    screenView.needsDisplay = true
+                    // The flat view sits under the model and is not seen; drawing it costs the
+                    // main thread a draw per frame.
+                    if self?.modelView == nil { screenView.needsDisplay = true }
                     if let rotation = self?.unfoldedPanel?.nativeRotation {
                         self?.modelView?.setScreen(frame.surface, onCover: false, nativeRotation: rotation)
                     } else {

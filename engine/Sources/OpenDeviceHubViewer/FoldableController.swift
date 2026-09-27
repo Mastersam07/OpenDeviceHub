@@ -2,6 +2,12 @@ import AppKit
 import Foundation
 import OpenDeviceHubEngine
 
+public enum HingeMoveEvent: Sendable, Hashable {
+    case began(target: Double)
+    case angle(Double)
+    case ended
+}
+
 /// The active panel is never inferred from the angle sent: the guest reports it.
 @MainActor
 public final class FoldableController {
@@ -24,8 +30,8 @@ public final class FoldableController {
     }
 
     public var report: ((String) -> Void)?
-    /// Each angle a move passes through, so the window draws the same fold the guest is given.
-    public var onAngle: ((String, Double) -> Void)?
+    /// A move as it happens, so the window draws the same fold the guest is given.
+    public var onMove: ((String, HingeMoveEvent) -> Void)?
 
     public init(
         open: @escaping (String) throws -> any HingeControl,
@@ -44,7 +50,7 @@ public final class FoldableController {
     /// Eased, the hinge is walked there over a moment; otherwise sent at once, as a pinch wants.
     public func setAngle(_ degrees: Double, for udid: String, eased: Bool = false) {
         wanted[udid] = degrees
-        moves.removeValue(forKey: udid)?.cancel()
+        stopMove(for: udid)
         guard let control = control(for: udid) else { return }
 
         guard ready.contains(udid) else {
@@ -74,8 +80,15 @@ public final class FoldableController {
         move(HingeMove(start: start, target: degrees), on: control, for: udid)
     }
 
+    private func stopMove(for udid: String) {
+        guard let running = moves.removeValue(forKey: udid) else { return }
+        running.cancel()
+        onMove?(udid, .ended)
+    }
+
     private func move(_ move: HingeMove, on control: any HingeControl, for udid: String) {
         followers[udid]?.watcher.poke()
+        onMove?(udid, .began(target: move.target))
         let task = Task { @MainActor [weak self] in
             let started = ContinuousClock.now
             while !Task.isCancelled {
@@ -85,12 +98,13 @@ public final class FoldableController {
                 let angle = move.angle(at: progress)
                 guard let self else { return }
                 send(angle, to: control, for: udid, poke: false)
-                onAngle?(udid, angle)
+                onMove?(udid, .angle(angle))
                 if progress >= 1 { break }
                 try? await Task.sleep(for: HingeMove.stepInterval)
             }
             guard let self, !Task.isCancelled else { return }
             moves[udid] = nil
+            onMove?(udid, .ended)
             followers[udid]?.watcher.poke()
         }
         moves[udid] = task
@@ -161,7 +175,7 @@ public final class FoldableController {
     }
 
     public func forget(_ udid: String) {
-        moves.removeValue(forKey: udid)?.cancel()
+        stopMove(for: udid)
         shown[udid] = nil
         controls[udid] = nil
         ready.remove(udid)

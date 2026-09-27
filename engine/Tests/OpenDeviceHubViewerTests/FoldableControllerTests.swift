@@ -90,7 +90,11 @@ final class FoldableControllerTests: XCTestCase {
     func testAPresetEasesTheHingeThroughARun() async throws {
         let controller = makeController()
         var drawn: [Double] = []
-        controller.onAngle = { _, angle in drawn.append(angle) }
+        var events: [HingeMoveEvent] = []
+        controller.onMove = { _, event in
+            events.append(event)
+            if case .angle(let angle) = event { drawn.append(angle) }
+        }
         controller.setAngle(180, for: "A")
         try await Task.sleep(for: .milliseconds(120))
         XCTAssertEqual(hinges["A"]?.angles, [180])
@@ -103,6 +107,8 @@ final class FoldableControllerTests: XCTestCase {
         XCTAssertEqual(sent.last, 0, "ending on the preset")
         XCTAssertEqual(Array(sent), sent.sorted(by: >), "never turning back")
         XCTAssertEqual(drawn, Array(sent), "the window is shown the same run")
+        XCTAssertEqual(events.first, .began(target: 0))
+        XCTAssertEqual(events.last, .ended)
     }
 
     /// A pinch during a move takes over from where the fold visibly is, and the move stops.

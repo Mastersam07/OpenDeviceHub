@@ -69,7 +69,15 @@ final class FoldableDriveTests: XCTestCase {
         let udid = device.udid
         controller.onHingeAngle = { [foldables] angle in foldables?.setAngle(angle, for: udid) }
         controller.onFoldPreset = { [foldables] angle in foldables?.setAngle(angle, for: udid, eased: true) }
-        foldables.onAngle = { [weak controller] _, angle in controller?.showHingeAngle(angle) }
+        foldables.onMove = { [weak controller, weak self] _, event in
+            switch event {
+            case .began(let target): controller?.beginFold(to: target)
+            case .angle(let angle):
+                self?.stepTimes.append(ContinuousClock.now)
+                controller?.showHingeAngle(angle)
+            case .ended: controller?.endFold()
+            }
+        }
         foldables.follow(
             udid,
             onPanel: { [weak controller] panel in controller?.setActivePanel(screenID: panel.displayID) },
@@ -202,10 +210,18 @@ final class FoldableDriveTests: XCTestCase {
 
         for (mode, wanted, descending) in [(DeviceControlBar.FoldMode.cover, 1, true), (.fullyOpen, 3, false)] {
             samples.withLock { $0.removeAll() }
+            stepTimes.removeAll()
             control.selectedSegment = mode.rawValue
             control.sendAction(control.action, to: control.target)
             try await settle(3)
             let run = samples.withLock { $0 }
+            let gaps = zip(stepTimes.dropFirst(), stepTimes).map { later, earlier in
+                let d = later - earlier
+                return Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15
+            }
+            print("RESULT \(mode.label): the window drew \(stepTimes.count) steps, gaps mean \(String(format: "%.1f", gaps.reduce(0, +) / Double(max(gaps.count, 1)))) ms, worst \(String(format: "%.1f", gaps.max() ?? 0)) ms")
+            XCTAssertGreaterThan(stepTimes.count, 15, "a run of drawn steps")
+            XCTAssertLessThan(gaps.max() ?? 0, 60, "no step hitched")
             let between = run.filter { $0 > 0.5 && $0 < 179.5 }
             print("RESULT \(mode.label): the guest's hinge reported \(run.count) angles, \(between.count) of them between the ends, ending at \(run.last ?? -1); the guest is on display \(foldables.activePanel(for: device.udid)?.displayID ?? -1)")
             XCTAssertGreaterThanOrEqual(between.count, 3, "a run of angles, not a jump")
@@ -215,6 +231,8 @@ final class FoldableDriveTests: XCTestCase {
             XCTAssertEqual(model.hingeAngle, mode.angle, accuracy: 0.5, "the model ends on the preset too")
         }
     }
+
+    private var stepTimes: [ContinuousClock.Instant] = []
 
     private static func segmentedControl(in window: NSWindow) -> NSSegmentedControl? {
         func find(_ view: NSView) -> NSSegmentedControl? {
