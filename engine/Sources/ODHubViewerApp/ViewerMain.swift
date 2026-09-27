@@ -604,6 +604,7 @@ struct ODHubViewer: ParsableCommand {
         let retarget: ((Int) -> Void)? = (input as? PanelInputSession).map { targeted in
             { targeted.setTarget(screenID: $0) }
         }
+        let orientation = DevicectlService().orientation(udid: device.udid) ?? .portrait
 
         let controller = try manager.open(
             device: device,
@@ -619,7 +620,8 @@ struct ODHubViewer: ParsableCommand {
             panelNativeRotation: panel?.nativeRotation ?? 0,
             unfoldedPanel: unfolded,
             cover: cover,
-            retarget: retarget
+            retarget: retarget,
+            orientation: orientation
         )
         // The model turns the picture itself; setting this too turns the unfolded panel twice.
         if let panel, !controller.foldsAtHinge {
