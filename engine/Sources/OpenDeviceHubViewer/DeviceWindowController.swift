@@ -544,16 +544,44 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     }
 
     public func setOrientation(_ orientation: DeviceOrientation) {
+        let previous = Self.shown(self.orientation, nativeRotation: nativeRotation)
         self.orientation = orientation
         let shown = Self.shown(orientation, nativeRotation: nativeRotation)
         renderer.setOrientation(shown)
         chromeView.setOrientation(shown)
         // The model turns by the device's orientation, not by what the flat renderer draws.
         modelView?.setOrientation(orientation)
+        if shown.isLandscape != previous.isLandscape {
+            reshape(from: previous)
+        }
         // The scale mode settles the window's shape and its ratio, including the body, and leaves
         // both alone in full screen.
         applyScaleMode(scaleMode)
         screenView.needsDisplay = true
+    }
+
+    /// Fit mode has no size of its own, so a sideways turn reshapes the window itself, keeping the
+    /// device at the size it is drawn. A foldable's viewport is never reshaped.
+    private func reshape(from previous: DeviceOrientation) {
+        guard scaleMode == .fit, modelView == nil, let window,
+              !window.styleMask.contains(.fullScreen) else { return }
+        let content = PresentationLayout.contentSizeTurned(
+            from: window.contentRect(forFrameRect: window.frame).size,
+            shown: body(shownAs: previous),
+            within: (window.screen ?? NSScreen.main)?.visibleFrame.size ?? .zero
+        )
+        let size = window.frameRect(forContentRect: CGRect(origin: .zero, size: content)).size
+        let origin = CGPoint(x: window.frame.minX, y: window.frame.maxY - size.height)
+        window.contentResizeIncrements = NSSize(width: 1, height: 1)
+        window.setFrame(CGRect(origin: origin, size: size), display: true)
+        keepOnScreen()
+    }
+
+    private func body(shownAs orientation: DeviceOrientation) -> CGSize {
+        guard chromeView.hasChrome, let chrome else {
+            return orientation.displayedSize(portraitNative: screenPointSize)
+        }
+        return ChromeGeometry.contentSize(screen: screenPointSize, chrome: chrome, orientation: orientation)
     }
 
     public var currentOrientation: DeviceOrientation { orientation }
@@ -605,7 +633,19 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         guard tracksFrameChanges,
               let window,
               !window.styleMask.contains(.fullScreen) else { return }
-        frameStore.save(window.frame, for: frameKey)
+        frameStore.save(uprightFrame(of: window), for: frameKey)
+    }
+
+    /// Remembered upright, which is how a window opens.
+    private func uprightFrame(of window: NSWindow) -> CGRect {
+        let shown = Self.shown(orientation, nativeRotation: nativeRotation)
+        guard shown.isLandscape, scaleMode == .fit, modelView == nil else { return window.frame }
+        let content = PresentationLayout.contentSizeTurned(
+            from: window.contentRect(forFrameRect: window.frame).size,
+            shown: body(shownAs: shown)
+        )
+        let size = window.frameRect(forContentRect: CGRect(origin: .zero, size: content)).size
+        return CGRect(x: window.frame.minX, y: window.frame.maxY - size.height, width: size.width, height: size.height)
     }
 
     private var frameKey: String { udid }

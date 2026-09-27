@@ -112,6 +112,37 @@ final class PresentationLayoutTests: XCTestCase {
 
 extension PresentationLayoutTests {
     /// A sideways built panel shows landscape while the guest still believes it is upright.
+    func testATurnKeepsTheDeviceTheSizeItIsDrawn() {
+        let upright = PresentationLayout.contentSize(forDevice: device)
+        let sideways = PresentationLayout.contentSizeTurned(from: upright, shown: device)
+        XCTAssertEqual(sideways, PresentationLayout.contentSize(forDevice: CGSize(width: 874, height: 402)))
+        let back = PresentationLayout.contentSizeTurned(from: sideways, shown: CGSize(width: 874, height: 402))
+        XCTAssertEqual(back, upright)
+    }
+
+    /// A widened window draws the device scaled to its height, and that is the size a turn keeps.
+    func testATurnKeepsAFittedDevicesScale() {
+        let wide = CGSize(width: 600, height: 900)
+        let room = 900 - PresentationLayout.barHeight - PresentationLayout.deviceTopMargin - PresentationLayout.deviceBottomMargin
+        let drawnWidth = (device.width * room / device.height).rounded()
+        let sideways = PresentationLayout.contentSizeTurned(from: wide, shown: device)
+        XCTAssertEqual(sideways, PresentationLayout.contentSize(forDevice: CGSize(width: room, height: drawnWidth)))
+    }
+
+    func testATurnedWindowIsKeptWithinTheScreen() {
+        let upright = PresentationLayout.contentSize(forDevice: device)
+        let available = CGSize(width: 800, height: 600)
+        let sideways = PresentationLayout.contentSizeTurned(from: upright, shown: device, within: available)
+        XCTAssertLessThanOrEqual(sideways.width, available.width)
+        XCTAssertLessThanOrEqual(sideways.height, available.height)
+        let turnedDevice = CGSize(
+            width: sideways.width - PresentationLayout.deviceSideMargin * 2,
+            height: sideways.height - PresentationLayout.barHeight - PresentationLayout.deviceTopMargin - PresentationLayout.deviceBottomMargin
+        )
+        XCTAssertEqual(turnedDevice.width / turnedDevice.height, 874.0 / 402.0, accuracy: 0.01, "the device keeps its shape")
+        XCTAssertEqual(PresentationLayout.contentSizeTurned(from: upright, shown: .zero), upright, "nothing to turn, nothing changes")
+    }
+
     func testAPanelBuiltSidewaysTurnsThePicture() {
         XCTAssertEqual(DeviceWindowController.shown(.portrait, nativeRotation: 0), .portrait)
         XCTAssertEqual(DeviceWindowController.shown(.portrait, nativeRotation: 270), .landscapeLeft)

@@ -97,6 +97,28 @@ public struct PresentationLayout: Equatable {
         return min(1, min(room.width / device.width, room.height / device.height))
     }
 
+    /// The content that holds the device turned a quarter at the size a window of `content` draws
+    /// it, kept within `available` when given.
+    public static func contentSizeTurned(
+        from content: CGSize,
+        shown: CGSize,
+        within available: CGSize = .zero
+    ) -> CGSize {
+        guard shown.width > 0, shown.height > 0 else { return content }
+        let room = CGSize(
+            width: content.width - deviceSideMargin * 2,
+            height: content.height - barHeight - deviceTopMargin - deviceBottomMargin
+        )
+        guard room.width > 0, room.height > 0 else { return content }
+        let drawn = min(room.width / shown.width, room.height / shown.height)
+        var turned = CGSize(width: shown.height * drawn, height: shown.width * drawn)
+        if available != .zero {
+            let factor = scale(fitting: turned, in: available)
+            turned = CGSize(width: turned.width * factor, height: turned.height * factor)
+        }
+        return contentSize(forDevice: CGSize(width: turned.width.rounded(), height: turned.height.rounded()))
+    }
+
     /// The largest device that fits in the space available, keeping its shape.
     public static func deviceSize(fitting device: CGSize, in available: CGSize) -> CGSize {
         let factor = scale(fitting: device, in: available)
