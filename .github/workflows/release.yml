@@ -184,7 +184,8 @@ jobs:
             --title "${version}" \
             --notes-file build/release-notes.md \
             --latest \
-            build/OpenDeviceHub-${version}.dmg build/OpenDeviceHub.dmg build/SHA256SUMS
+            build/OpenDeviceHub-${version}.dmg build/OpenDeviceHub.dmg build/SHA256SUMS \
+            build/appcast.xml
         env:
           GH_TOKEN: ${{ github.token }}
 
