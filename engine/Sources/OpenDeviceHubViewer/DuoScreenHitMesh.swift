@@ -30,13 +30,18 @@ struct DuoScreenHitMesh {
               let bind = skinner.boneInverseBindTransforms else { return nil }
 
         let sources = geometry.sources
-        guard let vertexSlot = sources.firstIndex(where: { $0.semantic == .vertex }),
-              let uvSlot = sources.firstIndex(where: { $0.semantic == .texcoord }) else { return nil }
+        guard let vertexSlot = sources.firstIndex(where: { $0.semantic == .vertex }) else { return nil }
+        // A button has no picture on it and may carry no texture coordinates. It is still hit
+        // tested; its corners then read their position index for the coordinate, which is never
+        // looked at.
+        let uvSlot = sources.firstIndex(where: { $0.semantic == .texcoord }) ?? vertexSlot
 
         let vertices = Self.vectors(from: sources[vertexSlot], components: 3).map {
             SIMD3<Float>($0[0], $0[1], $0[2])
         }
-        let uvs = Self.vectors(from: sources[uvSlot], components: 2).map { SIMD2<Float>($0[0], $0[1]) }
+        let uvs = uvSlot == vertexSlot
+            ? vertices.map { _ in SIMD2<Float>(0, 0) }
+            : Self.vectors(from: sources[uvSlot], components: 2).map { SIMD2<Float>($0[0], $0[1]) }
         guard !vertices.isEmpty, !uvs.isEmpty else { return nil }
 
         let influences = skinner.boneIndices.componentsPerVector

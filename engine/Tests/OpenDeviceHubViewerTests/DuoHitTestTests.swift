@@ -1,6 +1,7 @@
 import Metal
 import XCTest
 @testable import OpenDeviceHubViewer
+import OpenDeviceHubEngine
 
 @MainActor
 final class DuoHitTestTests: XCTestCase {
@@ -73,5 +74,38 @@ final class DuoHitTestTests: XCTestCase {
         if let above, let below {
             XCTAssertLessThan(above.y, below.y, "up and down are swapped on the cover")
         }
+    }
+}
+
+extension DuoHitTestTests {
+    /// The body's buttons are found by where they sit, hit tested as the screens are, and nothing
+    /// else on the body answers as a button.
+    func testTheBodysButtonsAreWhereTheyAre() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("no Metal device") }
+        guard let view = DuoModelView(metalDevice: device, showingCover: false, nativeRotation: 270)
+        else { throw XCTSkip("this Xcode ships no foldable model") }
+        view.frame = CGRect(x: 0, y: 0, width: 620, height: 440)
+        view.layoutSubtreeIfNeeded()
+        view.setHingeAngle(180)
+
+        var found: [HardwareButton: Int] = [:]
+        var onScreen = 0
+        for x in stride(from: 2.0, to: 620.0, by: 4.0) {
+            for y in stride(from: 2.0, to: 440.0, by: 4.0) {
+                let point = CGPoint(x: x, y: y)
+                if let button = view.hardwareButton(at: point) {
+                    found[button, default: 0] += 1
+                    XCTAssertNil(view.screenPoint(at: point), "a button and the screen overlap at \(point)")
+                } else if view.screenPoint(at: point) != nil {
+                    onScreen += 1
+                }
+            }
+        }
+        print("RESULT buttons hit: \(found), screen points \(onScreen)")
+        XCTAssertGreaterThan(found[.volumeDown, default: 0], 0, "volume down is not on the body")
+        XCTAssertGreaterThan(found[.volumeUp, default: 0], 0, "volume up is not on the body")
+        XCTAssertGreaterThan(found[.lock, default: 0], 0, "the power button is not on the body")
+        XCTAssertNil(found[.home])
+        XCTAssertGreaterThan(onScreen, found.values.reduce(0, +) * 20, "the buttons are small next to the screen")
     }
 }

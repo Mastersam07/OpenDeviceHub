@@ -225,6 +225,60 @@ final class FoldableDriveTests: XCTestCase {
         try await settle(3)
     }
 
+    /// The body's buttons, pressed on the model through the window, read back from the guest: the
+    /// volume from `devicectl`, the lock from the panel's backlight in the display report.
+    func testTheBodysButtonsReachTheGuest() async throws {
+        try await fold(to: DeviceControlBar.FoldMode.fullyOpen.angle)
+        try await launchHost()
+
+        let before = try devicectlVolume()
+        try await press(.volumeDown)
+        try await settle(2)
+        let lowered = try devicectlVolume()
+        try await press(.volumeUp)
+        try await settle(2)
+        let raised = try devicectlVolume()
+        print("RESULT volume \(before) -> down \(lowered) -> up \(raised)")
+        XCTAssertLessThan(lowered, before, "volume down did nothing")
+        XCTAssertGreaterThan(raised, lowered, "volume up did nothing")
+
+        try await press(.lock)
+        try await settle(3)
+        let locked = try await adapter.displayReport(device.udid)
+        let lit = locked.integrated.contains { [.activeOn, .activeDimmed].contains($0.backlight) }
+        print("RESULT after the power button, a panel is lit: \(lit)")
+        XCTAssertFalse(lit, "the power button did not put the screen to sleep")
+
+        // Woken and unlocked again: the power button wakes it, the home swipe past the lock screen.
+        try await press(.lock)
+        try await settle(2)
+        if let input = controller.inputSession {
+            try await SystemGesture.home(on: input, turn: controller.layoutTurn)
+        }
+        try await settle(3)
+        let woken = try await adapter.displayReport(device.udid)
+        XCTAssertTrue(woken.integrated.contains { [.activeOn, .activeDimmed].contains($0.backlight) }, "the screen did not come back")
+    }
+
+    private func press(_ button: HardwareButton) async throws {
+        let rect = try XCTUnwrap(model.hardwareButtonRect(button), "\(button) is not on the model")
+        let spot = CGPoint(x: rect.midX, y: rect.midY)
+        XCTAssertEqual(model.hardwareButton(at: spot), button)
+        let view = try target(spot)
+        view.mouseDown(with: try Self.mouse(.leftMouseDown, at: model.convert(spot, to: nil)))
+        try await Task.sleep(for: .milliseconds(60))
+        view.mouseUp(with: try Self.mouse(.leftMouseUp, at: model.convert(spot, to: nil)))
+    }
+
+    private func devicectlVolume() throws -> Int {
+        let text = try run(["devicectl", "device", "info", "audio", "--device", device.udid, "--timeout", "10"])
+        guard let range = text.range(of: "Volume: "),
+              let value = Int(text[range.upperBound...].prefix { $0.isNumber }) else {
+            throw XCTSkip("devicectl printed no volume: \(text.prefix(200))")
+        }
+        return value
+    }
+
     // The guest leads: a fold is sent, then the guest's report is waited on, not a clock.
     private func fold(to degrees: Double) async throws {
         controller.showHingeAngle(degrees)

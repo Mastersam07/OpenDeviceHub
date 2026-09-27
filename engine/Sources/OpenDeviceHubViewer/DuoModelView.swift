@@ -50,6 +50,14 @@ public final class DuoModelView: SCNView {
     private let cameraNode = SCNNode()
     private let innerScreen: SCNNode
     private let coverScreen: SCNNode
+    /// The buttons on the body, found by where they sit rather than by name, and what each does.
+    private let hardwareButtons: [(button: HardwareButton, node: SCNNode)]
+    private var hoveredButton: HardwareButton?
+    private var pressedButton: HardwareButton?
+    private var tracking: NSTrackingArea?
+
+    /// Reports a press on one of the body's buttons, down and then up.
+    public var onHardwareButton: ((HardwareButton, ButtonPhase) -> Void)?
     private let metalDevice: MTLDevice
     /// How far the panel being shown is built round in its housing. The two panels of a foldable
     /// are built differently, so this follows whichever one the guest is drawing to.
@@ -93,6 +101,7 @@ public final class DuoModelView: SCNView {
         self.nativeQuarterTurns = ((-nativeRotation / 90) % 4 + 4) % 4
         innerScreen = inner
         coverScreen = cover
+        hardwareButtons = Self.hardwareButtons(in: scene.rootNode)
         activeScreen = showingCover ? cover : inner
         content = scene.rootNode
         poses = Self.freeze(scene.rootNode)
@@ -350,6 +359,7 @@ public final class DuoModelView: SCNView {
             localFront: SCNVector3(0, 0, -1)
         )
         recentre()
+        projectButtons()
     }
 
     /// Where the device is in the picture, as fractions of it, or nil when it is not in it at all.
@@ -502,6 +512,159 @@ public final class DuoModelView: SCNView {
         return raster.representation(using: .png, properties: [:])
     }
 
+    /// The body's buttons, by shape and place at the authored pose, which is flat open. The two bars
+    /// side by side on the top edge are the volume buttons, down then up going right, which is how
+    /// Device Hub labels them; the upper of the two parts on the right edge is the power button and
+    /// the lower is the camera control, which this app does not send. Names in this asset are
+    /// obfuscated and change between Xcode releases, so nothing here is looked up by name.
+    nonisolated static func hardwareButtons(in root: SCNNode) -> [(button: HardwareButton, node: SCNNode)] {
+        struct Part {
+            let node: SCNNode
+            let centre: SIMD3<Float>
+            let size: SIMD3<Float>
+        }
+        var parts: [Part] = []
+        root.enumerateHierarchy { node, _ in
+            guard node.geometry != nil else { return }
+            let (low, high) = node.boundingBox
+            let world = simd_float4x4(node.worldTransform)
+            var corners: [SIMD3<Float>] = []
+            for x in [low.x, high.x] {
+                for y in [low.y, high.y] {
+                    for z in [low.z, high.z] {
+                        corners.append(simd_make_float3(world * SIMD4<Float>(Float(x), Float(y), Float(z), 1)))
+                    }
+                }
+            }
+            let lowest = corners.reduce(corners[0]) { simd_min($0, $1) }
+            let highest = corners.reduce(corners[0]) { simd_max($0, $1) }
+            parts.append(Part(node: node, centre: (lowest + highest) / 2, size: highest - lowest))
+        }
+        let body = parts.map { abs($0.centre.x) + $0.size.x / 2 }.max() ?? 0
+        let top = parts.map { abs($0.centre.z) + $0.size.z / 2 }.max() ?? 0
+        // A button is a bar between one and two units long that stands proud of the body, on the
+        // top edge or the right edge.
+        func isBar(_ part: Part) -> Bool {
+            let longest = max(part.size.x, part.size.z)
+            return longest > 1 && longest < 2 && part.size.y > 0.1
+        }
+        let volume = parts
+            .filter { isBar($0) && $0.centre.z < -(top - 0.5) && $0.size.x > $0.size.z }
+            .sorted { $0.centre.x < $1.centre.x }
+        let side = parts
+            .filter { isBar($0) && $0.centre.x > body - 0.5 && $0.size.z > $0.size.x }
+            .sorted { $0.centre.z < $1.centre.z }
+        var found: [(HardwareButton, SCNNode)] = []
+        if volume.count >= 2 {
+            found.append((.volumeDown, volume[0].node))
+            found.append((.volumeUp, volume[1].node))
+        }
+        if let power = side.first {
+            found.append((.lock, power.node))
+        }
+        return found
+    }
+
+    /// How far around a button the pointer still counts as on it, in points. The buttons stand only
+    /// a few points proud of the body at a window's size, and a pointer is not that precise.
+    private static let buttonReach: CGFloat = 6
+
+    /// Where each button is in the view, as a rectangle, worked out once per pose and camera from
+    /// the button's posed vertices. A hover then costs a containment test, not a ray against three
+    /// meshes for every point the pointer passes.
+    private var buttonRects: [(button: HardwareButton, rect: CGRect)] = []
+
+    private func projectButtons() {
+        buttonRects = hardwareButtons.compactMap { button, node in
+            guard let mesh = hitMesh(for: node), let posed = posedPart(node, mesh) else { return nil }
+            var minX = CGFloat.greatestFiniteMagnitude, minY = CGFloat.greatestFiniteMagnitude
+            var maxX = -CGFloat.greatestFiniteMagnitude, maxY = -CGFloat.greatestFiniteMagnitude
+            for position in posed {
+                let projected = projectPoint(SCNVector3(position.x, position.y, position.z))
+                minX = min(minX, CGFloat(projected.x))
+                maxX = max(maxX, CGFloat(projected.x))
+                minY = min(minY, CGFloat(projected.y))
+                maxY = max(maxY, CGFloat(projected.y))
+            }
+            guard minX < maxX, minY < maxY else { return nil }
+            let rect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            return (button, rect.insetBy(dx: -Self.buttonReach, dy: -Self.buttonReach))
+        }
+    }
+
+    /// Which of the body's buttons is under this point of the view, or within reach of it, if any.
+    func hardwareButton(at point: CGPoint) -> HardwareButton? {
+        buttonRects.first { $0.rect.contains(point) }?.button
+    }
+
+    /// Where a button is in the view, for a pointer that wants to find it.
+    func hardwareButtonRect(_ button: HardwareButton) -> CGRect? {
+        buttonRects.first { $0.button == button }?.rect
+    }
+
+    private var posedParts: [ObjectIdentifier: (hinge: Double, positions: [SIMD3<Float>])] = [:]
+
+    private func posedPart(_ node: SCNNode, _ mesh: DuoScreenHitMesh) -> [SIMD3<Float>]? {
+        let key = ObjectIdentifier(node)
+        if let cached = posedParts[key], cached.hinge == hingeAngle { return cached.positions }
+        let bones = node.skinner?.bones ?? []
+        guard !bones.isEmpty else { return nil }
+        let positions = mesh.posedPositions(bones: bones)
+        posedParts[key] = (hingeAngle, positions)
+        return positions
+    }
+
+    public override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    public override func mouseMoved(with event: NSEvent) {
+        hover(hardwareButton(at: convert(event.locationInWindow, from: nil)))
+    }
+
+    public override func mouseExited(with event: NSEvent) {
+        hover(nil)
+    }
+
+    /// A button under the pointer lights up and says what it is, the way the bezel's buttons rise.
+    private func hover(_ button: HardwareButton?) {
+        guard button != hoveredButton else { return }
+        if let hoveredButton, let node = hardwareButtons.first(where: { $0.button == hoveredButton })?.node {
+            for material in node.geometry?.materials ?? [] { material.emission.contents = NSColor.black }
+        }
+        hoveredButton = button
+        if let button, let node = hardwareButtons.first(where: { $0.button == button })?.node {
+            for material in node.geometry?.materials ?? [] {
+                material.emission.contents = NSColor(white: 0.55, alpha: 1)
+            }
+            NSCursor.pointingHand.set()
+            toolTip = Self.name(of: button)
+        } else {
+            NSCursor.arrow.set()
+            toolTip = nil
+        }
+    }
+
+    nonisolated static func name(of button: HardwareButton) -> String {
+        switch button {
+        case .volumeUp: "Volume Up"
+        case .volumeDown: "Volume Down"
+        case .lock: "Lock"
+        case .home: "Home"
+        case .siri: "Siri"
+        case .actionButton: "Action Button"
+        }
+    }
+
     /// Where a click landed on the shown screen, 0 to 1 across and down.
     public var onTouch: ((CGPoint, TouchEvent.Phase) -> Void)?
 
@@ -540,9 +703,28 @@ public final class DuoModelView: SCNView {
     private var scrollDrag: ScrollDrag?
     private var scrollLift: DispatchWorkItem?
 
-    public override func mouseDown(with event: NSEvent) { report(event, phase: .began) }
-    public override func mouseDragged(with event: NSEvent) { report(event, phase: .moved) }
-    public override func mouseUp(with event: NSEvent) { report(event, phase: .ended) }
+    public override func mouseDown(with event: NSEvent) {
+        if let button = hardwareButton(at: convert(event.locationInWindow, from: nil)) {
+            pressedButton = button
+            onHardwareButton?(button, .down)
+            return
+        }
+        report(event, phase: .began)
+    }
+
+    public override func mouseDragged(with event: NSEvent) {
+        guard pressedButton == nil else { return }
+        report(event, phase: .moved)
+    }
+
+    public override func mouseUp(with event: NSEvent) {
+        if let pressedButton {
+            self.pressedButton = nil
+            onHardwareButton?(pressedButton, .up)
+            return
+        }
+        report(event, phase: .ended)
+    }
 
     /// Where the finger last was on the screen. A drag that runs off the edge of the screen stops
     /// there rather than vanishing, and a release off the screen lifts from there, since a contact

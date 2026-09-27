@@ -473,6 +473,10 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     public var onSessionLost: (() -> Void)?
 
     private func installChromeButtons() {
+        // The model's own buttons go the same way as the bezel's.
+        modelView?.onHardwareButton = { [weak self] button, phase in
+            self?.send { try await $0.button(button, phase: phase) }
+        }
         chromeView.onButton = { [weak self] button, phase in
             guard let self else { return }
             send { try await $0.button(button, phase: phase) }
