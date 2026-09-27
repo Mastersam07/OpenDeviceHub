@@ -92,9 +92,8 @@ to the individual constants, is listed in
 
 ## Tell me what breaks
 
-This is an early pre-release. If something does not work, please
-[open an issue]({REPOSITORY}/issues/new/choose): `odhub doctor` prints almost everything the bug
-form asks for.""")
+If something does not work, please [open an issue]({REPOSITORY}/issues/new/choose):
+`odhub doctor` prints almost everything the bug form asks for.""")
     return 0
 
 
