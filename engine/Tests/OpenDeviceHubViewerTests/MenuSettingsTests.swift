@@ -68,6 +68,45 @@ final class MenuSettingsTests: XCTestCase {
         XCTAssertEqual(chosen, [lagos])
     }
 
+    func testEachTickShowsTheDeviceInFront() throws {
+        let titles: [ViewerMenu.DeviceSetting: String] = [
+            .keyboardInput: "Send Keyboard Input to Device",
+            .hardwareKeyboard: "Connect Hardware Keyboard",
+            .keyboardLanguage: "Use the Same Keyboard Language as macOS",
+            .increasedContrast: "Toggle Increase Contrast",
+            .slowAnimations: "Slow Animations",
+            .latencyOverlay: "Show Click to Frame Latency",
+            .bezel: "Show Device Bezels",
+            .keepOnTop: "Stay On Top",
+        ]
+        XCTAssertEqual(Set(titles.keys), Set(ViewerMenu.DeviceSetting.allCases))
+        var inFront: Set<ViewerMenu.DeviceSetting> = []
+        var harness = MenuHarness()
+        harness.isOn = { inFront.contains($0) }
+        let target = harness.install()
+
+        for (setting, title) in titles {
+            let (item, _) = try XCTUnwrap(MenuHarness.item(titled: title), title)
+            inFront = [setting]
+            _ = target.validateMenuItem(item)
+            XCTAssertEqual(item.state, .on, "\(title) missed the device in front having it on")
+            inFront = []
+            _ = target.validateMenuItem(item)
+            XCTAssertEqual(item.state, .off, "\(title) missed the device in front having it off")
+        }
+    }
+
+    func testTogglingKeyboardInputFlipsTheDeviceInFront() throws {
+        var sent: [Bool] = []
+        var harness = MenuHarness()
+        harness.isOn = { $0 != .keyboardInput }
+        harness.toggleKeyboardInput = { sent.append($0) }
+        let target = harness.install()
+        let (item, _) = try XCTUnwrap(MenuHarness.item(titled: "Send Keyboard Input to Device"))
+        target.keyboardInput(item)
+        XCTAssertEqual(sent, [true], "the front device had keyboard input off, so it should turn on")
+    }
+
     func testShutDownSitsAfterRestart() throws {
         var shutDowns = 0
         var harness = MenuHarness()

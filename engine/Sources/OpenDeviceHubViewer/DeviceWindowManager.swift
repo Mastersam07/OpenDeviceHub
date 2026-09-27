@@ -229,30 +229,12 @@ public final class DeviceWindowManager {
         }
     }
 
-    @discardableResult
-    public func applyScaleMode(_ mode: ScaleMode) -> [String: ScaleApplication] {
-        controllers.mapValues { $0.applyScaleMode(mode) }
-    }
-
     private func placedFrames(excluding udid: String) -> [CGRect] {
         controllers
             .filter { $0.key != udid }
             .compactMap { $0.value.window?.frame }
     }
 
-    public func setKeepOnTop(_ enabled: Bool) {
-        for controller in controllers.values {
-            controller.setKeepOnTop(enabled)
-        }
-    }
-
-    public func setBezelEnabled(_ enabled: Bool) {
-        for controller in controllers.values {
-            controller.setBezelEnabled(enabled)
-        }
-    }
-
-    /// The UDIDs of every open window, so a menu action can reach all of them.
     /// Called after a window has closed, so anything held per device can be let go of.
     public var onDeviceClosed: ((String) -> Void)?
     /// Called once a window has fresh sessions after its device came back, so whatever else was
@@ -266,6 +248,7 @@ public final class DeviceWindowManager {
     public func hasCameraControl(_ udid: String) -> Bool {
         deviceTypes[udid].map { DeviceTypeProfile.hasCameraControl(deviceType: $0) } ?? false
     }
+
     /// The device the user is looking at, which is where an action that can only land on one goes.
     /// With Settings or an alert in front, that is the device window highest in the stack.
     public var frontmostUDID: String? {
@@ -280,21 +263,9 @@ public final class DeviceWindowManager {
         return controllers.keys.first
     }
 
-
-    public func toggleBezel() {
-        let enabled = controllers.values.first?.isBezelEnabled ?? true
-        setBezelEnabled(!enabled)
-    }
-
-    public func toggleKeepOnTop() {
-        let enabled = controllers.values.first?.isKeptOnTop ?? false
-        setKeepOnTop(!enabled)
-    }
-
-    /// Writes a PNG of every open device into `directory`, returning the files written.
+    /// Writes a PNG per open device into `directory`, or for just one when a udid is given, and
+    /// returns the files written.
     @discardableResult
-    /// Writes a PNG per open device, or for just one when a udid is given, which is what the
-    /// button above a single window needs.
     public func saveScreenshots(
         into directory: URL,
         date: Date = Date(),
@@ -336,9 +307,10 @@ public final class DeviceWindowManager {
 
     public var isRecording: Bool { !recorders.isEmpty || !selfRecording.isEmpty }
 
-    /// Starts or stops recording every open device. Returns the files finished by a stop.
+    /// Stops every recording, or starts one on each open device, or on just `only`. Returns the
+    /// files finished by a stop.
     @discardableResult
-    public func toggleRecording(into directory: URL, date: Date = Date()) -> [URL] {
+    public func toggleRecording(into directory: URL, date: Date = Date(), only chosen: String? = nil) -> [URL] {
         guard !isRecording else {
             var finished: [URL] = []
             for (udid, recorder) in recorders {
@@ -361,7 +333,7 @@ public final class DeviceWindowManager {
             return finished
         }
 
-        for (udid, controller) in controllers {
+        for (udid, controller) in controllers where chosen == nil || udid == chosen {
             let name = ScreenshotWriter.fileName(deviceName: controller.deviceTitle, date: date)
                 .replacingOccurrences(of: ".png", with: ".mov")
             let url = directory.appending(path: name)
@@ -386,17 +358,6 @@ public final class DeviceWindowManager {
         for controller in controllers.values {
             controller.setRecordingIndicatorVisible(false)
         }
-    }
-
-    public func setLatencyOverlayVisible(_ visible: Bool) {
-        for controller in controllers.values {
-            controller.setLatencyOverlayVisible(visible)
-        }
-    }
-
-    public func toggleLatencyOverlay() {
-        let visible = controllers.values.first?.isLatencyOverlayVisible ?? false
-        setLatencyOverlayVisible(!visible)
     }
 
     public func closeAll() {

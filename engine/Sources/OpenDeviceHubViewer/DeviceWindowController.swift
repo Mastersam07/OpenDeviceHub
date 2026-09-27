@@ -506,13 +506,22 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         tracksFrameChanges = true
     }
 
-    /// The most recent frame as a PNG, matching whatever the window is showing including the bezel.
     /// Whether the Mac's keystrokes reach this device.
     public var sendsKeyboardInput: Bool {
         get { screenView.sendsKeyboardInput }
         set { screenView.sendsKeyboardInput = newValue }
     }
 
+    /// What the menu last set on this device, for the ticks it shows. The guest does not report
+    /// these cheaply, so each starts as the app leaves a device it opens: keyboard on, language
+    /// matched, animations at normal speed.
+    public var hasHardwareKeyboard = true
+    public var matchesKeyboardLanguage = true
+    public var slowAnimations = false
+    /// Read from the guest the first time the menu needs it, then kept in step with each change.
+    public var increasesContrast: Bool?
+
+    /// The most recent frame as a PNG, matching whatever the window is showing including the bezel.
     public func screenshotPNG() -> Data? {
         // The flat body around a foldable's panel is a phone bezel round a landscape picture.
         if let modelView, chromeView.hasChrome, let png = modelView.screenshotPNG() {

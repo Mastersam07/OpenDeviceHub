@@ -78,7 +78,6 @@ struct ODHubViewer: ParsableCommand {
             let application = NSApplication.shared
             application.setActivationPolicy(.regular)
 
-            var slowAnimations = false
             let store = WindowFrameStore()
             if resetWindowPosition {
                 plan.udids.forEach(store.forget)
@@ -236,35 +235,51 @@ struct ODHubViewer: ParsableCommand {
 
             let deviceLinks = DefaultDeviceApplication()
             let updates = UpdateController()
+            // Every menu action lands on the device the user is looking at, as in Simulator.app.
+            let front: @MainActor () -> (udid: String, controller: DeviceWindowController)? = {
+                guard let udid = manager.frontmostUDID,
+                      let controller = manager.controller(for: udid) else { return nil }
+                return (udid, controller)
+            }
             let menuTarget = ViewerMenu.install(into: application, actions: ViewerMenu.Actions(
-                setScaleMode: { manager.applyScaleMode($0) },
-                toggleBezel: { manager.toggleBezel() },
-                toggleKeepOnTop: { manager.toggleKeepOnTop() },
-                pasteToDevice: {
-                    guard let text = NSPasteboard.general.string(forType: .string) else { return }
-                    let simctl = SimctlService()
-                    for udid in manager.openUDIDs {
-                        try? simctl.pasteboardCopy(text, udid: udid)
+                setScaleMode: { mode in
+                    guard let target = front() else { return }
+                    if case .largerThanScreen(let size) = target.controller.applyScaleMode(mode) {
+                        print("\(target.controller.deviceTitle): \(mode.displayName) needs \(Int(size.width))x\(Int(size.height)) points, which is larger than this display.")
                     }
                 },
-                setAppearance: { appearance in
+                toggleBezel: {
+                    guard let target = front() else { return }
+                    target.controller.setBezelEnabled(!target.controller.isBezelEnabled)
+                },
+                toggleKeepOnTop: {
+                    guard let target = front() else { return }
+                    target.controller.setKeepOnTop(!target.controller.isKeptOnTop)
+                },
+                pasteToDevice: {
+                    guard let target = front(),
+                          let text = NSPasteboard.general.string(forType: .string) else { return }
+                    try? SimctlService().pasteboardCopy(text, udid: target.udid)
+                },
+                toggleAppearance: {
+                    guard let target = front() else { return }
                     let simctl = SimctlService()
-                    for udid in manager.openUDIDs {
-                        try? simctl.setAppearance(appearance, udid: udid)
-                    }
+                    let current = (try? simctl.appearance(udid: target.udid)) ?? nil
+                    try? simctl.setAppearance(current == .dark ? .light : .dark, udid: target.udid)
                 },
                 saveScreenshot: {
+                    guard let target = front() else { return }
                     if settings.savesScreenshotsToClipboard {
-                        print(manager.copyScreenshotToClipboard() ? "screenshot saved to clipboard" : "nothing to save")
+                        print(manager.copyScreenshotToClipboard(only: target.udid) ? "screenshot saved to clipboard" : "nothing to save")
                     } else {
-                        present(manager.saveScreenshots(into: CaptureStaging.directory()))
+                        present(manager.saveScreenshots(into: CaptureStaging.directory(), only: target.udid))
                     }
                 },
                 copyScreenshot: {
                     print(manager.copyScreenshotToClipboard() ? "screenshot copied" : "nothing to copy")
                 },
                 toggleRecording: {
-                    let finished = manager.toggleRecording(into: CaptureStaging.directory())
+                    let finished = manager.toggleRecording(into: CaptureStaging.directory(), only: front()?.udid)
                     if finished.isEmpty {
                         print("recording started")
                     } else {
@@ -272,24 +287,21 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 simulateMemoryWarning: {
-                    for udid in manager.openUDIDs {
-                        do {
-                            try adapter.simulateMemoryWarning(udid)
-                            print("sent a memory warning to \(udid)")
-                        } catch {
-                            print("memory warning failed: \(error.localizedDescription)")
-                        }
+                    guard let target = front() else { return }
+                    do {
+                        try adapter.simulateMemoryWarning(target.udid)
+                        print("sent a memory warning to \(target.udid)")
+                    } catch {
+                        print("memory warning failed: \(error.localizedDescription)")
                     }
                 },
                 openSystemLog: {
-                    for udid in manager.openUDIDs {
-                        NSWorkspace.shared.open(SimctlService.systemLogDirectory(udid: udid))
-                    }
+                    guard let target = front() else { return }
+                    NSWorkspace.shared.open(SimctlService.systemLogDirectory(udid: target.udid))
                 },
                 openAppData: {
-                    for udid in manager.openUDIDs {
-                        NSWorkspace.shared.open(SimctlService.deviceDataDirectory(udid: udid))
-                    }
+                    guard let target = front() else { return }
+                    NSWorkspace.shared.open(SimctlService.deviceDataDirectory(udid: target.udid))
                 },
                 shake: {
                     guard let udid = manager.frontmostUDID else { return }
@@ -298,14 +310,20 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 toggleSlowAnimations: {
-                    slowAnimations.toggle()
-                    let simctl = SimctlService()
-                    for udid in manager.openUDIDs {
-                        try? simctl.setSlowAnimations(slowAnimations, udid: udid)
+                    guard let target = front() else { return }
+                    let wanted = !target.controller.slowAnimations
+                    do {
+                        try SimctlService().setSlowAnimations(wanted, udid: target.udid)
+                        target.controller.slowAnimations = wanted
+                        print("slow animations \(wanted ? "on" : "off")")
+                    } catch {
+                        print("slow animations failed: \(error.localizedDescription)")
                     }
-                    print("slow animations \(slowAnimations ? "on" : "off")")
                 },
-                toggleLatencyOverlay: { manager.toggleLatencyOverlay() },
+                toggleLatencyOverlay: {
+                    guard let target = front() else { return }
+                    target.controller.setLatencyOverlayVisible(!target.controller.isLatencyOverlayVisible)
+                },
                 pressButton: { button in
                     guard let udid = manager.frontmostUDID,
                           button != .cameraControl || manager.hasCameraControl(udid) else { return }
@@ -361,19 +379,18 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 toggleIncreaseContrast: {
+                    guard let target = front() else { return }
                     let simctl = SimctlService()
-                    for udid in manager.openUDIDs {
-                        let wanted = !simctl.increasesContrast(udid: udid)
-                        runOnEveryDevice("increase contrast", udid) {
-                            try simctl.setIncreaseContrast(wanted, udid: $0)
-                        }
+                    let wanted = !simctl.increasesContrast(udid: target.udid)
+                    target.controller.increasesContrast = wanted
+                    runOnEveryDevice("increase contrast", target.udid) {
+                        try simctl.setIncreaseContrast(wanted, udid: $0)
                     }
                 },
                 triggerICloudSync: {
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("iCloud sync", udid) {
-                            try SimctlService().triggerICloudSync(udid: $0)
-                        }
+                    guard let target = front() else { return }
+                    runOnEveryDevice("iCloud sync", target.udid) {
+                        try SimctlService().triggerICloudSync(udid: $0)
                     }
                 },
                 setLocation: { scenario in
@@ -409,25 +426,23 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 toggleKeyboardInput: { enabled in
-                    for udid in manager.openUDIDs {
-                        manager.controller(for: udid)?.sendsKeyboardInput = enabled
-                    }
+                    front()?.controller.sendsKeyboardInput = enabled
                 },
                 toggleHardwareKeyboard: { enabled in
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("hardware keyboard", udid) {
-                            try adapter.setHardwareKeyboardEnabled(enabled, udid: $0)
-                        }
+                    guard let target = front() else { return }
+                    target.controller.hasHardwareKeyboard = enabled
+                    runOnEveryDevice("hardware keyboard", target.udid) {
+                        try adapter.setHardwareKeyboardEnabled(enabled, udid: $0)
                     }
                 },
                 matchKeyboardLanguage: { matching in
+                    guard let target = front() else { return }
+                    target.controller.matchesKeyboardLanguage = matching
                     // Off leaves the guest on whatever it had: there is no "stop matching" call, so
                     // turning it back on is what re-applies the Mac's language.
                     guard matching, let language = KeyboardLanguage.current() else { return }
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("keyboard language", udid) {
-                            try adapter.setKeyboardLanguage(language, udid: $0)
-                        }
+                    runOnEveryDevice("keyboard language", target.udid) {
+                        try adapter.setKeyboardLanguage(language, udid: $0)
                     }
                 },
                 toggleAutomaticPasteboardSync: { enabled in
@@ -482,16 +497,13 @@ struct ODHubViewer: ParsableCommand {
                     turn(orientation, udid)
                 },
                 appSwitcher: {
-                    for udid in manager.openUDIDs {
-                        guard let controller = manager.controller(for: udid),
-                              let session = controller.inputSession else { continue }
-                        let turn = controller.layoutTurn
-                        Task {
-                            do {
-                                try await SystemGesture.appSwitcher(on: session, turn: turn)
-                            } catch {
-                                print("app switcher failed: \(error.localizedDescription)")
-                            }
+                    guard let target = front(), let session = target.controller.inputSession else { return }
+                    let turn = target.controller.layoutTurn
+                    Task {
+                        do {
+                            try await SystemGesture.appSwitcher(on: session, turn: turn)
+                        } catch {
+                            print("app switcher failed: \(error.localizedDescription)")
                         }
                     }
                 },
@@ -499,6 +511,24 @@ struct ODHubViewer: ParsableCommand {
                     present(manager.toggleRecording(into: CaptureStaging.directory()))
                 },
                 isRecording: { manager.isRecording },
+                isOn: { setting in
+                    guard let target = front() else { return false }
+                    let controller = target.controller
+                    switch setting {
+                    case .keyboardInput: return controller.sendsKeyboardInput
+                    case .hardwareKeyboard: return controller.hasHardwareKeyboard
+                    case .keyboardLanguage: return controller.matchesKeyboardLanguage
+                    case .slowAnimations: return controller.slowAnimations
+                    case .latencyOverlay: return controller.isLatencyOverlayVisible
+                    case .bezel: return controller.isBezelEnabled
+                    case .keepOnTop: return controller.isKeptOnTop
+                    case .increasedContrast:
+                        if let known = controller.increasesContrast { return known }
+                        let read = SimctlService().increasesContrast(udid: target.udid)
+                        controller.increasesContrast = read
+                        return read
+                    }
+                },
                 checkForUpdates: updates.map { updater in { updater.checkForUpdates() } },
                 showSettings: {
                     SettingsWindow.show(settings: settings, actions: SettingsActions(
