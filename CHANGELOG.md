@@ -11,6 +11,10 @@ First release.
   other from the Dock icon or File, Open Simulator, and a device booted anywhere else gets a window
   too.
 - One window per simulator, with the device body drawn around the screen and its buttons clickable.
+- The iPhone Duo is shown as the foldable it is: the body bends with the hinge, cover, half open
+  and fully open are a click away, the window follows whichever screen the device is using, and
+  touch, scroll, home, the app switcher, rotation, screenshots and the buttons on the body all work
+  on it.
 - Point Accurate, Pixel Accurate, Physical Size and Fit, plus full screen and windows that remember
   where they were.
 - Click to tap, drag, two finger pinch and rotate, keyboard input, hardware buttons, and the swipe

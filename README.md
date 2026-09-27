@@ -60,6 +60,9 @@ simulators.
   appearance, from the menu or by clicking the buttons on the device body. Restart or erase a device,
   step its text size, turn on increased contrast, trigger an iCloud sync, and set a location from a
   scenario or your own coordinates.
+- **Foldables**: the iPhone Duo appears as the device itself, bent by the hinge. Pick cover, half
+  open or fully open from the window's bar, and the window follows whichever screen the device is
+  using. Hover a button on the body and it comes up; click it and it presses.
 - **Create a simulator**: name it, pick a device type and an OS version, and it boots and opens. The
   two lists follow each other, so a device an installed runtime cannot run is never offered.
 - **Screenshots and recordings**: a capture appears beside the window first, where you can open,
