@@ -92,9 +92,8 @@ to the individual constants, is listed in
 
 ## Tell me what breaks
 
-This is the first release and it has been used by one person on one Mac. If something does not work,
-please [open an issue]({REPOSITORY}/issues/new/choose): `odhub doctor` prints almost
-everything the bug form asks for.""")
+If something does not work, please [open an issue]({REPOSITORY}/issues/new/choose):
+`odhub doctor` prints almost everything the bug form asks for.""")
     return 0
 
 

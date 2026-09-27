@@ -78,7 +78,6 @@ struct ODHubViewer: ParsableCommand {
             let application = NSApplication.shared
             application.setActivationPolicy(.regular)
 
-            var slowAnimations = false
             let store = WindowFrameStore()
             if resetWindowPosition {
                 plan.udids.forEach(store.forget)
@@ -138,6 +137,25 @@ struct ODHubViewer: ParsableCommand {
                 }
             }
 
+            // Opens unfolded unless told otherwise, which is where the device's own tooling starts.
+            let followFold: @MainActor (String, DeviceWindowController, Double?) -> Void = { udid, controller, angle in
+                let angle = angle ?? DeviceControlBar.FoldMode.fullyOpen.angle
+                controller.showHingeAngle(angle)
+                controller.onHingeAngle = { angle in foldables.setAngle(angle, for: udid) }
+                controller.onFoldPreset = { angle in foldables.setAngle(angle, for: udid, eased: true) }
+                foldables.setAngle(angle, for: udid)
+                foldables.follow(
+                    udid,
+                    nudges: controller.screenChanges,
+                    onPanel: { [weak controller] panel in
+                        controller?.setActivePanel(screenID: panel.displayID)
+                    },
+                    onHinge: { [weak controller] degrees in
+                        controller?.showHingeAngle(degrees)
+                    }
+                )
+            }
+
             let show: @MainActor (String, Bool) throws -> Void = { udid, allowBoot in
                 let current = try adapter.devices()
                 try self.open(
@@ -151,25 +169,20 @@ struct ODHubViewer: ParsableCommand {
                 )
                 recent.remember(udid)
                 pasteboard.adopt(udid)
-
-                // Opens unfolded, which is where the device's own tooling starts.
                 if let controller = manager.controller(for: udid), controller.foldsAtHinge {
-                    let angle = foldables.angle(for: udid) ?? DeviceControlBar.FoldMode.fullyOpen.angle
-                    controller.showHingeAngle(angle)
-                    controller.onHingeAngle = { angle in foldables.setAngle(angle, for: udid) }
-                    controller.onFoldPreset = { angle in foldables.setAngle(angle, for: udid, eased: true) }
-                    foldables.setAngle(angle, for: udid)
-                    foldables.follow(
-                        udid,
-                        nudges: controller.screenChanges,
-                        onPanel: { [weak controller] panel in
-                            controller?.setActivePanel(screenID: panel.displayID)
-                        },
-                        onHinge: { [weak controller] degrees in
-                            controller?.showHingeAngle(degrees)
-                        }
-                    )
+                    followFold(udid, controller, foldables.angle(for: udid))
                 }
+            }
+
+            // The hinge, its readings and the clipboard connection all belong to the boot that
+            // ended, so they are opened again. The window keeps the fold it was showing.
+            manager.onReattached = { udid in
+                pasteboard.forget(udid)
+                pasteboard.adopt(udid)
+                guard let controller = manager.controller(for: udid), controller.foldsAtHinge else { return }
+                let angle = foldables.angle(for: udid)
+                foldables.forget(udid)
+                followFold(udid, controller, angle)
             }
 
             for udid in plan.udids {
@@ -222,35 +235,51 @@ struct ODHubViewer: ParsableCommand {
 
             let deviceLinks = DefaultDeviceApplication()
             let updates = UpdateController()
+            // Every menu action lands on the device the user is looking at, as in Simulator.app.
+            let front: @MainActor () -> (udid: String, controller: DeviceWindowController)? = {
+                guard let udid = manager.frontmostUDID,
+                      let controller = manager.controller(for: udid) else { return nil }
+                return (udid, controller)
+            }
             let menuTarget = ViewerMenu.install(into: application, actions: ViewerMenu.Actions(
-                setScaleMode: { manager.applyScaleMode($0) },
-                toggleBezel: { manager.toggleBezel() },
-                toggleKeepOnTop: { manager.toggleKeepOnTop() },
-                pasteToDevice: {
-                    guard let text = NSPasteboard.general.string(forType: .string) else { return }
-                    let simctl = SimctlService()
-                    for udid in manager.openUDIDs {
-                        try? simctl.pasteboardCopy(text, udid: udid)
+                setScaleMode: { mode in
+                    guard let target = front() else { return }
+                    if case .largerThanScreen(let size) = target.controller.applyScaleMode(mode) {
+                        print("\(target.controller.deviceTitle): \(mode.displayName) needs \(Int(size.width))x\(Int(size.height)) points, which is larger than this display.")
                     }
                 },
-                setAppearance: { appearance in
+                toggleBezel: {
+                    guard let target = front() else { return }
+                    target.controller.setBezelEnabled(!target.controller.isBezelEnabled)
+                },
+                toggleKeepOnTop: {
+                    guard let target = front() else { return }
+                    target.controller.setKeepOnTop(!target.controller.isKeptOnTop)
+                },
+                pasteToDevice: {
+                    guard let target = front(),
+                          let text = NSPasteboard.general.string(forType: .string) else { return }
+                    try? SimctlService().pasteboardCopy(text, udid: target.udid)
+                },
+                toggleAppearance: {
+                    guard let target = front() else { return }
                     let simctl = SimctlService()
-                    for udid in manager.openUDIDs {
-                        try? simctl.setAppearance(appearance, udid: udid)
-                    }
+                    let current = (try? simctl.appearance(udid: target.udid)) ?? nil
+                    try? simctl.setAppearance(current == .dark ? .light : .dark, udid: target.udid)
                 },
                 saveScreenshot: {
+                    guard let target = front() else { return }
                     if settings.savesScreenshotsToClipboard {
-                        print(manager.copyScreenshotToClipboard() ? "screenshot saved to clipboard" : "nothing to save")
+                        print(manager.copyScreenshotToClipboard(only: target.udid) ? "screenshot saved to clipboard" : "nothing to save")
                     } else {
-                        present(manager.saveScreenshots(into: CaptureStaging.directory()))
+                        present(manager.saveScreenshots(into: CaptureStaging.directory(), only: target.udid))
                     }
                 },
                 copyScreenshot: {
                     print(manager.copyScreenshotToClipboard() ? "screenshot copied" : "nothing to copy")
                 },
                 toggleRecording: {
-                    let finished = manager.toggleRecording(into: CaptureStaging.directory())
+                    let finished = manager.toggleRecording(into: CaptureStaging.directory(), only: front()?.udid)
                     if finished.isEmpty {
                         print("recording started")
                     } else {
@@ -258,54 +287,55 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 simulateMemoryWarning: {
-                    for udid in manager.openUDIDs {
-                        do {
-                            try adapter.simulateMemoryWarning(udid)
-                            print("sent a memory warning to \(udid)")
-                        } catch {
-                            print("memory warning failed: \(error.localizedDescription)")
-                        }
+                    guard let target = front() else { return }
+                    do {
+                        try adapter.simulateMemoryWarning(target.udid)
+                        print("sent a memory warning to \(target.udid)")
+                    } catch {
+                        print("memory warning failed: \(error.localizedDescription)")
                     }
                 },
                 openSystemLog: {
-                    for udid in manager.openUDIDs {
-                        NSWorkspace.shared.open(SimctlService.systemLogDirectory(udid: udid))
-                    }
+                    guard let target = front() else { return }
+                    NSWorkspace.shared.open(SimctlService.systemLogDirectory(udid: target.udid))
                 },
                 openAppData: {
-                    for udid in manager.openUDIDs {
-                        NSWorkspace.shared.open(SimctlService.deviceDataDirectory(udid: udid))
-                    }
+                    guard let target = front() else { return }
+                    NSWorkspace.shared.open(SimctlService.deviceDataDirectory(udid: target.udid))
                 },
                 shake: {
-                    let simctl = SimctlService()
-                    for udid in manager.openUDIDs {
-                        do { try simctl.shake(udid: udid) } catch {
-                            print("shake failed: \(error.localizedDescription)")
-                        }
+                    guard let udid = manager.frontmostUDID else { return }
+                    do { try SimctlService().shake(udid: udid) } catch {
+                        print("shake failed: \(error.localizedDescription)")
                     }
                 },
                 toggleSlowAnimations: {
-                    slowAnimations.toggle()
-                    let simctl = SimctlService()
-                    for udid in manager.openUDIDs {
-                        try? simctl.setSlowAnimations(slowAnimations, udid: udid)
+                    guard let target = front() else { return }
+                    let wanted = !target.controller.slowAnimations
+                    do {
+                        try SimctlService().setSlowAnimations(wanted, udid: target.udid)
+                        target.controller.slowAnimations = wanted
+                        print("slow animations \(wanted ? "on" : "off")")
+                    } catch {
+                        print("slow animations failed: \(error.localizedDescription)")
                     }
-                    print("slow animations \(slowAnimations ? "on" : "off")")
                 },
-                toggleLatencyOverlay: { manager.toggleLatencyOverlay() },
+                toggleLatencyOverlay: {
+                    guard let target = front() else { return }
+                    target.controller.setLatencyOverlayVisible(!target.controller.isLatencyOverlayVisible)
+                },
                 pressButton: { button in
-                    for udid in manager.openUDIDs where button != .cameraControl || manager.hasCameraControl(udid) {
-                        Task {
-                            do {
-                                guard let session = manager.controller(for: udid)?.inputSession
-                                else { return }
-                                try await session.button(button, phase: .down)
-                                try await Task.sleep(for: .milliseconds(15))
-                                try await session.button(button, phase: .up)
-                            } catch {
-                                print("\(button) failed: \(error.localizedDescription)")
-                            }
+                    guard let udid = manager.frontmostUDID,
+                          button != .cameraControl || manager.hasCameraControl(udid) else { return }
+                    Task {
+                        do {
+                            guard let session = manager.controller(for: udid)?.inputSession
+                            else { return }
+                            try await session.button(button, phase: .down)
+                            try await Task.sleep(for: .milliseconds(15))
+                            try await session.button(button, phase: .up)
+                        } catch {
+                            print("\(button) failed: \(error.localizedDescription)")
                         }
                     }
                 },
@@ -313,117 +343,106 @@ struct ODHubViewer: ParsableCommand {
                     manager.frontmostUDID.map { manager.hasCameraControl($0) } ?? false
                 },
                 rotate: { left in
-                    for udid in manager.openUDIDs {
-                        guard let controller = manager.controller(for: udid) else { continue }
-                        let next = left
-                            ? controller.currentOrientation.rotatedLeft
-                            : controller.currentOrientation.rotatedRight
-                        turn(next, udid)
-                    }
+                    guard let udid = manager.frontmostUDID,
+                          let controller = manager.controller(for: udid) else { return }
+                    let next = left
+                        ? controller.currentOrientation.rotatedLeft
+                        : controller.currentOrientation.rotatedRight
+                    turn(next, udid)
                 },
                 restart: {
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("restart", udid) { try SimctlService().restart(udid: $0) }
-                    }
+                    guard let udid = manager.frontmostUDID else { return }
+                    runOnEveryDevice("restart", udid) { try SimctlService().restart(udid: $0) }
                 },
                 shutdown: {
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("shutdown", udid) { try SimctlService().shutdown(udid: $0) }
-                    }
+                    guard let udid = manager.frontmostUDID else { return }
+                    runOnEveryDevice("shutdown", udid) { try SimctlService().shutdown(udid: $0) }
                 },
                 erase: {
                     // Destructive and not undoable, so it asks, names the device, and Erase is not
                     // the default button.
-                    for udid in manager.openUDIDs {
-                        guard let controller = manager.controller(for: udid) else { continue }
-                        let alert = NSAlert()
-                        alert.alertStyle = .warning
-                        alert.messageText = "Erase \(controller.deviceTitle)?"
-                        alert.informativeText = "Every app, setting and file on this simulator is deleted. This cannot be undone, and the device is left shut down."
-                        alert.addButton(withTitle: "Cancel")
-                        alert.addButton(withTitle: "Erase")
-                        guard alert.runModal() == .alertSecondButtonReturn else { continue }
-                        runOnEveryDevice("erase", udid) { try SimctlService().erase(udid: $0) }
-                    }
+                    guard let udid = manager.frontmostUDID,
+                          let controller = manager.controller(for: udid) else { return }
+                    let alert = NSAlert()
+                    alert.alertStyle = .warning
+                    alert.messageText = "Erase \(controller.deviceTitle)?"
+                    alert.informativeText = "Every app, setting and file on this simulator is deleted. This cannot be undone, and the device is left shut down."
+                    alert.addButton(withTitle: "Cancel")
+                    alert.addButton(withTitle: "Erase")
+                    guard alert.runModal() == .alertSecondButtonReturn else { return }
+                    runOnEveryDevice("erase", udid) { try SimctlService().erase(udid: $0) }
                 },
                 stepTextSize: { step in
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("text size", udid) {
-                            try SimctlService().stepContentSize(step, udid: $0)
-                        }
+                    guard let udid = manager.frontmostUDID else { return }
+                    runOnEveryDevice("text size", udid) {
+                        try SimctlService().stepContentSize(step, udid: $0)
                     }
                 },
                 toggleIncreaseContrast: {
+                    guard let target = front() else { return }
                     let simctl = SimctlService()
-                    for udid in manager.openUDIDs {
-                        let wanted = !simctl.increasesContrast(udid: udid)
-                        runOnEveryDevice("increase contrast", udid) {
-                            try simctl.setIncreaseContrast(wanted, udid: $0)
-                        }
+                    let wanted = !simctl.increasesContrast(udid: target.udid)
+                    target.controller.increasesContrast = wanted
+                    runOnEveryDevice("increase contrast", target.udid) {
+                        try simctl.setIncreaseContrast(wanted, udid: $0)
                     }
                 },
                 triggerICloudSync: {
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("iCloud sync", udid) {
-                            try SimctlService().triggerICloudSync(udid: $0)
-                        }
+                    guard let target = front() else { return }
+                    runOnEveryDevice("iCloud sync", target.udid) {
+                        try SimctlService().triggerICloudSync(udid: $0)
                     }
                 },
                 setLocation: { scenario in
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("location", udid) { device in
-                            if let scenario {
-                                try SimctlService().runLocation(scenario, udid: device)
-                            } else {
-                                try SimctlService().clearLocation(udid: device)
-                            }
+                    guard let udid = manager.frontmostUDID else { return }
+                    runOnEveryDevice("location", udid) { device in
+                        if let scenario {
+                            try SimctlService().runLocation(scenario, udid: device)
+                        } else {
+                            try SimctlService().clearLocation(udid: device)
                         }
                     }
                 },
                 setCustomLocation: {
-                    guard let point = CustomLocationPrompt.ask() else { return }
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("location", udid) {
-                            try SimctlService().setLocation(
-                                latitude: point.latitude,
-                                longitude: point.longitude,
-                                udid: $0
-                            )
-                        }
+                    guard let udid = manager.frontmostUDID,
+                          let point = CustomLocationPrompt.ask() else { return }
+                    runOnEveryDevice("location", udid) {
+                        try SimctlService().setLocation(
+                            latitude: point.latitude,
+                            longitude: point.longitude,
+                            udid: $0
+                        )
                     }
                 },
                 locationFavorites: { settings.locationFavorites },
                 setFavoriteLocation: { favorite in
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("location", udid) {
-                            try SimctlService().setLocation(
-                                latitude: favorite.latitude,
-                                longitude: favorite.longitude,
-                                udid: $0
-                            )
-                        }
+                    guard let udid = manager.frontmostUDID else { return }
+                    runOnEveryDevice("location", udid) {
+                        try SimctlService().setLocation(
+                            latitude: favorite.latitude,
+                            longitude: favorite.longitude,
+                            udid: $0
+                        )
                     }
                 },
                 toggleKeyboardInput: { enabled in
-                    for udid in manager.openUDIDs {
-                        manager.controller(for: udid)?.sendsKeyboardInput = enabled
-                    }
+                    front()?.controller.sendsKeyboardInput = enabled
                 },
                 toggleHardwareKeyboard: { enabled in
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("hardware keyboard", udid) {
-                            try adapter.setHardwareKeyboardEnabled(enabled, udid: $0)
-                        }
+                    guard let target = front() else { return }
+                    target.controller.hasHardwareKeyboard = enabled
+                    runOnEveryDevice("hardware keyboard", target.udid) {
+                        try adapter.setHardwareKeyboardEnabled(enabled, udid: $0)
                     }
                 },
                 matchKeyboardLanguage: { matching in
+                    guard let target = front() else { return }
+                    target.controller.matchesKeyboardLanguage = matching
                     // Off leaves the guest on whatever it had: there is no "stop matching" call, so
                     // turning it back on is what re-applies the Mac's language.
                     guard matching, let language = KeyboardLanguage.current() else { return }
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("keyboard language", udid) {
-                            try adapter.setKeyboardLanguage(language, udid: $0)
-                        }
+                    runOnEveryDevice("keyboard language", target.udid) {
+                        try adapter.setKeyboardLanguage(language, udid: $0)
                     }
                 },
                 toggleAutomaticPasteboardSync: { enabled in
@@ -474,21 +493,17 @@ struct ODHubViewer: ParsableCommand {
                     ), settings: settings)
                 },
                 setOrientation: { orientation in
-                    for udid in manager.openUDIDs {
-                        turn(orientation, udid)
-                    }
+                    guard let udid = manager.frontmostUDID else { return }
+                    turn(orientation, udid)
                 },
                 appSwitcher: {
-                    for udid in manager.openUDIDs {
-                        guard let controller = manager.controller(for: udid),
-                              let session = controller.inputSession else { continue }
-                        let turn = controller.layoutTurn
-                        Task {
-                            do {
-                                try await SystemGesture.appSwitcher(on: session, turn: turn)
-                            } catch {
-                                print("app switcher failed: \(error.localizedDescription)")
-                            }
+                    guard let target = front(), let session = target.controller.inputSession else { return }
+                    let turn = target.controller.layoutTurn
+                    Task {
+                        do {
+                            try await SystemGesture.appSwitcher(on: session, turn: turn)
+                        } catch {
+                            print("app switcher failed: \(error.localizedDescription)")
                         }
                     }
                 },
@@ -496,6 +511,24 @@ struct ODHubViewer: ParsableCommand {
                     present(manager.toggleRecording(into: CaptureStaging.directory()))
                 },
                 isRecording: { manager.isRecording },
+                isOn: { setting in
+                    guard let target = front() else { return false }
+                    let controller = target.controller
+                    switch setting {
+                    case .keyboardInput: return controller.sendsKeyboardInput
+                    case .hardwareKeyboard: return controller.hasHardwareKeyboard
+                    case .keyboardLanguage: return controller.matchesKeyboardLanguage
+                    case .slowAnimations: return controller.slowAnimations
+                    case .latencyOverlay: return controller.isLatencyOverlayVisible
+                    case .bezel: return controller.isBezelEnabled
+                    case .keepOnTop: return controller.isKeptOnTop
+                    case .increasedContrast:
+                        if let known = controller.increasesContrast { return known }
+                        let read = SimctlService().increasesContrast(udid: target.udid)
+                        controller.increasesContrast = read
+                        return read
+                    }
+                },
                 checkForUpdates: updates.map { updater in { updater.checkForUpdates() } },
                 showSettings: {
                     SettingsWindow.show(settings: settings, actions: SettingsActions(
@@ -525,13 +558,8 @@ struct ODHubViewer: ParsableCommand {
                 manager.follow(
                     notifier,
                     attach: { udid in
-                        let panels = (try? adapter.panels(udid)) ?? []
-                        let session = try adapter.openDisplay(udid, panel: panels.first { $0.name == "Unfolded" })
-                        session.setBezelEnabled(bezel)
-                        return DeviceAttachment(
-                            session: session,
-                            input: try? adapter.openInput(udid)
-                        )
+                        adapter.forgetConnections(udid)
+                        return try openSessions(udid, adapter: adapter, bezel: bezel).attachment
                     },
                     boot: { udid in try SimctlService().boot(udid: udid) },
                     // Only when no simulator was named. `odhub view <udid>` asked for one window and
@@ -603,46 +631,29 @@ struct ODHubViewer: ParsableCommand {
             device = try adapter.devices().first { $0.udid == device.udid } ?? device
         }
 
-        // More than one built in screen means a hinge between them.
-        let panels = (try? adapter.panels(device.udid)) ?? []
-        let foldsAtHinge = panels.count > 1
-        let unfolded = foldsAtHinge ? panels.first { $0.name == "Unfolded" } : nil
-        let coverPanel = foldsAtHinge ? panels.first { $0.name == "Cover" } : nil
-        let panel = unfolded
-        let session = try adapter.openDisplay(device.udid, panel: panel)
-        session.setBezelEnabled(bezel)
-        var cover: FoldableCover?
-        if let coverPanel, let coverSession = try? adapter.openDisplay(device.udid, panel: coverPanel) {
-            coverSession.setBezelEnabled(bezel)
-            cover = FoldableCover(panel: coverPanel, session: coverSession)
+        let opened = try openSessions(device.udid, adapter: adapter, bezel: bezel)
+        if let failure = opened.inputFailure {
+            print("\(device.name): clicking will not send taps, \(failure)")
         }
-        let input: (any InputSession)?
-        do {
-            input = try adapter.openInput(device.udid, screenID: panel?.screenID ?? 0)
-        } catch {
-            input = nil
-            print("\(device.name): clicking will not send taps, \(error.localizedDescription)")
-        }
-        let retarget: ((Int) -> Void)? = (input as? PanelInputSession).map { targeted in
-            { targeted.setTarget(screenID: $0) }
-        }
+        let panel = opened.unfolded
+        let session = opened.session
         let orientation = DevicectlService().orientation(udid: device.udid) ?? .portrait
 
         let controller = try manager.open(
             device: device,
             session: session,
-            input: input,
+            input: opened.input,
             scaleMode: scale,
             bezelEnabled: bezel,
             keepOnTop: keepOnTop,
             showFPS: fps,
-            foldsAtHinge: foldsAtHinge,
+            foldsAtHinge: opened.foldsAtHinge,
             // The device type's chrome names only the cover's body, so the panel's own is used.
             chrome: panel?.chromeIdentifier.flatMap { ChromeLocator.chrome(identifier: $0) },
             panelNativeRotation: panel?.nativeRotation ?? 0,
-            unfoldedPanel: unfolded,
-            cover: cover,
-            retarget: retarget,
+            unfoldedPanel: panel,
+            cover: opened.cover,
+            retarget: opened.retarget,
             orientation: orientation
         )
         // The model turns the picture itself; setting this too turns the unfolded panel twice.
@@ -819,6 +830,57 @@ private func installToolbar(
             )
         }
     ))
+}
+
+/// What a window is opened with, and opened with again when its device comes back from a reboot.
+@MainActor
+private struct DeviceSessions {
+    let foldsAtHinge: Bool
+    let unfolded: DevicePanel?
+    let session: any DisplaySession
+    let cover: FoldableCover?
+    let input: (any InputSession)?
+    let inputFailure: String?
+    let retarget: ((Int) -> Void)?
+
+    var attachment: DeviceAttachment {
+        DeviceAttachment(session: session, input: input, cover: cover, retarget: retarget)
+    }
+}
+
+@MainActor
+private func openSessions(_ udid: String, adapter: any SimulatorAdapter, bezel: Bool) throws -> DeviceSessions {
+    // More than one built in screen means a hinge between them.
+    let panels = (try? adapter.panels(udid)) ?? []
+    let foldsAtHinge = panels.count > 1
+    let unfolded = foldsAtHinge ? panels.first { $0.name == "Unfolded" } : nil
+    let coverPanel = foldsAtHinge ? panels.first { $0.name == "Cover" } : nil
+    let session = try adapter.openDisplay(udid, panel: unfolded)
+    session.setBezelEnabled(bezel)
+    var cover: FoldableCover?
+    if let coverPanel, let coverSession = try? adapter.openDisplay(udid, panel: coverPanel) {
+        coverSession.setBezelEnabled(bezel)
+        cover = FoldableCover(panel: coverPanel, session: coverSession)
+    }
+    var input: (any InputSession)?
+    var inputFailure: String?
+    do {
+        input = try adapter.openInput(udid, screenID: unfolded?.screenID ?? 0)
+    } catch {
+        inputFailure = error.localizedDescription
+    }
+    let retarget: ((Int) -> Void)? = (input as? PanelInputSession).map { targeted in
+        { targeted.setTarget(screenID: $0) }
+    }
+    return DeviceSessions(
+        foldsAtHinge: foldsAtHinge,
+        unfolded: unfolded,
+        session: session,
+        cover: cover,
+        input: input,
+        inputFailure: inputFailure,
+        retarget: retarget
+    )
 }
 
 /// Off the main thread, because every one of these blocks for a second or more and they run from a

@@ -219,6 +219,12 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         return feature
     }
 
+    public func forgetConnections(_ udid: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        coreDeviceFeatures = coreDeviceFeatures.filter { !$0.key.hasPrefix("\(udid)/") }
+    }
+
     public func openInput(_ udid: String) throws -> any InputSession {
         lock.lock()
         defer { lock.unlock() }

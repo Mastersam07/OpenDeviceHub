@@ -69,9 +69,9 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private let deviceName: String
     private var pendingSend: Task<Void, Never>?
     private let unfoldedPanel: DevicePanel?
-    private let cover: FoldableCover?
+    private var cover: FoldableCover?
     private let recording = RecordingSlot()
-    private let retarget: ((Int) -> Void)?
+    private var retarget: ((Int) -> Void)?
     private var coverFrameTask: Task<Void, Never>?
     private var activeScreenID: Int
     private var bezelEnabled: Bool
@@ -263,16 +263,27 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     /// The device is back. The window keeps its size, position and orientation, so a reboot looks
     /// like the screen coming back on rather than a new window.
-    public func reattach(session: any DisplaySession, input: (any InputSession)?) {
+    /// A foldable's cover picture and its touch targeting belong to the boot that ended too, so
+    /// they come back with the rest.
+    public func reattach(
+        session: any DisplaySession,
+        input: (any InputSession)?,
+        cover: FoldableCover? = nil,
+        retarget: ((Int) -> Void)? = nil
+    ) {
         guard !isStopped else { return }
         closeSessions()
         self.session = session
         self.input = input
+        if let cover { self.cover = cover }
+        if let retarget { self.retarget = retarget }
         session.setBezelEnabled(bezelEnabled)
         chromeView.overlay = nil
         overlay = nil
         toolbar?.setEnabled(true)
         startConsumingFrames()
+        startConsumingCoverFrames()
+        self.retarget?(activeScreenID)
         applyScaleMode(scaleMode)
     }
 
@@ -495,13 +506,22 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         tracksFrameChanges = true
     }
 
-    /// The most recent frame as a PNG, matching whatever the window is showing including the bezel.
     /// Whether the Mac's keystrokes reach this device.
     public var sendsKeyboardInput: Bool {
         get { screenView.sendsKeyboardInput }
         set { screenView.sendsKeyboardInput = newValue }
     }
 
+    /// What the menu last set on this device, for the ticks it shows. The guest does not report
+    /// these cheaply, so each starts as the app leaves a device it opens: keyboard on, language
+    /// matched, animations at normal speed.
+    public var hasHardwareKeyboard = true
+    public var matchesKeyboardLanguage = true
+    public var slowAnimations = false
+    /// Read from the guest the first time the menu needs it, then kept in step with each change.
+    public var increasesContrast: Bool?
+
+    /// The most recent frame as a PNG, matching whatever the window is showing including the bezel.
     public func screenshotPNG() -> Data? {
         // The flat body around a foldable's panel is a phone bezel round a landscape picture.
         if let modelView, chromeView.hasChrome, let png = modelView.screenshotPNG() {

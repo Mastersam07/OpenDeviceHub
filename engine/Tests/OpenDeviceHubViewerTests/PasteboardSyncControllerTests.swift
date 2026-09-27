@@ -56,16 +56,15 @@ final class PasteboardSyncControllerTests: XCTestCase {
         XCTAssertEqual(sessions["b"]?.isAutomatic, true)
     }
 
-    func testSendingReachesEveryOpenDeviceAndGettingOnlyTheFrontOne() {
+    func testSendingAndGettingReachOnlyTheFrontDevice() {
         open = ["a", "b"]
         front = "b"
         let controller = makeController(isAutomatic: true)
         controller.send()
         controller.get()
 
-        XCTAssertEqual(sessions["a"]?.sends, 1)
+        XCTAssertNil(sessions["a"], "a device behind was sent the clipboard")
         XCTAssertEqual(sessions["b"]?.sends, 1)
-        XCTAssertEqual(sessions["a"]?.gets, 0)
         XCTAssertEqual(sessions["b"]?.gets, 1)
     }
 
@@ -94,6 +93,7 @@ final class PasteboardSyncControllerTests: XCTestCase {
 
     func testForgettingADeviceStopsItsSyncAndDropsTheConnection() {
         open = ["a"]
+        front = "a"
         let controller = makeController(isAutomatic: true)
         controller.adopt("a")
         let session = sessions["a"]

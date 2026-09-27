@@ -186,6 +186,8 @@ public protocol SimulatorAdapter: Sendable {
     func openFoldableControl(_ udid: String) throws -> any HingeControl
     /// One of the guest's CoreDevice features, the plane that answers what the guest is doing.
     func openCoreDevice(_ udid: String, service: String) throws -> CoreDeviceFeature
+    /// Lets go of every connection kept open to a device, which a reboot leaves pointing at nothing.
+    func forgetConnections(_ udid: String)
     /// What the guest says about its screens, the only honest answer to which panel is in use.
     func displayReport(_ udid: String) async throws -> DisplayReport
     func motionCapabilities(_ udid: String) async throws -> MotionCapabilities
@@ -237,6 +239,8 @@ extension SimulatorAdapter {
     public func openCoreDevice(_ udid: String, service: String) throws -> CoreDeviceFeature {
         throw EngineError.capabilityUnavailable(name: "CoreDevice \(service) on \(udid)")
     }
+
+    public func forgetConnections(_ udid: String) {}
 
     public func displayReport(_ udid: String) async throws -> DisplayReport {
         let feature = try openCoreDevice(udid, service: CoreDeviceFeature.displayInfoService)

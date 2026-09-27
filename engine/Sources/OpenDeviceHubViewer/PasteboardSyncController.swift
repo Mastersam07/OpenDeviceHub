@@ -45,11 +45,10 @@ public final class PasteboardSyncController {
         sessions[udid] = nil
     }
 
-    /// The Mac's clipboard to every open device, since a copy is not device specific.
+    /// The Mac's clipboard to the device in front, like every other menu action.
     public func send() {
-        for udid in devices() {
-            session(for: udid)?.send()
-        }
+        guard let udid = frontmost() else { return }
+        session(for: udid)?.send()
     }
 
     /// The frontmost device's clipboard to the Mac. Every device at once would leave whichever

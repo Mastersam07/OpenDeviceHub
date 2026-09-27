@@ -22,12 +22,24 @@ public struct CommandLineToolMenu {
 /// Builds the application menu. Shortcuts follow the classic Simulator where the action exists.
 @MainActor
 public enum ViewerMenu {
+    /// Something the device in front has on or off, shown as a tick beside its item.
+    public enum DeviceSetting: Sendable, CaseIterable {
+        case keyboardInput
+        case hardwareKeyboard
+        case keyboardLanguage
+        case increasedContrast
+        case slowAnimations
+        case latencyOverlay
+        case bezel
+        case keepOnTop
+    }
+
     public struct Actions {
         public var setScaleMode: (ScaleMode) -> Void
         public var toggleBezel: () -> Void
         public var toggleKeepOnTop: () -> Void
         public var pasteToDevice: () -> Void
-        public var setAppearance: (SimctlService.Appearance) -> Void
+        public var toggleAppearance: () -> Void
         public var saveScreenshot: () -> Void
         public var copyScreenshot: () -> Void
         public var toggleRecording: () -> Void
@@ -68,6 +80,7 @@ public enum ViewerMenu {
         public var appSwitcher: () -> Void
         public var stopRecording: () -> Void
         public var isRecording: () -> Bool
+        public var isOn: (DeviceSetting) -> Bool
         public var checkForUpdates: (() -> Void)?
         public var showSettings: (() -> Void)?
 
@@ -76,7 +89,7 @@ public enum ViewerMenu {
             toggleBezel: @escaping () -> Void,
             toggleKeepOnTop: @escaping () -> Void,
             pasteToDevice: @escaping () -> Void,
-            setAppearance: @escaping (SimctlService.Appearance) -> Void,
+            toggleAppearance: @escaping () -> Void,
             saveScreenshot: @escaping () -> Void,
             copyScreenshot: @escaping () -> Void,
             toggleRecording: @escaping () -> Void,
@@ -114,6 +127,7 @@ public enum ViewerMenu {
             appSwitcher: @escaping () -> Void,
             stopRecording: @escaping () -> Void,
             isRecording: @escaping () -> Bool,
+            isOn: @escaping (DeviceSetting) -> Bool = { _ in false },
             checkForUpdates: (() -> Void)? = nil,
             showSettings: (() -> Void)? = nil
         ) {
@@ -121,7 +135,7 @@ public enum ViewerMenu {
             self.toggleBezel = toggleBezel
             self.toggleKeepOnTop = toggleKeepOnTop
             self.pasteToDevice = pasteToDevice
-            self.setAppearance = setAppearance
+            self.toggleAppearance = toggleAppearance
             self.saveScreenshot = saveScreenshot
             self.copyScreenshot = copyScreenshot
             self.toggleRecording = toggleRecording
@@ -159,6 +173,7 @@ public enum ViewerMenu {
             self.appSwitcher = appSwitcher
             self.stopRecording = stopRecording
             self.isRecording = isRecording
+            self.isOn = isOn
             self.checkForUpdates = checkForUpdates
             self.showSettings = showSettings
         }
@@ -355,7 +370,7 @@ public enum ViewerMenu {
             "k",
             [.command, .option]
         )
-        sendKeys.state = .on
+        target.track(sendKeys, as: .keyboardInput)
         inputMenu.addItem(sendKeys)
         inputItem.submenu = inputMenu
         ioMenu.addItem(inputItem)
@@ -368,7 +383,7 @@ public enum ViewerMenu {
             "k",
             [.command, .shift]
         )
-        hardware.state = .on
+        target.track(hardware, as: .hardwareKeyboard)
         disable(hardware, unless: capabilities.contains(.hardwareKeyboard), reason: "not available on this Xcode")
         let sameLanguage = target.item(
             "Use the Same Keyboard Language as macOS",
@@ -376,7 +391,7 @@ public enum ViewerMenu {
             "",
             []
         )
-        sameLanguage.state = .on
+        target.track(sameLanguage, as: .keyboardLanguage)
         disable(sameLanguage, unless: capabilities.contains(.hardwareKeyboard), reason: "not available on this Xcode")
         keyboardMenu.addItem(sameLanguage)
         keyboardMenu.addItem(hardware)
@@ -392,7 +407,9 @@ public enum ViewerMenu {
         let featuresItem = NSMenuItem()
         let featuresMenu = NSMenu(title: "Features")
         featuresMenu.addItem(target.item("Toggle Appearance", #selector(MenuTarget.appearance), "a", [.command, .shift]))
-        featuresMenu.addItem(target.item("Toggle Increase Contrast", #selector(MenuTarget.increaseContrast(_:)), "", []))
+        let contrast = target.item("Toggle Increase Contrast", #selector(MenuTarget.increaseContrast(_:)), "", [])
+        target.track(contrast, as: .increasedContrast)
+        featuresMenu.addItem(contrast)
         featuresMenu.addItem(.separator())
         featuresMenu.addItem(target.item("Increase Preferred Text Size", #selector(MenuTarget.textSizeUp), "+", [.command, .option]))
         featuresMenu.addItem(target.item("Decrease Preferred Text Size", #selector(MenuTarget.textSizeDown), "-", [.command, .option]))
@@ -418,6 +435,7 @@ public enum ViewerMenu {
         debugMenu.addItem(memoryWarning)
 
         let slowAnimations = target.item("Slow Animations", #selector(MenuTarget.slowAnimations(_:)), "", [])
+        target.track(slowAnimations, as: .slowAnimations)
         disable(slowAnimations, unless: capabilities.contains(.slowAnimations), reason: "not available on this Xcode")
         debugMenu.addItem(slowAnimations)
 
@@ -425,7 +443,9 @@ public enum ViewerMenu {
         debugMenu.addItem(target.item("Open System Log\u{2026}", #selector(MenuTarget.systemLog), "/", []))
         debugMenu.addItem(target.item("Open App Data in Finder", #selector(MenuTarget.appData), "", []))
         debugMenu.addItem(.separator())
-        debugMenu.addItem(target.item("Show Click to Frame Latency", #selector(MenuTarget.latency(_:)), "l", [.command, .shift]))
+        let latency = target.item("Show Click to Frame Latency", #selector(MenuTarget.latency(_:)), "l", [.command, .shift])
+        target.track(latency, as: .latencyOverlay)
+        debugMenu.addItem(latency)
         debugItem.submenu = debugMenu
         bar.addItem(debugItem)
 
@@ -437,8 +457,12 @@ public enum ViewerMenu {
         windowMenu.addItem(.separator())
         windowMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
             .keyEquivalentModifierMask = [.control, .command]
-        windowMenu.addItem(target.item("Show Device Bezels", #selector(MenuTarget.bezel), "b", []))
-        windowMenu.addItem(target.item("Stay On Top", #selector(MenuTarget.keepOnTop), "t", []))
+        let bezel = target.item("Show Device Bezels", #selector(MenuTarget.bezel), "b", [])
+        target.track(bezel, as: .bezel)
+        windowMenu.addItem(bezel)
+        let keepOnTop = target.item("Stay On Top", #selector(MenuTarget.keepOnTop), "t", [])
+        target.track(keepOnTop, as: .keepOnTop)
+        windowMenu.addItem(keepOnTop)
         windowMenu.addItem(.separator())
         let scaleShortcuts: [(ScaleMode, String)] = [
             (.physicalSize, "1"), (.pointAccurate, "2"), (.pixelAccurate, "3"), (.fit, "4"),
@@ -515,13 +539,7 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private let commandLineTool: CommandLineToolMenu?
     private weak var commandLineToolItem: NSMenuItem?
     private weak var stopRecordingItem: NSMenuItem?
-    private var isDark = false
-    private var isSlowAnimations = false
-    private var isLatencyVisible = false
-    private var isIncreasedContrast = false
-    private var sendsKeyboardInput = true
-    private var hasHardwareKeyboard = true
-    private var matchesKeyboardLanguage = true
+    private var settingItems: [ObjectIdentifier: ViewerMenu.DeviceSetting] = [:]
     private weak var getPasteboardItem: NSMenuItem?
     private weak var sendPasteboardItem: NSMenuItem?
     private weak var syncPasteboardItem: NSMenuItem?
@@ -709,11 +727,14 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     }
     @objc func newSimulator() { actions.newSimulator?() }
 
-    /// Both start on, because that is what the app does before anyone touches the menu.
+    /// The tick is read from the device in front whenever the menu is shown, since each device
+    /// keeps its own.
+    func track(_ item: NSMenuItem, as setting: ViewerMenu.DeviceSetting) {
+        settingItems[ObjectIdentifier(item)] = setting
+    }
+
     @objc func keyboardInput(_ sender: NSMenuItem) {
-        sendsKeyboardInput.toggle()
-        sender.state = sendsKeyboardInput ? .on : .off
-        actions.toggleKeyboardInput(sendsKeyboardInput)
+        actions.toggleKeyboardInput(!actions.isOn(.keyboardInput))
     }
 
     /// Read from the setting each time, because Settings changes it as well as this menu.
@@ -735,15 +756,11 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     @objc func sendPasteboard() { actions.sendPasteboard() }
 
     @objc func matchKeyboardLanguage(_ sender: NSMenuItem) {
-        matchesKeyboardLanguage.toggle()
-        sender.state = matchesKeyboardLanguage ? .on : .off
-        actions.matchKeyboardLanguage(matchesKeyboardLanguage)
+        actions.matchKeyboardLanguage(!actions.isOn(.keyboardLanguage))
     }
 
     @objc func hardwareKeyboard(_ sender: NSMenuItem) {
-        hasHardwareKeyboard.toggle()
-        sender.state = hasHardwareKeyboard ? .on : .off
-        actions.toggleHardwareKeyboard(hasHardwareKeyboard)
+        actions.toggleHardwareKeyboard(!actions.isOn(.hardwareKeyboard))
     }
 
     @objc func locationScenario(_ sender: NSMenuItem) {
@@ -753,8 +770,6 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     }
 
     @objc func increaseContrast(_ sender: NSMenuItem) {
-        isIncreasedContrast.toggle()
-        sender.state = isIncreasedContrast ? .on : .off
         actions.toggleIncreaseContrast()
     }
     @objc func stopRecording() { actions.stopRecording() }
@@ -764,6 +779,9 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     }
 
     public func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if let setting = settingItems[ObjectIdentifier(item)] {
+            item.state = actions.isOn(setting) ? .on : .off
+        }
         if item === stopRecordingItem { return actions.isRecording() }
         if item === syncPasteboardItem {
             item.state = syncsPasteboard ? .on : .off
@@ -780,21 +798,14 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     @objc func help() { ControlsHelp.show() }
 
     @objc func latency(_ sender: NSMenuItem) {
-        isLatencyVisible.toggle()
-        sender.state = isLatencyVisible ? .on : .off
         actions.toggleLatencyOverlay()
     }
 
     @objc func slowAnimations(_ sender: NSMenuItem) {
-        isSlowAnimations.toggle()
-        sender.state = isSlowAnimations ? .on : .off
         actions.toggleSlowAnimations()
     }
     @objc func copyScreenshot() { actions.copyScreenshot() }
     @objc func paste() { actions.pasteToDevice() }
 
-    @objc func appearance() {
-        isDark.toggle()
-        actions.setAppearance(isDark ? .dark : .light)
-    }
+    @objc func appearance() { actions.toggleAppearance() }
 }

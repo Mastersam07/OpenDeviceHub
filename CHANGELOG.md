@@ -3,6 +3,37 @@
 The appcast generator reads this file. Each release is a `## <version>` heading, and everything
 under it until the next heading becomes that version's release notes in the update feed.
 
+## 0.2.0
+
+- The camera control works on every iPhone that has one, not only the iPhone Duo, and Device,
+  Camera Control presses it. The item appears only for devices with the button. The simulator has
+  no camera, so the device takes a screenshot.
+- Choosing cover, half open or fully open on the iPhone Duo folds it smoothly to that angle instead
+  of jumping, unless Reduce Motion is on. The device stays inside the window in every pose,
+  standing ones included.
+- The iPhone Duo's window moves to the screen the device is using sooner after a fold.
+- Recording the iPhone Duo records the screen it is using, follows it through a fold, and keeps the
+  picture the right way up.
+- A window opens the way its device is already turned, instead of assuming it is upright.
+- Restarting a device no longer leaves its window half connected. The iPhone Duo's fold buttons,
+  cover screen and touches come back with the fold it was showing, and the clipboard sync picks up
+  again.
+- Device, Shut Down shuts a simulator down from the menu.
+- Every menu action acts on the simulator in front, not on every open one, and ticks such as Stay
+  On Top, Slow Animations and Connect Hardware Keyboard show that simulator's own setting.
+- Favorite locations: save named coordinates in Settings and choose them from Features, Location.
+- Screenshots and recordings each have their own folder in Settings, starting from the folder you
+  had already chosen, and Save Screen can put the picture on the clipboard instead of in a file.
+- Clipboard sync can be turned on or off in Settings as well as from the Edit menu, and the two stay
+  in step.
+- The screen shown while a device is shut down or starting stays inside its rounded corners.
+- The Settings window can be resized, and scrolls.
+- The disk image opens as an installer window: drag the app onto Applications. The mounted disk
+  shows the app's icon.
+
+Shut Down, favorite locations and the capture and clipboard settings were contributed by
+@stephen-zeng.
+
 ## 0.1.0
 
 First release.

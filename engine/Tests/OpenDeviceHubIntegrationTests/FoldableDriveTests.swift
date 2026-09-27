@@ -350,8 +350,12 @@ final class FoldableDriveTests: XCTestCase {
         // The guest has no camera to open, so its camera control takes a screenshot of itself.
         let shots = photos()
         try await press(.cameraControl)
-        try await settle(3)
-        print("RESULT the camera control took the camera roll from \(shots) to \(photos()) pictures")
+        // The guest can take several seconds over a screenshot, the first after a boot especially.
+        let pressed = ContinuousClock.now
+        while photos() == shots, ContinuousClock.now - pressed < .seconds(15) {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        print("RESULT the camera control took the camera roll from \(shots) to \(photos()) pictures after \(ContinuousClock.now - pressed)")
         XCTAssertEqual(photos(), shots + 1, "the camera control did not take a screenshot in the guest")
 
         try await press(.lock)

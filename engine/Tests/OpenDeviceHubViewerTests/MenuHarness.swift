@@ -12,6 +12,8 @@ struct MenuHarness {
     var toggleAutomaticPasteboardSync: (Bool) -> Void = { _ in }
     var locationFavorites: () -> [LocationFavorite] = { [] }
     var setFavoriteLocation: (LocationFavorite) -> Void = { _ in }
+    var toggleKeyboardInput: (Bool) -> Void = { _ in }
+    var isOn: (ViewerMenu.DeviceSetting) -> Bool = { _ in false }
 
     @discardableResult
     func install() -> MenuTarget {
@@ -22,7 +24,7 @@ struct MenuHarness {
                 toggleBezel: {},
                 toggleKeepOnTop: {},
                 pasteToDevice: {},
-                setAppearance: { _ in },
+                toggleAppearance: {},
                 saveScreenshot: {},
                 copyScreenshot: {},
                 toggleRecording: {},
@@ -45,7 +47,7 @@ struct MenuHarness {
                 setCustomLocation: {},
                 locationFavorites: locationFavorites,
                 setFavoriteLocation: setFavoriteLocation,
-                toggleKeyboardInput: { _ in },
+                toggleKeyboardInput: toggleKeyboardInput,
                 toggleHardwareKeyboard: { _ in },
                 matchKeyboardLanguage: { _ in },
                 toggleAutomaticPasteboardSync: toggleAutomaticPasteboardSync,
@@ -58,7 +60,8 @@ struct MenuHarness {
                 setOrientation: { _ in },
                 appSwitcher: {},
                 stopRecording: {},
-                isRecording: { false }
+                isRecording: { false },
+                isOn: isOn
             ),
             capabilities: [.hardwareButtons, .touch, .rotation, .shake, .pasteboardSync]
         )
