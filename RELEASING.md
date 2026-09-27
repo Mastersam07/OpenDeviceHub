@@ -55,7 +55,9 @@ unsigned build that reaches a release page is worse than a run that stops.
 4. Install the dry run's DMG and use it. `stapler validate` on the app and on the DMG, and
    `shasum -c SHA256SUMS` from a different directory.
 5. Run the workflow again with `publish` **true**. It creates the tag and a pre-release with the DMG
-   and `SHA256SUMS`.
+   and `SHA256SUMS`. Then point the README's download button and its Install link at the new DMG:
+   they download it directly rather than opening the Releases page, and `releases/latest` skips
+   pre-releases, so the link has to carry the version.
 6. **Only once that release page exists**, commit the generated `appcast.xml` to the feed
    repository. A feed pointing at a download that is not there yet breaks updates for everyone who
    reads it in the meantime.

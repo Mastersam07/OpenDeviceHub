@@ -14,14 +14,12 @@
   window, scaling and shortcuts, with a command line tool for driving a device from a script.
 </p>
 
-<!-- PLACEHOLDER, deliberate: no screenshot has been captured yet. Replace this block with a
-     screenshot or a short GIF of a device window, and keep the width attribute. -->
 <p align="center">
-  <em>A screenshot goes here.</em>
+  <img src="assets/screenshot.png" width="800" alt="An iPhone Duo and an iPhone 17 Pro Max side by side, full screen, in OpenDeviceHub">
 </p>
 
 <p align="center">
-  <a href="https://github.com/Mastersam07/OpenDeviceHub/releases">
+  <a href="https://github.com/Mastersam07/OpenDeviceHub/releases/download/v0.1.0/OpenDeviceHub-0.1.0.dmg">
     <img src="icons/download-button.png" width="332" alt="Download for macOS">
   </a>
 </p>
@@ -32,8 +30,9 @@
 
 ## Install
 
-Download the DMG from [Releases](https://github.com/Mastersam07/OpenDeviceHub/releases), drag
-OpenDeviceHub to Applications and launch it. The app is signed with a Developer ID certificate and
+Download [OpenDeviceHub-0.1.0.dmg](https://github.com/Mastersam07/OpenDeviceHub/releases/download/v0.1.0/OpenDeviceHub-0.1.0.dmg),
+drag OpenDeviceHub to Applications and launch it. Every version, with its checksums, is on
+[Releases](https://github.com/Mastersam07/OpenDeviceHub/releases). The app is signed with a Developer ID certificate and
 notarized, so there is no Gatekeeper warning, and it updates itself from the app menu.
 
 The `odhub` command line tool ships inside the bundle. Choose **OpenDeviceHub → Install Command Line
