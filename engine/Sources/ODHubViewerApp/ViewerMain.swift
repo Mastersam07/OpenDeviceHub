@@ -97,6 +97,7 @@ struct ODHubViewer: ParsableCommand {
                 displayReport: { try await adapter.displayReport($0) }
             )
             foldables.report = { print($0) }
+            foldables.onAngle = { udid, angle in manager.controller(for: udid)?.showHingeAngle(angle) }
             manager.onDeviceClosed = {
                 pasteboard.forget($0)
                 foldables.forget($0)
@@ -149,6 +150,7 @@ struct ODHubViewer: ParsableCommand {
                     let angle = foldables.angle(for: udid) ?? DeviceControlBar.FoldMode.fullyOpen.angle
                     controller.showHingeAngle(angle)
                     controller.onHingeAngle = { angle in foldables.setAngle(angle, for: udid) }
+                    controller.onFoldPreset = { angle in foldables.setAngle(angle, for: udid, eased: true) }
                     foldables.setAngle(angle, for: udid)
                     foldables.follow(
                         udid,

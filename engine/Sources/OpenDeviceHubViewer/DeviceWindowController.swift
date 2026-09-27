@@ -21,6 +21,9 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     /// Reports the angle the user asked for, from the positions in the bar or from a pinch.
     public var onHingeAngle: ((Double) -> Void)?
+    /// A fold position chosen from the bar or the toolbar. When set, the fold is not drawn here:
+    /// whoever moves the hinge reports each angle back through `showHingeAngle`.
+    public var onFoldPreset: ((Double) -> Void)?
 
     public func showHingeAngle(_ degrees: Double) {
         foldAngle = degrees
@@ -157,6 +160,10 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             controlBar.addFoldModes()
             controlBar.onFoldMode = { [weak self] mode in
                 guard let self else { return }
+                if let onFoldPreset {
+                    onFoldPreset(mode.angle)
+                    return
+                }
                 foldAngle = mode.angle
                 controlBar.showFoldAngle(mode.angle)
                 toolbar?.showFoldAngle(mode.angle)

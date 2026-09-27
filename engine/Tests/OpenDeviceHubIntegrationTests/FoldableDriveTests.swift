@@ -1,4 +1,5 @@
 import AppKit
+import os
 import XCTest
 import OpenDeviceHubEngine
 @testable import OpenDeviceHubViewer
@@ -67,6 +68,8 @@ final class FoldableDriveTests: XCTestCase {
         )
         let udid = device.udid
         controller.onHingeAngle = { [foldables] angle in foldables?.setAngle(angle, for: udid) }
+        controller.onFoldPreset = { [foldables] angle in foldables?.setAngle(angle, for: udid, eased: true) }
+        foldables.onAngle = { [weak controller] _, angle in controller?.showHingeAngle(angle) }
         foldables.follow(
             udid,
             onPanel: { [weak controller] panel in controller?.setActivePanel(screenID: panel.displayID) },
@@ -184,6 +187,42 @@ final class FoldableDriveTests: XCTestCase {
         let running = try run(["simctl", "spawn", device.udid, "launchctl", "list"])
         print("RESULT after flicking the card away, the app is \(running.contains(IntegrationHost.bundleID) ? "still running" : "gone")")
         XCTAssertFalse(running.contains(IntegrationHost.bundleID), "the app is still running after being dismissed")
+    }
+
+    /// A preset chosen in the bar walks the guest's hinge to its angle rather than jumping it.
+    func testAPresetWalksTheGuestsHingeToItsAngle() async throws {
+        try await fold(to: DeviceControlBar.FoldMode.fullyOpen.angle)
+        let control = try XCTUnwrap(Self.segmentedControl(in: window), "the bar's fold positions")
+        let hinge = try adapter.openHingeStream(device.udid)
+        defer { hinge.close() }
+        let samples = OSAllocatedUnfairLock(initialState: [Double]())
+        let collector = Task { for await sample in hinge.samples { samples.withLock { $0.append(sample.degrees) } } }
+        defer { collector.cancel() }
+        try await settle(2)
+
+        for (mode, wanted, descending) in [(DeviceControlBar.FoldMode.cover, 1, true), (.fullyOpen, 3, false)] {
+            samples.withLock { $0.removeAll() }
+            control.selectedSegment = mode.rawValue
+            control.sendAction(control.action, to: control.target)
+            try await settle(3)
+            let run = samples.withLock { $0 }
+            let between = run.filter { $0 > 0.5 && $0 < 179.5 }
+            print("RESULT \(mode.label): the guest's hinge reported \(run.count) angles, \(between.count) of them between the ends, ending at \(run.last ?? -1); the guest is on display \(foldables.activePanel(for: device.udid)?.displayID ?? -1)")
+            XCTAssertGreaterThanOrEqual(between.count, 3, "a run of angles, not a jump")
+            XCTAssertEqual(run.last ?? -1, mode.angle, accuracy: 1, "ending on the preset")
+            XCTAssertEqual(run, descending ? run.sorted(by: >) : run.sorted(), "never turning back")
+            XCTAssertEqual(foldables.activePanel(for: device.udid)?.displayID, wanted, "the guest landed on its usual screen")
+            XCTAssertEqual(model.hingeAngle, mode.angle, accuracy: 0.5, "the model ends on the preset too")
+        }
+    }
+
+    private static func segmentedControl(in window: NSWindow) -> NSSegmentedControl? {
+        func find(_ view: NSView) -> NSSegmentedControl? {
+            if let control = view as? NSSegmentedControl { return control }
+            for child in view.subviews { if let found = find(child) { return found } }
+            return nil
+        }
+        return window.contentView.flatMap(find)
     }
 
     func testRotationTurnsTheGuestAndTheModel() async throws {
