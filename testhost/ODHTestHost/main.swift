@@ -121,7 +121,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     // Going home and opening the app switcher are only visible from inside the guest, so the host
-    // reports them rather than leaving a caller to infer them from a screenshot.
+    // reports them.
     func sceneDidBecomeActive(_ scene: UIScene) {
         host?.recordActivation(true)
     }

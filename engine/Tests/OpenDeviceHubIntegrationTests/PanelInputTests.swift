@@ -2,8 +2,6 @@ import Foundation
 import XCTest
 import OpenDeviceHubEngine
 
-/// Does a tap aimed at a foldable's panel actually arrive? Read back from the test host's own log,
-/// which records the coordinates the guest received.
 final class PanelInputTests: XCTestCase {
     func testATapReachesTheUnfoldedPanel() async throws {
         try IntegrationGate.requireEnabled()
@@ -12,7 +10,6 @@ final class PanelInputTests: XCTestCase {
             $0.state == .booted && $0.deviceTypeIdentifier.contains("Duo")
         }) else { throw XCTSkip("no booted foldable") }
 
-        // Unfolded, so the guest is drawing to the large panel.
         let control = try await IntegrationFoldable.shared.control(
             for: device.udid, adapter: adapter
         )

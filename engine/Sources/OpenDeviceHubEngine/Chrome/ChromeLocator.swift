@@ -65,8 +65,7 @@ public enum ChromeLocator {
         return chrome(identifier: chromeIdentifier)
     }
 
-    /// Chrome named directly, which a foldable needs: its two panels declare different bodies, and
-    /// the device type names only one of them.
+    /// Chrome by its own identifier: a foldable's two panels declare different bodies.
     public static func chrome(identifier: String) -> DeviceChrome? {
         guard let bundle = chromeBundle(identifier: identifier) else { return nil }
         let description = bundle.appendingPathComponent("Contents/Resources/chrome.json")

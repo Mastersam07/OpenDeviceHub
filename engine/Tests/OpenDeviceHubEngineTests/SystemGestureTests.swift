@@ -41,14 +41,12 @@ private final class RecordingSession: InputSession, @unchecked Sendable {
         #expect(first.points[0].y > 0.99)
         #expect(events.last?.phase == .ended)
         #expect(events.allSatisfy { $0.edge == .bottom })
-        // Straight up the middle, and every contact stays on the screen.
         #expect(events.allSatisfy { abs($0.points[0].x - 0.5) < 0.001 })
         #expect(events.allSatisfy { (0...1).contains($0.points[0].y) })
     }
 
-    /// A panel built sideways puts the home indicator along the framebuffer's right edge, so both
-    /// the points and the edge have to come out turned. Measured on 27A266a against the unfolded
-    /// panel of a foldable, where no other edge goes home.
+    /// A panel built sideways has its home indicator on the framebuffer's right edge: measured on
+    /// 27A266a on a foldable's unfolded panel, where no other edge goes home.
     @Test func turnsWithTheGuestsOwnLayout() async throws {
         let session = RecordingSession()
         try await SystemGesture.home(on: session, turn: .landscapeLeft, stepMilliseconds: 0)
@@ -71,8 +69,7 @@ private final class RecordingSession: InputSession, @unchecked Sendable {
         let moves = events.filter { $0.phase == .moved }
         let travel = moves.prefix(while: { $0.points[0].y > 0.61 })
         #expect(!travel.isEmpty)
-        // After the travel the contact keeps moving, but only around where it stopped, which is what
-        // the guest reads as a rest rather than a flick.
+        // Small moves around the stop are what the guest reads as a rest rather than a flick.
         let resting = moves.dropFirst(travel.count)
         #expect(resting.count >= 15)
         #expect(resting.allSatisfy { abs($0.points[0].y - 0.6) < 0.01 })

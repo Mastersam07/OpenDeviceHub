@@ -1,15 +1,8 @@
 import Foundation
 import XPC
 
-/// Touch input addressed at one of a device's screens.
-///
-/// A foldable has two, and the older input path can only reach whichever the device calls its main
-/// screen, which on a foldable is the cover. So while you are looking at the unfolded panel, every
-/// tap goes to the other side of the device and nothing happens. The newer path carries the screen
-/// as part of the report, which is the only way to reach the panel being shown.
-///
-/// Keys and buttons are not screen specific, but they travel on this connection too: the legacy
-/// client's own reports are dropped once a device is driven this way.
+/// Input addressed at one screen, where the older path only reaches a foldable's cover. Keys and
+/// buttons travel here too: the legacy client's reports are dropped once this path is in use.
 public final class PanelInputSession: InputSession, @unchecked Sendable {
     private let connection: xpc_connection_t
     private var target: UInt64
@@ -59,14 +52,12 @@ public final class PanelInputSession: InputSession, @unchecked Sendable {
         }
         xpc_dictionary_set_uint64(payload, "eventType", Self.code(for: event.phase))
         xpc_dictionary_set_uint64(payload, "edge", Self.code(for: event.edge))
-        // The screen this report is for. Zero is the device's default, which is the wrong one on a
-        // foldable whenever the unfolded panel is being shown.
+        // Zero is the device's default screen, wrong while a foldable shows its unfolded panel.
         xpc_dictionary_set_uint64(payload, "target", currentTarget)
         send("IndigoDigitizerEvent", payload: payload)
     }
 
-    /// Points every touch from now on at another of the device's screens. The guest moves between
-    /// them as it folds, and the connection stays; only the target changes.
+    /// Points every touch from now on at another screen, without reopening the connection.
     public func setTarget(screenID: Int) {
         lock.lock()
         target = UInt64(max(screenID, 0))
@@ -99,10 +90,8 @@ public final class PanelInputSession: InputSession, @unchecked Sendable {
         send("IndigoButtonEvent", payload: payload)
     }
 
-    /// Every button on this path is a consumer page usage, unlike the legacy one, where Home, Lock
-    /// and Siri are event sources instead. Confirmed on Xcode 27 (27A266a). The camera control is
-    /// the Snapshot usage, the only camera usage CoreDevice's consumer page names; the guest answers
-    /// it by taking a screenshot of itself, shutter sound and all, since it has no camera to open.
+    /// Consumer page usages for every button, confirmed on Xcode 27 (27A266a). The camera control
+    /// is the Snapshot usage, which the guest answers by taking a screenshot of itself.
     private static let consumerUsagePage: UInt64 = 0x0c
     private static let consumerUsages: [HardwareButton: UInt64] = [
         .home: 0x40,
@@ -127,11 +116,8 @@ public final class PanelInputSession: InputSession, @unchecked Sendable {
         xpc_connection_cancel(connection)
     }
 
-    /// The guest ignores reports until the feature has been turned on, once per connection. The
-    /// guest's input daemon is started on demand and may still be coming up on a device that has
-    /// just booted, so an unanswered probe is asked again, and the session counts as on only once
-    /// the guest has actually answered: marking it on after a silence would drop every touch until
-    /// the window was closed.
+    /// The guest ignores reports until the feature is on, which counts only once it has answered:
+    /// marking it on after a silence would drop every touch until the window was closed.
     private func activate() async throws {
         guard !hasActivated else { return }
         for attempt in 1...FoldableControl.activationAttempts {

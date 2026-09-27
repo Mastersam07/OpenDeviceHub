@@ -2,8 +2,6 @@ import Foundation
 import XCTest
 import OpenDeviceHubEngine
 
-/// What each of the three positions in the bar actually does to the device, measured rather than
-/// assumed, because two of them are expected to look the same to the guest.
 final class FoldablePosesTests: XCTestCase {
     func testWhatEachPositionDoes() async throws {
         try IntegrationGate.requireEnabled()

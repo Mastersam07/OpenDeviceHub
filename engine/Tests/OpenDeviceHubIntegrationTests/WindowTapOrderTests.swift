@@ -3,7 +3,6 @@ import XCTest
 import OpenDeviceHubEngine
 @testable import OpenDeviceHubViewer
 
-/// A click on a foldable's window, driven as a real mouse event, and what the device is sent for it.
 @MainActor
 final class WindowTapOrderTests: XCTestCase {
     private final class Recorder: InputSession, @unchecked Sendable {
@@ -17,8 +16,7 @@ final class WindowTapOrderTests: XCTestCase {
         }
 
         func touch(_ event: TouchEvent) async throws {
-            // Long enough that a contact coming up would overtake one going down, if they were not
-            // held in order.
+            // Long enough for an up to overtake the down if they were not held in order.
             try? await Task.sleep(for: .milliseconds(event.phase == .began ? 120 : 0))
             add(event)
         }
@@ -46,8 +44,7 @@ final class WindowTapOrderTests: XCTestCase {
         }
 
         let recorder = Recorder()
-        // Closing the window must leave the device running rather than shut it down as a real
-        // window would under the user's own setting.
+        // Closing the window must leave the device running, not shut it down as a real one might.
         let manager = DeviceWindowManager(shutdown: { _ in })
         let controller = try manager.open(
             device: device,

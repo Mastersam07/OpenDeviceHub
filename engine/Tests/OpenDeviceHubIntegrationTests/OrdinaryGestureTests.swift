@@ -2,8 +2,6 @@ import Foundation
 import XCTest
 import OpenDeviceHubEngine
 
-/// The edge gestures on a device with one screen, upright and turned, because the rule the foldable
-/// needed changed the space the edge is read in for every device.
 final class OrdinaryGestureTests: XCTestCase {
     private var udid = ""
     private var container = URL(fileURLWithPath: "/")

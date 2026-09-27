@@ -1,12 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// The swipes up from the bottom edge, sent to a device.
-///
-/// The paths are written in the space the guest lays its interface out in. That is not the space the
-/// digitizer is addressed in unless the device is upright and its panel is built square into the
-/// housing, so both the points and the edge the contact starts at are converted by `turn`, which is
-/// how far the guest's layout is turned from the framebuffer.
+/// The swipes up from the bottom edge. The paths are in the guest's layout space and the digitizer
+/// is addressed in the framebuffer's, so `turn` converts both the points and the edge.
 public enum SystemGesture {
     public static func home(
         on session: any InputSession,
@@ -45,9 +41,8 @@ public enum SystemGesture {
     ) async throws {
         guard let finish = path.last else { return }
         let points = native(path, turn)
-        // The guest reads the edge from the framebuffer, not from what the window shows, so this is
-        // taken after the conversion. Measured on 27A266a: on the unfolded panel of a foldable the
-        // home indicator sits along the framebuffer's right edge, and no other value goes home.
+        // The guest reads edges in framebuffer space. Measured on 27A266a: a foldable's unfolded
+        // panel goes home only from the framebuffer's right edge, where its home indicator sits.
         let edge = TouchEvent.Edge.beginning(at: points[0])
 
         try await session.touch(TouchEvent(phase: .began, points: [points[0]], edge: edge))

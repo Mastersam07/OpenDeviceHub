@@ -2,19 +2,14 @@ import CoreGraphics
 import Foundation
 import XPC
 
-/// What the guest says about its screens, right now.
-///
-/// This is the only honest answer to which panel of a foldable is in use. The hinge angle says
-/// where the device should be and the framebuffers say what was last drawn; the report says which
-/// screen the guest is laying out on. Device Hub reads the same report and trusts `active` when the
-/// panel's backlight agrees with it.
+/// What the guest says about its screens, the only honest answer to which panel is in use. The
+/// hinge says where the device should be and the framebuffers only what was last drawn.
 public struct DisplayReport: Sendable, Hashable {
     public struct Display: Sendable, Hashable, Identifiable {
         public var id: String { uniqueID }
         public let uniqueID: String
         public let name: String
-        /// The number a touch is addressed to, the same value the device type's profile calls the
-        /// screen ID.
+        /// The number a touch is addressed to, the device type profile's screen ID.
         public let displayID: Int
         public let isActive: Bool
         public let backlight: Backlight
@@ -22,8 +17,7 @@ public struct DisplayReport: Sendable, Hashable {
         public let isIntegrated: Bool
         public let pixelSize: CGSize
         public let pointScale: Int
-        /// Clockwise, in degrees, how far the guest's layout on this screen is turned from the
-        /// framebuffer right now.
+        /// Clockwise degrees the guest's layout on this screen is turned from the framebuffer.
         public let currentRotation: Int
         /// How far the panel itself is built round in its housing.
         public let nativeRotation: Int
@@ -40,21 +34,17 @@ public struct DisplayReport: Sendable, Hashable {
 
     public let displays: [Display]
 
-    /// The one screen the guest is laying out on, or nil when the report cannot say. Two active
-    /// integrated screens would mean the reading has stopped meaning anything, so that is nil too.
+    /// The screen the guest is laying out on. Two active ones mean the report cannot be trusted.
     public var activeIntegrated: Display? {
         let active = displays.filter { $0.isActive && $0.isIntegrated }
         return active.count == 1 ? active[0] : nil
     }
 
-    /// The built in screens, which is all a window ever shows. The report also lists the guest's
-    /// external and virtual displays.
+    /// The built in screens; the report also lists the guest's external and virtual displays.
     public var integrated: [Display] { displays.filter(\.isIntegrated) }
 
-    /// Whether the screen the layout names is actually lit. Device Hub's rule, in its own words: a
-    /// report that names a panel whose backlight is off "cannot be right", and is ignored. The other
-    /// panel's backlight is allowed to lag, which it does for a few seconds after a fold, or the
-    /// handoff would wait on it.
+    /// Device Hub's rule: a report naming a panel whose backlight is off "cannot be right". The
+    /// other panel's backlight lags for a few seconds after a fold, so it is not checked.
     public var isSettled: Bool {
         guard let active = activeIntegrated else { return false }
         switch active.backlight {
@@ -69,9 +59,7 @@ public struct DisplayReport: Sendable, Hashable {
 
     static let maximumDisplays = 32
 
-    /// Reads the output of the `displayinfo` action, refusing anything that does not hold together.
-    /// A stale report, a duplicated identity, or an active screen without a size would each lead
-    /// to trusting the wrong panel, which is worse than knowing nothing.
+    /// Refuses a report that does not hold together: the wrong panel is worse than no panel.
     static func parse(_ output: xpc_object_t) throws -> DisplayReport {
         guard XPCValue.bool(output, "current") == true else {
             throw EngineError.privateCall(symbol: "displayinfo", message: "the report is not current")
@@ -96,8 +84,7 @@ public struct DisplayReport: Sendable, Hashable {
             let backlight = Backlight(rawValue: XPCValue.string(record, "backlightState") ?? "") ?? .unknown
             let isActive: Bool
             if carriesLayoutActivity {
-                // Layout is the authority when the report has it. The backlight can lag it mid
-                // fold, which `isSettled` reports rather than this refusing the report.
+                // Layout is the authority when present; the backlight can lag it mid fold.
                 guard let active = XPCValue.bool(record, "active") else {
                     throw EngineError.privateCall(symbol: "displayinfo", message: "a display has no activity")
                 }

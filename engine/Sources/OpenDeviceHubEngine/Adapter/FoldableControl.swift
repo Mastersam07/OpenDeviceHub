@@ -1,26 +1,17 @@
 import Foundation
 import XPC
 
-/// Folding a foldable, and turning one.
-///
-/// A foldable does not take an ordinary rotation: its hinge and its orientation are both published
-/// by the guest's virtual machine provider, which overwrites anything sent the usual way. Both are
-/// driven here instead, as vendor defined HID reports over the simulator's own input service.
-///
-/// The report is a serialised dictionary naming a provider, one of its controls, and a value. The
-/// usage page and usage below identify it as that kind of report; they are not ours to choose.
+/// Folds and turns a foldable by vendor defined HID report, since the guest's virtual machine
+/// provider publishes both hinge and orientation and overwrites anything sent the usual way.
 public final class FoldableControl: HingeControl, @unchecked Sendable {
-    /// Angles the guest treats as meaningful. Closed is flat shut, open is flat open.
     public static let closedAngle: Double = 0
     public static let openAngle: Double = 180
 
-    /// Below this the guest is drawing to the cover, above it to the unfolded panel. The guest moves
-    /// the picture itself; this is only where a window should follow it.
+    /// Below this the guest draws to the cover, above it to the unfolded panel.
     public static let handoffAngle: Double = 15
 
     static let serviceName = "com.apple.coredevice.feature.remote.hid.vendordefined"
-    /// Opened and turned on alongside the vendor service. The guest's input stack comes up as a
-    /// whole, and the vendor reports are ignored until it has.
+    /// Turned on with the vendor service, whose reports are ignored until the digitizer is on too.
     static let digitizerServiceName = "com.apple.coredevice.feature.remote.hid.digitizer"
     private static let provider = "com.apple.Virtualization.VirtualMachines"
     private static let usagePage: UInt64 = 0xff61
@@ -32,8 +23,6 @@ public final class FoldableControl: HingeControl, @unchecked Sendable {
     private var isActivated = false
 
     init(port: mach_port_t, digitizerPort: mach_port_t) throws {
-        // These three live in libxpc and are not declared anywhere public, so they are looked up in
-        // the running process rather than linked.
         typealias MakeEndpoint = @convention(c) (mach_port_t, UInt64, UInt64) -> xpc_object_t?
         typealias MakeConnection = @convention(c) (xpc_object_t) -> xpc_connection_t?
         typealias EnableGuestToHost = @convention(c) (xpc_connection_t) -> Void
@@ -71,9 +60,7 @@ public final class FoldableControl: HingeControl, @unchecked Sendable {
         xpc_connection_cancel(digitizer)
     }
 
-    /// How many times the guest is asked before giving up, and how long to wait between asks. The
-    /// guest's input daemon is started on demand and may still be coming up on a device that has
-    /// just booted; a single unanswered probe is not a verdict on it.
+    /// The guest's input daemon is started on demand and may still be coming up on a fresh boot.
     static let activationAttempts = 5
     static let activationBackoff: Duration = .seconds(4)
 
@@ -122,7 +109,6 @@ public final class FoldableControl: HingeControl, @unchecked Sendable {
                     once.finish(.success(()))
                 }
             }
-            // A guest that never answers would otherwise hang the caller for good.
             DispatchQueue.global().asyncAfter(deadline: .now() + 5) {
                 once.finish(.failure(EngineError.privateCall(
                     symbol: "IndigoKeyboardButtonEvent",
@@ -132,8 +118,7 @@ public final class FoldableControl: HingeControl, @unchecked Sendable {
         }
     }
 
-    // Swift 6 will not let a lock be taken directly in an async function, so the two places that
-    // touch this flag during activation go through these.
+    // Swift 6 will not let a lock be taken directly in an async function.
     private var hasActivated: Bool {
         lock.lock()
         defer { lock.unlock() }
@@ -152,11 +137,9 @@ public final class FoldableControl: HingeControl, @unchecked Sendable {
         try send(source: "hinge-slider-control", type: "range", value: clamped as NSNumber)
     }
 
-    /// Turns the device. An ordinary rotation does not stick on a foldable, because the same
-    /// provider republishes orientation and overwrites it.
+    /// An ordinary rotation does not stick on a foldable, whose provider republishes orientation.
     public func setOrientation(_ orientation: DeviceOrientation) throws {
-        // Named by quarter turns rather than by the words left and right, which mean opposite things
-        // depending on whether the device or the picture is being described.
+        // By quarter turn: left and right mean opposite things for the device and for the picture.
         let byQuarterTurn = ["portrait", "landscape-right", "pud", "landscape-left"]
         let index = ((orientation.degrees / 90) % 4 + 4) % 4
         try send(source: "orientation-picker-control", type: "enum", value: byQuarterTurn[index] as NSString)
@@ -205,7 +188,6 @@ public final class FoldableControl: HingeControl, @unchecked Sendable {
     }
 }
 
-/// A continuation that can be finished from either the reply or the timeout, whichever lands first.
 private final class SingleReply: @unchecked Sendable {
     private let continuation: CheckedContinuation<Void, Error>
     private let lock = NSLock()

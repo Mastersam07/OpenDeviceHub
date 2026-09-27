@@ -40,10 +40,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         }
     }
 
-    /// Every built in screen the device has, in port order.
-    ///
-    /// One for an ordinary device, two for a foldable. Both of a foldable's panels are live at the
-    /// same time, so this says nothing about which one the guest is currently drawing to.
+    /// In port order. Both of a foldable's panels are live, so this does not say which is in use.
     public func panels(_ udid: String) throws -> [DevicePanel] {
         lock.lock()
         defer { lock.unlock() }
@@ -61,9 +58,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
 
         let found = try builtInPanels(udid)
         let chosen = panel.flatMap { wanted in
-            // By identity first, so remembering a panel survives a port order that moved. Falling
-            // back to the index keeps a remembered choice usable across a reboot, which mints new
-            // port UUIDs.
+            // By identity first, then by index: a reboot mints new port UUIDs.
             found.panels.firstIndex { $0.id == wanted.id }
                 ?? found.panels.firstIndex { $0.index == wanted.index }
         } ?? found.panels.firstIndex { $0.isMainScreen } ?? found.panels.indices.first
@@ -72,8 +67,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
             throw EngineError.capabilityUnavailable(name: "main display port")
         }
 
-        // The bezel is on by default, matching what the simulator itself shows. The caller turns it
-        // off through the session.
+        // On by default, as in the simulator itself; the caller turns it off through the session.
         return try SimulatorDisplaySession(
             descriptor: found.descriptors[index],
             pointScale: found.scale,
@@ -119,7 +113,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
                   portState.conforms(to: stateProtocol) else { continue }
 
             // Class 1 is an external display port that stays empty while unused. A foldable reports
-            // a class 0 port per panel, which is why this collects them rather than taking the first.
+            // a class 0 port per panel.
             let displayState = unsafeBitCast(portState, to: (any ODHSimDisplayDescriptorState).self)
             guard displayState.displayClass == 0 else { continue }
 
@@ -147,8 +141,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
                 index: indexes[position],
                 name: DevicePanel.name(at: position, of: sizes),
                 pixelSize: size,
-                // A foldable's main screen is its cover, so this is read from the device rather than
-                // assumed to be the first or the largest panel.
+                // A foldable's main screen is its cover, not its largest panel.
                 isMainScreen: size == mainScreenSize,
                 screenID: profile?.screenID ?? 0,
                 nativeRotation: profile?.nativeRotation ?? 0,
@@ -158,8 +151,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         return (panels, descriptors, scale)
     }
 
-    /// Input aimed at one of the device's screens, for a foldable, where the older path can only
-    /// reach whichever screen the device calls its main one.
+    /// The older path only reaches the screen the device calls its main one: a foldable's cover.
     public func openInput(_ udid: String, screenID: Int) throws -> any InputSession {
         let fallback = try openInput(udid)
         guard screenID != 0 else { return fallback }
@@ -176,10 +168,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         )) ?? fallback
     }
 
-    /// Opens the control that folds and turns a foldable.
-    ///
-    /// Available on any booted device, since the service is not foldable specific, but only a device
-    /// with a hinge does anything with it.
+    /// Opens on any booted device, but only one with a hinge does anything with it.
     public func openFoldableControl(_ udid: String) throws -> any HingeControl {
         lock.lock()
         defer { lock.unlock() }
@@ -202,8 +191,7 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         return try FoldableControl(port: port, digitizerPort: digitizerPort)
     }
 
-    /// Kept for the life of the adapter, one per device and feature. The guest's services do not
-    /// take kindly to being connected to afresh for every question.
+    /// The guest's services do not take kindly to being connected to afresh for every question.
     private var coreDeviceFeatures: [String: CoreDeviceFeature] = [:]
 
     public func openCoreDevice(_ udid: String, service: String) throws -> CoreDeviceFeature {

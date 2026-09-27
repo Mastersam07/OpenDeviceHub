@@ -3,9 +3,6 @@ import XCTest
 import OpenDeviceHubEngine
 @testable import OpenDeviceHubViewer
 
-/// A foldable's window follows its guest between the two panels without going anywhere: the same
-/// window, the same shape, both pictures still there. Only the touch target, the face a click is
-/// tested against and the screenshot follow the guest.
 @MainActor
 final class PanelFollowTests: XCTestCase {
     func testTheWindowStaysPutWhenTheGuestMoves() throws {
@@ -21,9 +18,7 @@ final class PanelFollowTests: XCTestCase {
             throw XCTSkip("not a foldable")
         }
 
-        // A frame remembered from an earlier run would move the window, so this one forgets, and
-        // closing its window must leave the device running rather than shut it down as a real
-        // window would under the user's own setting.
+        // Closing the window must leave the device running, not shut it down as a real one might.
         let manager = DeviceWindowManager(
             frameStore: WindowFrameStore(storage: ForgetfulStorage()),
             shutdown: { _ in }
@@ -60,16 +55,13 @@ final class PanelFollowTests: XCTestCase {
         XCTAssertEqual(window.frame, frame)
         XCTAssertEqual(targets, [cover.screenID, unfolded.screenID], "and back")
 
-        // Saying it again changes nothing.
         controller.setActivePanel(screenID: unfolded.screenID)
         XCTAssertEqual(targets.count, 2)
     }
 }
 
 extension PanelFollowTests {
-    /// A frame remembered by an earlier version, which reshaped the window for each panel, is tall.
-    /// The open device does not fit a tall frame; the window takes the frame's place and width and
-    /// the device's own shape.
+    /// A remembered frame can be tall (an old per-panel frame), which the open device does not fit.
     func testATallRememberedFrameIsGivenTheDevicesShape() throws {
         try IntegrationGate.requireEnabled()
         let adapter = try AdapterFactory.make(for: XcodeLocator.locate())
@@ -107,7 +99,6 @@ extension PanelFollowTests {
         print("RESULT remembered 439x666 became a window with content \(Int(content.width))x\(Int(content.height))")
         XCTAssertEqual(window.frame.width, 439, accuracy: 1, "the remembered width is kept")
         XCTAssertLessThan(content.height, 420, "the open device does not want a tall frame")
-        // The device area is the open device's shape: wider than it is tall.
         let deviceArea = content.height - PresentationLayout.barHeight
             - PresentationLayout.deviceTopMargin - PresentationLayout.deviceBottomMargin
         XCTAssertEqual(content.width / deviceArea, 2853.0 / 2007.0 * (content.width / (content.width - 24)), accuracy: 0.15)

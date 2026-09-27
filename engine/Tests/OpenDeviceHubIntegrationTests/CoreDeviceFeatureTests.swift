@@ -2,8 +2,6 @@ import Foundation
 import XCTest
 import OpenDeviceHubEngine
 
-/// The guest's own answers, checked against `devicectl`, which fronts the same features, and
-/// against a fold.
 final class CoreDeviceFeatureTests: XCTestCase {
     private var adapter: (any SimulatorAdapter)!
     private var udid = ""
@@ -53,7 +51,6 @@ final class CoreDeviceFeatureTests: XCTestCase {
         for display in report.integrated {
             let matching = touchscreens.first { $0.displayUniqueID == display.uniqueID }
             XCTAssertNotNil(matching, "no touchscreen for \(display.name)")
-            // The plist screen ID, which the branch already sends, is the same number.
             XCTAssertEqual(matching?.target, display.displayID, display.name)
         }
     }
@@ -98,8 +95,8 @@ final class CoreDeviceFeatureTests: XCTestCase {
     private func devicectlHingeAngle() throws -> Double {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        // devicectl streams until its own timeout and then reports that as an error; the first
-        // line it prints before that is the reading.
+        // devicectl streams until its timeout and then calls that an error; the first line it
+        // prints is the reading.
         process.arguments = ["devicectl", "device", "motion", "hinge-angle", "--device", udid, "--timeout", "8"]
         process.environment = ProcessInfo.processInfo.environment
         let output = Pipe()

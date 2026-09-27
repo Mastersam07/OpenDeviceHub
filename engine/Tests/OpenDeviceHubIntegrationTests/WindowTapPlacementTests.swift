@@ -3,12 +3,7 @@ import XCTest
 import OpenDeviceHubEngine
 @testable import OpenDeviceHubViewer
 
-/// Where a click on a foldable's window lands on the guest, driven as a real mouse event and read
-/// back out of the guest's own log.
-///
-/// The whole path is in this: the ray against the posed mesh, the panel's build angle, and the
-/// coordinates the digitizer is addressed in. A stray flip in any of them still puts every click on
-/// the screen, so only the quadrant a click arrives in shows it up.
+/// A stray flip in the path still puts every click on the screen; only the quadrant shows it up.
 @MainActor
 final class WindowTapPlacementTests: XCTestCase {
     func testEachCornerOfTheWindowLandsOnTheMatchingCornerOfTheGuest() async throws {
@@ -36,8 +31,7 @@ final class WindowTapPlacementTests: XCTestCase {
             .appending(path: "Documents").appending(path: "events.txt")
         try await Task.sleep(for: .seconds(6))
 
-        // Closing the window must leave the device running rather than shut it down as a real
-        // window would under the user's own setting.
+        // Closing the window must leave the device running, not shut it down as a real one might.
         let manager = DeviceWindowManager(shutdown: { _ in })
         let controller = try manager.open(
             device: device,
@@ -63,8 +57,7 @@ final class WindowTapPlacementTests: XCTestCase {
 
         let box = model.bounds
         let quarter = CGSize(width: box.width * 0.2, height: box.height * 0.2)
-        // AppKit counts up the window and the guest counts down its screen, so the higher click is
-        // the one expected to come back with the smaller y.
+        // AppKit counts y up the window and the guest counts it down its screen.
         let corners: [(String, CGPoint, (x: Bool, y: Bool))] = [
             ("upper left", CGPoint(x: box.midX - quarter.width, y: box.midY + quarter.height), (false, false)),
             ("upper right", CGPoint(x: box.midX + quarter.width, y: box.midY + quarter.height), (true, false)),

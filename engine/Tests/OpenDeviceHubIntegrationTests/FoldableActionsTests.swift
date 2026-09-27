@@ -2,8 +2,6 @@ import Foundation
 import XCTest
 import OpenDeviceHubEngine
 
-/// Drives every action a foldable window offers and reports which of them the guest actually
-/// received, reading back only what the test host appended for that one action.
 final class FoldableActionsTests: XCTestCase {
     private var udid = ""
     private var container = URL(fileURLWithPath: "/")
@@ -34,9 +32,7 @@ final class FoldableActionsTests: XCTestCase {
         let input = try adapter.openInput(udid, screenID: unfolded.screenID)
         var report: [String] = []
 
-        // How far the guest's own layout is turned from the space the digitizer takes, measured at
-        // each quarter turn of the device so the rule that composes the two is read off rather than
-        // assumed.
+        // Measured at each quarter turn so the rule composing the two turns is read, not assumed.
         for quarterTurn in 0..<4 {
             try control.setOrientation(DeviceOrientation.allCases[quarterTurn])
             try await settle(3)
@@ -98,8 +94,8 @@ final class FoldableActionsTests: XCTestCase {
         try await SystemGesture.appSwitcher(on: input, turn: turn)
         try await settle(3)
         let left = lines("SCENE").contains("SCENE BACKGROUND")
-        // Going home and opening the switcher both put the app behind, so the two are told apart by
-        // what a tap in the middle does next: the switcher has the app's own card there.
+        // Home and the switcher both put the app behind; only the switcher has the app's card under
+        // a tap in the middle.
         since()
         try await tap(input, at: CGPoint(x: 0.5, y: 0.5))
         try await settle(3)
@@ -117,8 +113,6 @@ final class FoldableActionsTests: XCTestCase {
         path.map { CoordinateMapper.portraitNativePoint(from: $0, orientation: turn) }
     }
 
-    /// Taps two known native points and works out which quarter turn maps them onto where the guest
-    /// says they landed.
     private func measureTurn(_ input: any InputSession) async throws -> DeviceOrientation? {
         var pairs: [(CGPoint, CGPoint)] = []
         for sent in [CGPoint(x: 0.25, y: 0.1), CGPoint(x: 0.75, y: 0.1)] {
@@ -171,7 +165,6 @@ final class FoldableActionsTests: XCTestCase {
         return "\(Double(parts[1]) ?? 0),\(Double(parts[2]) ?? 0)"
     }
 
-    /// Everything the host has written so far is old news. Only what comes after this call counts.
     private func since() {
         mark = all().count
     }

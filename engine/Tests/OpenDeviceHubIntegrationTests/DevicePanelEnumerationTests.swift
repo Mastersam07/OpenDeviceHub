@@ -25,8 +25,6 @@ final class DevicePanelEnumerationTests: XCTestCase {
         XCTAssertEqual(Set(panels.map(\.id)).count, panels.count, "panel identifiers repeat")
     }
 
-    /// A foldable is the only device with two, and the point of the change: the old code returned
-    /// the first and the second was unreachable.
     func testAFoldableReportsBothPanels() throws {
         try IntegrationGate.requireEnabled()
         let adapter = try makeAdapter()
@@ -41,13 +39,11 @@ final class DevicePanelEnumerationTests: XCTestCase {
         XCTAssertEqual(Set(panels.map(\.name)), ["Unfolded", "Cover"])
         XCTAssertEqual(panels.filter(\.isMainScreen).count, 1, "exactly one panel is the main screen")
 
-        // The device type calls the smaller panel its main screen, which is why the opener cannot
-        // just take the largest or the first.
+        // The device type calls the smaller panel its main screen, not the largest.
         let main = try XCTUnwrap(panels.first(where: \.isMainScreen))
         XCTAssertEqual(main.name, "Cover")
     }
 
-    /// Each panel opens on its own surface, at its own size, rather than every choice landing on one.
     func testEachPanelOpensAtItsOwnSize() throws {
         try IntegrationGate.requireEnabled()
         let adapter = try makeAdapter()

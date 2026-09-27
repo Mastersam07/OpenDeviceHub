@@ -1,18 +1,13 @@
 import Foundation
 
-/// What a device type's own profile says about its built in screens.
-///
-/// The IO ports say how big each panel is and nothing else. Everything else a foldable needs, which
-/// screen a touch should go to and which way round the panel is built, is in the device type's
-/// capabilities file next to the runtime.
+/// What a device type's capabilities file says about its screens; IO ports only give their size.
 public enum DeviceTypeProfile {
     public struct Display: Sendable, Hashable {
         /// What a touch is addressed to. Zero means the device's default screen.
         public let screenID: Int
         public let width: Int
         public let height: Int
-        /// How far the panel is turned in its own housing. The unfolded panel of a foldable is built
-        /// sideways, so its native rotation is 270 and its picture is landscape.
+        /// How far the panel is turned in its housing; a foldable's unfolded panel reports 270.
         public let nativeRotation: Int
         public let chromeIdentifier: String?
     }
@@ -39,7 +34,6 @@ public enum DeviceTypeProfile {
         return found
     }()
 
-    /// The built in screens the device type declares, in the order the profile lists them.
     public static func displays(forDeviceType identifier: String) -> [Display] {
         guard let bundle = bundlesByIdentifier[identifier] else { return [] }
         let file = bundle

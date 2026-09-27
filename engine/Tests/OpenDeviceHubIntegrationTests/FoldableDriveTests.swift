@@ -3,10 +3,6 @@ import XCTest
 import OpenDeviceHubEngine
 @testable import OpenDeviceHubViewer
 
-/// The foldable driven the way a person drives it: a real window with both panels, the guest
-/// leading, real mouse and scroll events into the window, and every result read back from the
-/// guest's own log, its display report, or a picture of the model. Nothing here goes round the
-/// window to the engine.
 @MainActor
 final class FoldableDriveTests: XCTestCase {
     private var adapter: (any SimulatorAdapter)!
@@ -33,7 +29,6 @@ final class FoldableDriveTests: XCTestCase {
         ]).trimmingCharacters(in: .whitespacesAndNewlines))
             .appending(path: "Documents").appending(path: "events.txt")
 
-        // The window, wired as the app wires it.
         let panels = try adapter.panels(device.udid)
         let unfolded = try XCTUnwrap(panels.first { $0.name == "Unfolded" })
         let cover = try XCTUnwrap(panels.first { $0.name == "Cover" })
@@ -63,8 +58,6 @@ final class FoldableDriveTests: XCTestCase {
         window.setFrameOrigin(.zero)
         window.orderFront(nil)
 
-        // One vendor connection for the whole run, as the app keeps one for the life of a window:
-        // a fresh one per test answers more slowly each time and then not at all.
         let adapter = self.adapter!
         let shared = try await IntegrationFoldable.shared.control(for: device.udid, adapter: adapter)
         foldables = FoldableController(
@@ -115,7 +108,6 @@ final class FoldableDriveTests: XCTestCase {
             try await fold(to: mode.angle)
             try await launchHost()
 
-            // A tap in each corner lands in the matching corner of the guest.
             let box = model.bounds
             let quarter = CGSize(width: box.width * 0.18, height: box.height * 0.18)
             for (name, spot, right, lower) in [
@@ -131,14 +123,12 @@ final class FoldableDriveTests: XCTestCase {
                 print("RESULT \(mode.label): tap \(name) arrived at \(landed)")
             }
 
-            // A drag is a contact that moves; the host logs where it began.
             since()
             try await drag(from: CGPoint(x: box.midX, y: box.midY - 40), to: CGPoint(x: box.midX, y: box.midY + 40))
             try await settle(2)
             print("RESULT \(mode.label): swipe began at \(lastTap())")
             XCTAssertNotNil(Self.point(from: lastTap()), "\(mode.label): the swipe reached nothing")
 
-            // A scroll is a drag too.
             since()
             try scroll(at: CGPoint(x: box.midX, y: box.midY), lines: 4)
             try await settle(2)
@@ -157,7 +147,6 @@ final class FoldableDriveTests: XCTestCase {
         try await launchHost()
         let box = model.bounds
 
-        // Home by the button.
         since()
         try await controller.inputSession?.button(.home, phase: .down)
         try await Task.sleep(for: .milliseconds(30))
@@ -166,8 +155,6 @@ final class FoldableDriveTests: XCTestCase {
         print("RESULT home button: \(lines("SCENE").last ?? "nothing")")
         XCTAssertTrue(lines("SCENE").contains("SCENE BACKGROUND"), "home by the button did nothing")
 
-        // Home by the gesture, dragged on the window: once from the bezel just under the screen,
-        // the way a hand starts it, and once from just inside the screen's edge.
         for (name, start) in [("from the bezel", screenBottom()), ("from inside the edge", CGPoint(x: box.midX, y: screenBottom().y + 8))] {
             try await launchHost()
             since()
@@ -177,7 +164,6 @@ final class FoldableDriveTests: XCTestCase {
             XCTAssertTrue(lines("SCENE").contains("SCENE BACKGROUND"), "the home swipe \(name) did nothing")
         }
 
-        // The app switcher, then switching back by tapping the card.
         try await launchHost()
         since()
         try await openSwitcher()
@@ -189,7 +175,6 @@ final class FoldableDriveTests: XCTestCase {
         print("RESULT app switcher then card tap: \(lines("SCENE").last ?? "nothing")")
         XCTAssertTrue(lines("SCENE").contains("SCENE FOREGROUND"), "tapping the card did not switch back")
 
-        // The switcher again, and dismissing the app by flicking its card away.
         since()
         try await openSwitcher()
         try await settle(3)
@@ -217,7 +202,6 @@ final class FoldableDriveTests: XCTestCase {
         print("RESULT rotate: report \(before ?? -1) -> \(after ?? -1), guest says \(reported), model \(upright.text) -> \(turned.text)")
         XCTAssertNotEqual(before, after, "the guest did not turn")
         XCTAssertNotEqual(reported, "nothing", "the app did not lay out again")
-        // A quarter turn swaps which way the device is long in the picture.
         XCTAssertLessThan(turned.across, upright.across * 0.7, "the model did not turn")
 
         try foldables.setOrientation(.portrait, for: device.udid)
@@ -225,8 +209,6 @@ final class FoldableDriveTests: XCTestCase {
         try await settle(3)
     }
 
-    /// The body's buttons, pressed on the model through the window, read back from the guest: the
-    /// volume from `devicectl`, the lock from the panel's backlight in the display report.
     func testTheBodysButtonsReachTheGuest() async throws {
         try await fold(to: DeviceControlBar.FoldMode.fullyOpen.angle)
         try await launchHost()
@@ -256,7 +238,7 @@ final class FoldableDriveTests: XCTestCase {
         print("RESULT after the power button, a panel is lit: \(lit)")
         XCTAssertFalse(lit, "the power button did not put the screen to sleep")
 
-        // Woken and unlocked again: the power button wakes it, the home swipe past the lock screen.
+        // The power button wakes it; the home swipe gets past the lock screen.
         try await press(.lock)
         try await settle(2)
         if let input = controller.inputSession {
@@ -277,7 +259,6 @@ final class FoldableDriveTests: XCTestCase {
         view.mouseUp(with: try Self.mouse(.leftMouseUp, at: model.convert(spot, to: nil)))
     }
 
-    /// What the guest keeps in its camera roll, which is where its own screenshots go.
     private func photos() -> Int {
         let roll = FileManager.default.homeDirectoryForCurrentUser
             .appending(path: "Library/Developer/CoreSimulator/Devices/\(device.udid)/data/Media/DCIM")
@@ -294,7 +275,6 @@ final class FoldableDriveTests: XCTestCase {
         return value
     }
 
-    // The guest leads: a fold is sent, then the guest's report is waited on, not a clock.
     private func fold(to degrees: Double) async throws {
         controller.showHingeAngle(degrees)
         foldables.setAngle(degrees, for: device.udid)
@@ -307,8 +287,6 @@ final class FoldableDriveTests: XCTestCase {
         XCTAssertEqual(foldables.activePanel(for: device.udid)?.displayID, wanted, "the guest never moved to display \(wanted)")
     }
 
-    /// The lowest point of the view that is on the screen, straight below the middle: the screen's
-    /// bottom edge, which is where the guest's gestures start, not the view's.
     private func screenBottom() -> CGPoint {
         let box = model.bounds
         var y = box.minY
@@ -367,9 +345,8 @@ final class FoldableDriveTests: XCTestCase {
         )
     }
 
-    /// The view the window would hand this point to. A real event is routed this way before the
-    /// model ever sees it, so a point the routing gives to another view, or to nothing, is a press
-    /// the model never gets.
+    /// A real event is routed by the window's hit test before the model sees it, so a point the
+    /// routing gives to another view, or to nothing, is a press the model never gets.
     private func target(_ spot: CGPoint, file: StaticString = #filePath, line: UInt = #line) throws -> NSView {
         let content = try XCTUnwrap(window.contentView)
         let inContent = model.convert(spot, to: content)

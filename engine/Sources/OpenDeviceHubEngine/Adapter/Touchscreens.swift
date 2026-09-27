@@ -1,11 +1,7 @@
 import Foundation
 import XPC
 
-/// One of the guest's touchscreens, and the screen it belongs to.
-///
-/// A foldable has two, and a touch has to be addressed to the one under the panel being shown. The
-/// guest's universal HID service lists its services with, for each touchscreen, the display it is
-/// attached to, which is the join a window needs between the display report and a digitizer target.
+/// A guest touchscreen and the display it sits under, joining display report to digitizer target.
 public struct Touchscreen: Sendable, Hashable {
     /// The value an `IndigoDigitizerEvent` names in `target`.
     public let target: Int
@@ -26,9 +22,7 @@ public struct Touchscreen: Sendable, Hashable {
         return message
     }
 
-    /// The touchscreens among the guest's HID services. Any other service is skipped; a touchscreen
-    /// whose service identity does not carry an explicit target is refused, since a wrong target
-    /// puts every touch on the wrong panel.
+    /// A touchscreen with no explicit target is refused, since a wrong one misroutes every touch.
     static func parse(_ reply: xpc_object_t) throws -> [Touchscreen] {
         guard let services = XPCValue.array(reply, "connectedServices") else {
             throw EngineError.privateCall(symbol: "connectedServices", message: "the device listed no HID services")

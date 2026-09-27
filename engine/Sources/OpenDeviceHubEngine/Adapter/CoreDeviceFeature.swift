@@ -1,17 +1,8 @@
 import Foundation
 import XPC
 
-/// One of the guest's CoreDevice features, driven by its actions.
-///
-/// This is the plane that knows what the guest is doing: which of its screens is active, what its
-/// hinge reads, which touchscreen belongs to which screen. The simulator input services only take
-/// commands; this one answers questions. `devicectl` fronts the same features, so anything read
-/// here can be checked against it.
-///
-/// A request is one XPC dictionary under `CoreDevice.*` keys and the reply carries either
-/// `CoreDevice.output` or `CoreDevice.error`. A streaming action names a side channel in its input
-/// and the guest then sends events for that channel on the connection, each of which is answered
-/// with whether to stop. The shapes are idb's, confirmed against `devicectl` on Xcode 27 (27A266a).
+/// One of the guest's CoreDevice features, driven by its actions. The message shapes are idb's,
+/// confirmed against `devicectl` on Xcode 27 (27A266a), which fronts the same features.
 public final class CoreDeviceFeature: @unchecked Sendable {
     public static let displayInfoService = "com.apple.coredevice.feature.getdisplayinfo"
     public static let displayInfoAction = "com.apple.coredevice.action.displayinfo"
@@ -67,22 +58,18 @@ public final class CoreDeviceFeature: @unchecked Sendable {
         xpc_connection_cancel(connection)
     }
 
-    /// Performs one action and hands back its output dictionary.
     public func perform(action: String, input: xpc_object_t? = nil) async throws -> xpc_object_t {
         let request = try Self.request(action: action, udid: udid, input: input)
         let reply = try await send(request, describedAs: action)
         return try Self.output(of: reply, action: action)
     }
 
-    /// Sends a message that is not an action, for the features that speak their own dialect, and
-    /// hands back the reply as it came.
+    /// A message that is not an action, for the features that speak their own dialect.
     public func exchange(_ message: xpc_object_t, describedAs name: String) async throws -> xpc_object_t {
         try await send(message, describedAs: name)
     }
 
-    /// Starts a streaming action. Every event the guest sends for `sideChannel` reaches `onEvent`,
-    /// and `onEnd` is called once, with the error if the stream failed, when the guest ends it or
-    /// after the handle is cancelled.
+    /// Starts a streaming action. `onEnd` runs once, with the error if the stream failed.
     public func stream(
         action: String,
         input: xpc_object_t,
@@ -217,8 +204,7 @@ public final class CoreDeviceFeature: @unchecked Sendable {
     }
 }
 
-/// Reading XPC values the way a report may carry them: a number can be signed, unsigned or a double
-/// depending on who encoded it, and a missing value is a missing value rather than a zero.
+/// A report's number may be signed, unsigned or a double depending on who encoded it.
 enum XPCValue {
     static func string(_ dictionary: xpc_object_t, _ key: String) -> String? {
         guard let value = xpc_dictionary_get_value(dictionary, key),

@@ -1,12 +1,6 @@
 import Foundation
 
 /// Which panel of a foldable the guest is laying out on, as it changes.
-///
-/// Reads the display report and applies the rule Device Hub applies to it: the reported active
-/// panel counts only once the panels' backlights agree with it, and a report that changes its mind
-/// while the fold has not moved is an oscillation, not a handoff, and does not win. The report is
-/// read again after every hinge reading, after every command this app sends, and on a slow clock
-/// in case neither comes.
 public final class ActivePanelWatcher: @unchecked Sendable {
     public let changes: AsyncStream<DisplayReport.Display>
 
@@ -84,8 +78,7 @@ public final class ActivePanelWatcher: @unchecked Sendable {
         consider(report)
     }
 
-    // Swift 6 will not let a lock be taken directly in an async function, so the two places that
-    // touch the state go through these.
+    // Swift 6 will not let a lock be taken directly in an async function.
     private func noteHinge(_ degrees: Double) {
         lock.lock()
         latestHinge = degrees
@@ -99,8 +92,7 @@ public final class ActivePanelWatcher: @unchecked Sendable {
         guard active.uniqueID != current?.uniqueID else { return }
         if let hingeAtLastChange, let latestHinge, current != nil,
            abs(latestHinge - hingeAtLastChange) < Self.settledHinge {
-            // The report changed its mind and the fold did not move: an oscillation, which does
-            // not earn the change until the device settles.
+            // The report changed its mind without the fold moving: an oscillation, not a handoff.
             return
         }
         current = active

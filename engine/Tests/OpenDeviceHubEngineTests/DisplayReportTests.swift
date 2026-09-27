@@ -4,8 +4,6 @@ import Testing
 import XPC
 @testable import OpenDeviceHubEngine
 
-/// The guest's display report, read the way the guest writes it and refused when it does not hold
-/// together.
 @Suite struct DisplayReportParsingTests {
     private func record(
         id: String = "A",
@@ -98,15 +96,12 @@ import XPC
     }
 
     @Test func onlyTheActivePanelsBacklightDecidesWhetherItIsSettled() throws {
-        // The guest moved its layout to the inner panel and the cover's backlight has not gone off
-        // yet. The inner panel is lit, so the report is one to act on.
         let lagging = try DisplayReport.parse(output([
             record(id: "cover", displayID: 1, active: false, backlight: "activeOn"),
             record(id: "inner", name: "LCD-1", displayID: 3, active: true, backlight: "activeOn", width: 2007, height: 2853),
         ]))
         #expect(lagging.activeIntegrated?.uniqueID == "inner")
         #expect(lagging.isSettled == true)
-        // The layout names a panel that is dark, which cannot be right.
         let dark = try DisplayReport.parse(output([
             record(id: "cover", displayID: 1, active: true, backlight: "off"),
             record(id: "inner", name: "LCD-1", displayID: 3, active: false, backlight: "activeOn", width: 2007, height: 2853),

@@ -2,8 +2,6 @@ import Foundation
 import XCTest
 import OpenDeviceHubEngine
 
-/// The guest's own account of its screens, read through the same feature `devicectl` fronts, and
-/// checked against what `devicectl` prints for the same device at the same moment.
 final class DisplayReportTests: XCTestCase {
     func testTheReportAgreesWithDevicectl() async throws {
         try IntegrationGate.requireEnabled()
@@ -38,7 +36,6 @@ final class DisplayReportTests: XCTestCase {
         print("RESULT active panel is display \(active.displayID) (\(active.name)), \(Int(active.pixelSize.width))x\(Int(active.pixelSize.height)), turned \(active.currentRotation)")
     }
 
-    /// Fold it and the report follows the guest, whoever moved the hinge.
     func testTheReportFollowsTheFold() async throws {
         try IntegrationGate.requireEnabled()
         let adapter = try AdapterFactory.make(for: XcodeLocator.locate())

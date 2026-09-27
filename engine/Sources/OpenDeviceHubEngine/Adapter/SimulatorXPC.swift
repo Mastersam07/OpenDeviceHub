@@ -1,12 +1,8 @@
 import Foundation
 import XPC
 
-/// The XPC route into a booted simulator's services, from a mach port that
-/// `-[SimDevice lookup:error:]` handed back.
-///
-/// The three functions live in libxpc and are not declared anywhere public, so they are looked up
-/// in the running process rather than linked. The connection is marked simulator to host, without
-/// which the service on the other side never sees the messages.
+/// The XPC route into a booted simulator's services, from a port `-[SimDevice lookup:error:]`
+/// handed back. Without the simulator to host flag the service never sees the messages.
 enum SimulatorXPC {
     static func connect(port: mach_port_t, queue: DispatchQueue) throws -> xpc_connection_t {
         typealias MakeEndpoint = @convention(c) (mach_port_t, UInt64, UInt64) -> xpc_object_t?
@@ -35,14 +31,11 @@ enum SimulatorXPC {
     }
 }
 
-/// An XPC object crossing a continuation. XPC objects are thread safe reference types, which is
-/// what Sendable asks for, but the framework does not say so.
+/// XPC objects are thread safe, which Sendable asks for, but the framework does not say so.
 struct XPCReply: @unchecked Sendable {
     let object: xpc_object_t
 }
 
-/// A continuation that can be finished from either the reply or the timeout, whichever lands
-/// first, and never twice.
 final class OnceContinuation<Value: Sendable>: @unchecked Sendable {
     private let continuation: CheckedContinuation<Value, any Error>
     private let lock = NSLock()
