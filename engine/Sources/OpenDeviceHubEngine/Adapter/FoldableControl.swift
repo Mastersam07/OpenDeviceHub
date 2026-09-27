@@ -71,11 +71,29 @@ public final class FoldableControl: HingeControl, @unchecked Sendable {
         xpc_connection_cancel(digitizer)
     }
 
+    /// How many times the guest is asked before giving up, and how long to wait between asks. The
+    /// guest's input daemon is started on demand and may still be coming up on a device that has
+    /// just booted; a single unanswered probe is not a verdict on it.
+    static let activationAttempts = 5
+    static let activationBackoff: Duration = .seconds(4)
+
     /// The service ignores reports until the feature has been turned on, once per connection.
     public func activate() async throws {
         guard !hasActivated else { return }
-        try await turnOn(digitizer, feature: Self.digitizerServiceName)
-        try await turnOn(connection, feature: Self.serviceName)
+        var failure: (any Error)?
+        for attempt in 1...Self.activationAttempts {
+            do {
+                try await turnOn(digitizer, feature: Self.digitizerServiceName)
+                try await turnOn(connection, feature: Self.serviceName)
+                failure = nil
+                break
+            } catch {
+                failure = error
+                guard attempt < Self.activationAttempts else { break }
+                try await Task.sleep(for: Self.activationBackoff)
+            }
+        }
+        if let failure { throw failure }
         // The guest needs a moment after the features come up before it acts on a report.
         try? await Task.sleep(for: .milliseconds(200))
         markActivated()

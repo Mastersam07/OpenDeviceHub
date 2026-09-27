@@ -124,10 +124,31 @@ public final class PanelInputSession: InputSession, @unchecked Sendable {
         xpc_connection_cancel(connection)
     }
 
-    /// The guest ignores reports until the feature has been turned on, once per connection.
+    /// The guest ignores reports until the feature has been turned on, once per connection. The
+    /// guest's input daemon is started on demand and may still be coming up on a device that has
+    /// just booted, so an unanswered probe is asked again, and the session counts as on only once
+    /// the guest has actually answered: marking it on after a silence would drop every touch until
+    /// the window was closed.
     private func activate() async throws {
         guard !hasActivated else { return }
+        for attempt in 1...FoldableControl.activationAttempts {
+            if await probe() {
+                markActivated()
+                // The guest needs a moment after the feature comes up before it acts on a report.
+                try? await Task.sleep(for: .milliseconds(150))
+                return
+            }
+            guard attempt < FoldableControl.activationAttempts else { break }
+            try await Task.sleep(for: FoldableControl.activationBackoff)
+        }
+        throw EngineError.privateCall(
+            symbol: "IndigoKeyboardButtonEvent",
+            message: "the device's input did not answer after \(FoldableControl.activationAttempts) tries"
+        )
+    }
 
+    /// Whether the guest answers the barrier that turns the feature on, within four seconds.
+    private func probe() async -> Bool {
         let payload = xpc_dictionary_create(nil, nil, 0)
         xpc_dictionary_set_uint64(payload, "usageCode", 0)
         xpc_dictionary_set_uint64(payload, "state", 2)
@@ -138,16 +159,13 @@ public final class PanelInputSession: InputSession, @unchecked Sendable {
         xpc_dictionary_set_string(message, "featureIdentifier", FoldableControl.digitizerServiceName)
         xpc_dictionary_set_value(message, "payload", payload)
 
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             let once = OneAnswer(continuation)
-            xpc_connection_send_message_with_reply(connection, message, .global(qos: .userInitiated)) { _ in
-                once.finish()
+            xpc_connection_send_message_with_reply(connection, message, .global(qos: .userInitiated)) { reply in
+                once.finish(xpc_get_type(reply) != XPC_TYPE_ERROR)
             }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 3) { once.finish() }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 4) { once.finish(false) }
         }
-        markActivated()
-        // The guest needs a moment after the feature comes up before it acts on a report.
-        try? await Task.sleep(for: .milliseconds(150))
     }
 
     private var hasActivated: Bool {
@@ -182,20 +200,20 @@ public final class PanelInputSession: InputSession, @unchecked Sendable {
 }
 
 private final class OneAnswer: @unchecked Sendable {
-    private let continuation: CheckedContinuation<Void, Never>
+    private let continuation: CheckedContinuation<Bool, Never>
     private let lock = NSLock()
     private var isDone = false
 
-    init(_ continuation: CheckedContinuation<Void, Never>) {
+    init(_ continuation: CheckedContinuation<Bool, Never>) {
         self.continuation = continuation
     }
 
-    func finish() {
+    func finish(_ answered: Bool) {
         lock.lock()
         let alreadyDone = isDone
         isDone = true
         lock.unlock()
         guard !alreadyDone else { return }
-        continuation.resume()
+        continuation.resume(returning: answered)
     }
 }
