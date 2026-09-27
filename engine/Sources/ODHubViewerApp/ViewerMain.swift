@@ -152,6 +152,7 @@ struct ODHubViewer: ParsableCommand {
                     foldables.setAngle(angle, for: udid)
                     foldables.follow(
                         udid,
+                        nudges: controller.screenChanges,
                         onPanel: { [weak controller] panel in
                             controller?.setActivePanel(screenID: panel.displayID)
                         },

@@ -4,7 +4,12 @@ import Foundation
 public final class ActivePanelWatcher: @unchecked Sendable {
     public let changes: AsyncStream<DisplayReport.Display>
 
-    static let pollInterval: Duration = .seconds(1)
+    /// The clock is a safety net: the screens announce their own changes, and a poke looks at once.
+    static let fallbackPoll: Duration = .seconds(5)
+    /// A poke arrives before the report has caught up (27A266a: the screens announce a fold about
+    /// half a second before the report names the new panel), so it looks again a few times.
+    static let burstInterval: Duration = .milliseconds(150)
+    static let burstReads = 14
     /// How far the hinge has to move between two readings for a change of panel to be believed.
     static let settledHinge: Double = 1
 
@@ -33,13 +38,13 @@ public final class ActivePanelWatcher: @unchecked Sendable {
 
         tasks.append(Task { [weak self] in
             for await _ in pokeStream {
-                await self?.reread()
+                await self?.burst()
             }
         })
         tasks.append(Task { [weak self] in
             while !Task.isCancelled {
                 await self?.reread()
-                try? await Task.sleep(for: Self.pollInterval)
+                try? await Task.sleep(for: Self.fallbackPoll)
             }
         })
         if let hinge {
@@ -61,9 +66,20 @@ public final class ActivePanelWatcher: @unchecked Sendable {
         return current
     }
 
-    /// Something was just sent that may move the guest; look now rather than on the clock.
+    /// Something happened that may have moved the guest: a command was sent, or a screen announced
+    /// a change. Look now, and keep looking briefly, rather than wait for the clock.
     public func poke() {
         pokes?.yield(())
+    }
+
+    private func burst() async {
+        let before = activePanel?.uniqueID
+        for _ in 0..<Self.burstReads {
+            await reread()
+            if activePanel?.uniqueID != before { return }
+            try? await Task.sleep(for: Self.burstInterval)
+            if Task.isCancelled { return }
+        }
     }
 
     public func close() {

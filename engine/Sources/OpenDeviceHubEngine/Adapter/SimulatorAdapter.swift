@@ -38,6 +38,10 @@ public struct DeviceInfo: Sendable, Hashable, Codable {
     }
 }
 
+extension DisplaySession {
+    public var screenChanges: AsyncStream<ScreenProperties> { AsyncStream { $0.finish() } }
+}
+
 public struct DisplayFrame: @unchecked Sendable {
     public let surface: IOSurfaceRef
     public let timestamp: UInt64
@@ -110,8 +114,21 @@ public enum ButtonPhase: Sendable, Hashable {
     case up
 }
 
+/// What a screen says about itself when something about it changes: on a foldable, a fold turns
+/// the layout on both panels and this arrives before the display report catches up.
+public struct ScreenProperties: Sendable, Hashable {
+    public let uniqueID: String?
+    public let screenID: Int
+    public let powerState: Int
+    public let uiOrientation: Int
+    public let pixelSize: CGSize
+    public let backlightState: Int?
+}
+
 public protocol DisplaySession: AnyObject, Sendable {
     var frames: AsyncStream<DisplayFrame> { get }
+    /// Each change the screen announces about itself; empty where the session cannot hear them.
+    var screenChanges: AsyncStream<ScreenProperties> { get }
     var pixelSize: CGSize { get }
     var pointScale: CGFloat { get }
     /// The device screen's physical pixel density, which physical size scaling needs.

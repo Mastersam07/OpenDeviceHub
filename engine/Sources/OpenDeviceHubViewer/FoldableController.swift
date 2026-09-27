@@ -16,7 +16,7 @@ public final class FoldableController {
     private struct Follower {
         let watcher: ActivePanelWatcher
         let hinge: HingeAngleStream?
-        let task: Task<Void, Never>
+        let tasks: [Task<Void, Never>]
     }
 
     public var report: ((String) -> Void)?
@@ -79,8 +79,11 @@ public final class FoldableController {
         followers[udid]?.watcher.poke()
     }
 
+    /// Follows the guest between the panels. `nudges` are the panels' own change announcements,
+    /// each of which makes the watcher look at the report at once.
     public func follow(
         _ udid: String,
+        nudges: [AsyncStream<ScreenProperties>] = [],
         onPanel: @escaping @MainActor (DisplayReport.Display) -> Void,
         onHinge: @escaping @MainActor (Double) -> Void
     ) {
@@ -99,12 +102,19 @@ public final class FoldableController {
                 Task { @MainActor in onHinge(sample.degrees) }
             }
         )
-        let task = Task { @MainActor in
+        var tasks = [Task { @MainActor in
             for await panel in watcher.changes {
                 onPanel(panel)
             }
+        }]
+        for nudge in nudges {
+            tasks.append(Task {
+                for await _ in nudge {
+                    watcher.poke()
+                }
+            })
         }
-        followers[udid] = Follower(watcher: watcher, hinge: hinge, task: task)
+        followers[udid] = Follower(watcher: watcher, hinge: hinge, tasks: tasks)
     }
 
     public func activePanel(for udid: String) -> DisplayReport.Display? {
@@ -117,7 +127,7 @@ public final class FoldableController {
         activating.remove(udid)
         wanted[udid] = nil
         if let follower = followers.removeValue(forKey: udid) {
-            follower.task.cancel()
+            for task in follower.tasks { task.cancel() }
             follower.watcher.close()
             follower.hinge?.close()
         }
