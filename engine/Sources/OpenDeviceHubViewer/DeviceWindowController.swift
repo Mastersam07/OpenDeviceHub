@@ -70,6 +70,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private var pendingSend: Task<Void, Never>?
     private let unfoldedPanel: DevicePanel?
     private let cover: FoldableCover?
+    private let recording = RecordingSlot()
     private let retarget: ((Int) -> Void)?
     private var coverFrameTask: Task<Void, Never>?
     private var activeScreenID: Int
@@ -330,6 +331,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         let panel = screenID == cover.panel.screenID ? cover.panel : unfoldedPanel
         activeScreenID = panel.screenID
         panelBuildAngle = panel.nativeRotation
+        recording.current?.follow(screenID: panel.screenID)
         modelView?.setShowingCover(panel.screenID == cover.panel.screenID, nativeRotation: panel.nativeRotation)
         retarget?(panel.screenID)
     }
@@ -519,6 +521,31 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     /// The plain device name, without the recording dot or the latency overlay, so screenshot and
     /// recording file names do not pick up whatever the title bar happens to be showing.
     public var deviceTitle: String { baseTitle ?? window?.title ?? udid }
+
+    /// A foldable records itself, from the panel in use; `simctl` records one display per file.
+    public var recordsItself: Bool { cover != nil && unfoldedPanel != nil }
+
+    public func startRecording(to url: URL) throws {
+        guard let unfoldedPanel, recordsItself else {
+            throw EngineError.capabilityUnavailable(name: "recording by panel")
+        }
+        // The movie is the inner panel as shown, which is its framebuffer turned round.
+        let shown = Self.quarterTurns(undoing: unfoldedPanel.nativeRotation).isMultiple(of: 2)
+            ? unfoldedPanel.pixelSize
+            : CGSize(width: unfoldedPanel.pixelSize.height, height: unfoldedPanel.pixelSize.width)
+        recording.current = try PanelRecorder(url: url, size: shown, screenID: activeScreenID)
+    }
+
+    private static func quarterTurns(undoing nativeRotation: Int) -> Int {
+        ((-nativeRotation / 90) % 4 + 4) % 4
+    }
+
+    /// Finishes the recording and hands back the file, or nil when none was running.
+    public func stopRecording() -> URL? {
+        guard let recorder = recording.current else { return nil }
+        recording.current = nil
+        return recorder.stop()
+    }
 
     /// A red dot in the title bar while recording, so a long capture is obvious.
     /// Shows click to frame latency in the title bar, which is the debug overlay the plan asks for.
@@ -835,10 +862,14 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private func startConsumingFrames() {
         let renderer = renderer
         let screenView = screenView
+        let recording = recording
+        let screenID = unfoldedPanel?.screenID ?? 0
+        let turns = Self.quarterTurns(undoing: unfoldedPanel?.nativeRotation ?? 0)
         frameTask = Task { [frames = session.frames, weak self] in
             for await frame in frames {
                 if Task.isCancelled { return }
                 renderer.accept(frame)
+                recording.current?.append(frame.surface, from: screenID, turnedBy: turns)
                 await MainActor.run { [weak self] in
                     // The flat view sits under the model and is not seen; drawing it costs the
                     // main thread a draw per frame.
@@ -860,9 +891,13 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
     private func startConsumingCoverFrames() {
         guard let cover else { return }
         let rotation = cover.panel.nativeRotation
+        let recording = recording
+        let screenID = cover.panel.screenID
+        let turns = Self.quarterTurns(undoing: cover.panel.nativeRotation)
         coverFrameTask = Task { [frames = cover.session.frames, weak self] in
             for await frame in frames {
                 if Task.isCancelled { return }
+                recording.current?.append(frame.surface, from: screenID, turnedBy: turns)
                 await MainActor.run { [weak self] in
                     self?.modelView?.setScreen(frame.surface, onCover: true, nativeRotation: rotation)
                 }
@@ -901,3 +936,23 @@ private final class FPSCounter: @unchecked Sendable {
         print(String(format: "%@  %.1f fps", label, fps))
     }
 }
+
+/// The recorder the frame tasks feed, held where they can reach it off the main actor.
+final class RecordingSlot: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorder: PanelRecorder?
+
+    var current: PanelRecorder? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return recorder
+        }
+        set {
+            lock.lock()
+            recorder = newValue
+            lock.unlock()
+        }
+    }
+}
+

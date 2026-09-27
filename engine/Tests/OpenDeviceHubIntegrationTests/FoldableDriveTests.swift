@@ -1,3 +1,4 @@
+import AVFoundation
 import AppKit
 import os
 import XCTest
@@ -241,6 +242,71 @@ final class FoldableDriveTests: XCTestCase {
             return nil
         }
         return window.contentView.flatMap(find)
+    }
+
+    /// A recording made shut shows the cover, and carries on with the inner panel once opened.
+    func testARecordingFollowsTheGuestBetweenPanels() async throws {
+        try await fold(to: DeviceControlBar.FoldMode.cover.angle)
+        try await launchHost()
+        let directory = FileManager.default.temporaryDirectory.appending(path: "odh-recording-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        XCTAssertTrue(manager.toggleRecording(into: directory).isEmpty, "a start hands back nothing")
+        XCTAssertTrue(manager.isRecording)
+        try await settle(2)
+        try await fold(to: DeviceControlBar.FoldMode.fullyOpen.angle)
+        try await settle(3)
+        let files = manager.toggleRecording(into: directory)
+        let file = try XCTUnwrap(files.first, "a stop hands back the movie")
+
+        let asset = AVURLAsset(url: file)
+        let tracks = try await asset.loadTracks(withMediaType: .video)
+        let track = try XCTUnwrap(tracks.first)
+        let size = try await track.load(.naturalSize)
+        let duration = try await asset.load(.duration)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        let first = try await generator.image(at: CMTime(seconds: 0.5, preferredTimescale: 600)).image
+        let last = try await generator.image(at: CMTime(seconds: duration.seconds - 0.2, preferredTimescale: 600)).image
+        func lit(_ image: CGImage, band: Int) -> (edge: Double, middle: Double) {
+            guard let data = image.dataProvider?.data as Data? else { return (0, 0) }
+            let rowBytes = image.bytesPerRow
+            func mean(_ columns: Range<Int>) -> Double {
+                var total = 0.0, count = 0.0
+                for y in stride(from: 0, to: image.height, by: 8) {
+                    for x in stride(from: columns.lowerBound, to: columns.upperBound, by: 4) {
+                        let i = y * rowBytes + x * 4
+                        total += Double(Int(data[i]) + Int(data[i + 1]) + Int(data[i + 2])) / 3
+                        count += 1
+                    }
+                }
+                return total / max(count, 1)
+            }
+            return (mean(0..<band), mean(image.width / 2 - band..<image.width / 2 + band))
+        }
+        let cover = lit(first, band: 20)
+        let inner = lit(last, band: 20)
+        print("RESULT the movie is \(Int(size.width))x\(Int(size.height)), \(String(format: "%.1f", duration.seconds))s; shut, the edge reads \(Int(cover.edge)) and the middle \(Int(cover.middle)); open, the edge reads \(Int(inner.edge)) and the middle \(Int(inner.middle))")
+        // The inner panel is built a quarter turn round, so the movie is its size turned; the
+        // encoder wants even dimensions, so an odd panel loses a pixel each way.
+        XCTAssertEqual(size.width, unfoldedPixelSize.height, accuracy: 1, "one movie the size of the inner panel as shown")
+        XCTAssertEqual(size.height, unfoldedPixelSize.width, accuracy: 1)
+        if let out = ProcessInfo.processInfo.environment["ODH_OUT"] {
+            for (name, image) in [("shut", first), ("open", last)] {
+                let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+                try? png?.write(to: URL(fileURLWithPath: out).appending(path: "recorded-\(name).png"))
+            }
+        }
+        XCTAssertGreaterThan(duration.seconds, 4, "the recording spans the fold")
+        XCTAssertLessThan(cover.edge, 25, "shut, the cover is fitted on black and leaves the edge dark")
+        XCTAssertGreaterThan(size.width, size.height, "the movie is landscape, as the open device is")
+        XCTAssertGreaterThan(cover.middle, 25, "and the cover's picture is in the middle")
+        XCTAssertGreaterThan(inner.edge, 25, "open, the inner panel fills the frame to its edge")
+    }
+
+    private var unfoldedPixelSize: CGSize {
+        (try? adapter.panels(device.udid).first { $0.name == "Unfolded" }?.pixelSize) ?? .zero
     }
 
     func testRotationTurnsTheGuestAndTheModel() async throws {
