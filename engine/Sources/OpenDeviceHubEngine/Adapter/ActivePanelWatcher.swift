@@ -66,8 +66,7 @@ public final class ActivePanelWatcher: @unchecked Sendable {
         return current
     }
 
-    /// Something happened that may have moved the guest: a command was sent, or a screen announced
-    /// a change. Look now, and keep looking briefly, rather than wait for the clock.
+    /// Looks at the report now, and briefly again, rather than waiting for the clock.
     public func poke() {
         pokes?.yield(())
     }

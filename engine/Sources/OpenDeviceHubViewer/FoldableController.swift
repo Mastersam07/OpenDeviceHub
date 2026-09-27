@@ -79,8 +79,7 @@ public final class FoldableController {
         followers[udid]?.watcher.poke()
     }
 
-    /// Follows the guest between the panels. `nudges` are the panels' own change announcements,
-    /// each of which makes the watcher look at the report at once.
+    /// `nudges` are the panels' own change announcements; each makes the watcher look at once.
     public func follow(
         _ udid: String,
         nudges: [AsyncStream<ScreenProperties>] = [],
