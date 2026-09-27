@@ -288,11 +288,19 @@ final class FoldableDriveTests: XCTestCase {
         let cover = lit(first, band: 20)
         let inner = lit(last, band: 20)
         print("RESULT the movie is \(Int(size.width))x\(Int(size.height)), \(String(format: "%.1f", duration.seconds))s; shut, the edge reads \(Int(cover.edge)) and the middle \(Int(cover.middle)); open, the edge reads \(Int(inner.edge)) and the middle \(Int(inner.middle))")
-        // The encoder wants even dimensions, so an odd panel loses a pixel each way.
-        XCTAssertEqual(size.width, unfoldedPixelSize.width, accuracy: 1, "one movie the size of the inner panel")
-        XCTAssertEqual(size.height, unfoldedPixelSize.height, accuracy: 1)
+        // The inner panel is built a quarter turn round, so the movie is its size turned; the
+        // encoder wants even dimensions, so an odd panel loses a pixel each way.
+        XCTAssertEqual(size.width, unfoldedPixelSize.height, accuracy: 1, "one movie the size of the inner panel as shown")
+        XCTAssertEqual(size.height, unfoldedPixelSize.width, accuracy: 1)
+        if let out = ProcessInfo.processInfo.environment["ODH_OUT"] {
+            for (name, image) in [("shut", first), ("open", last)] {
+                let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+                try? png?.write(to: URL(fileURLWithPath: out).appending(path: "recorded-\(name).png"))
+            }
+        }
         XCTAssertGreaterThan(duration.seconds, 4, "the recording spans the fold")
         XCTAssertLessThan(cover.edge, 25, "shut, the cover is fitted on black and leaves the edge dark")
+        XCTAssertGreaterThan(size.width, size.height, "the movie is landscape, as the open device is")
         XCTAssertGreaterThan(cover.middle, 25, "and the cover's picture is in the middle")
         XCTAssertGreaterThan(inner.edge, 25, "open, the inner panel fills the frame to its edge")
     }

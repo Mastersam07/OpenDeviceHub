@@ -529,7 +529,15 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         guard let unfoldedPanel, recordsItself else {
             throw EngineError.capabilityUnavailable(name: "recording by panel")
         }
-        recording.current = try PanelRecorder(url: url, size: unfoldedPanel.pixelSize, screenID: activeScreenID)
+        // The movie is the inner panel as shown, which is its framebuffer turned round.
+        let shown = Self.quarterTurns(undoing: unfoldedPanel.nativeRotation).isMultiple(of: 2)
+            ? unfoldedPanel.pixelSize
+            : CGSize(width: unfoldedPanel.pixelSize.height, height: unfoldedPanel.pixelSize.width)
+        recording.current = try PanelRecorder(url: url, size: shown, screenID: activeScreenID)
+    }
+
+    private static func quarterTurns(undoing nativeRotation: Int) -> Int {
+        ((-nativeRotation / 90) % 4 + 4) % 4
     }
 
     /// Finishes the recording and hands back the file, or nil when none was running.
@@ -856,11 +864,12 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         let screenView = screenView
         let recording = recording
         let screenID = unfoldedPanel?.screenID ?? 0
+        let turns = Self.quarterTurns(undoing: unfoldedPanel?.nativeRotation ?? 0)
         frameTask = Task { [frames = session.frames, weak self] in
             for await frame in frames {
                 if Task.isCancelled { return }
                 renderer.accept(frame)
-                recording.current?.append(frame.surface, from: screenID)
+                recording.current?.append(frame.surface, from: screenID, turnedBy: turns)
                 await MainActor.run { [weak self] in
                     // The flat view sits under the model and is not seen; drawing it costs the
                     // main thread a draw per frame.
@@ -884,10 +893,11 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
         let rotation = cover.panel.nativeRotation
         let recording = recording
         let screenID = cover.panel.screenID
+        let turns = Self.quarterTurns(undoing: cover.panel.nativeRotation)
         coverFrameTask = Task { [frames = cover.session.frames, weak self] in
             for await frame in frames {
                 if Task.isCancelled { return }
-                recording.current?.append(frame.surface, from: screenID)
+                recording.current?.append(frame.surface, from: screenID, turnedBy: turns)
                 await MainActor.run { [weak self] in
                     self?.modelView?.setScreen(frame.surface, onCover: true, nativeRotation: rotation)
                 }

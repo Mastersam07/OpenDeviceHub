@@ -59,7 +59,8 @@ final class PanelRecorder: @unchecked Sendable {
     }
 
     /// Frames from any panel but the one followed are dropped; a smaller panel is fitted on black.
-    func append(_ surface: IOSurfaceRef, from screenID: Int) {
+    /// `quarterTurns` undoes how far the panel is built round, as the model does when it draws.
+    func append(_ surface: IOSurfaceRef, from screenID: Int, turnedBy quarterTurns: Int = 0) {
         lock.lock()
         defer { lock.unlock() }
         guard !finished, screenID == activeScreenID, input.isReadyForMoreMediaData,
@@ -74,7 +75,7 @@ final class PanelRecorder: @unchecked Sendable {
         var buffer: CVPixelBuffer?
         CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
         guard let buffer else { return }
-        let picture = CIImage(ioSurface: surface)
+        let picture = CIImage(ioSurface: surface).oriented(Self.orientation(quarterTurns: quarterTurns))
         let scale = min(size.width / picture.extent.width, size.height / picture.extent.height)
         let fitted = picture
             .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
@@ -86,6 +87,15 @@ final class PanelRecorder: @unchecked Sendable {
         context.render(frame, to: buffer, bounds: CGRect(origin: .zero, size: size), colorSpace: CGColorSpaceCreateDeviceRGB())
         if adaptor.append(buffer, withPresentationTime: time) {
             frames += 1
+        }
+    }
+
+    static func orientation(quarterTurns: Int) -> CGImagePropertyOrientation {
+        switch ((quarterTurns % 4) + 4) % 4 {
+        case 1: .right
+        case 2: .down
+        case 3: .left
+        default: .up
         }
     }
 
