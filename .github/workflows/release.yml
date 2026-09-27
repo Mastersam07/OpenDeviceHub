@@ -145,6 +145,13 @@ jobs:
       - name: Test
         run: swift test --package-path engine
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install create-dmg
+        run: npm install --global create-dmg@8.1.0
+
       - name: Build, sign, notarize, staple, package, checksum, appcast
         run: scripts/sign-and-notarize.sh
 

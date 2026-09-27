@@ -60,3 +60,12 @@ follows a quintic ease in and out, with one clock driving the guest's hinge and 
 Copyright (c) 2020 Apple Inc. and the Swift project authors.
 Licensed under the Apache License, Version 2.0.
 https://github.com/apple/swift-argument-parser
+
+### create-dmg
+
+Copyright (c) Sindre Sorhus. Licensed under the MIT license.
+https://github.com/sindresorhus/create-dmg
+
+The release disk image is made with create-dmg 8.1.0 when it is packaged, and nothing from it is
+kept in this repository. Its window background and layout ship inside every disk image. The disk
+icon is macOS's removable drive icon, as create-dmg carries it, with the app's icon drawn on top.
