@@ -15,6 +15,9 @@ under it until the next heading becomes that version's release notes in the upda
 - Recording the iPhone Duo records the screen it is using, follows it through a fold, and keeps the
   picture the right way up.
 - A window opens the way its device is already turned, instead of assuming it is upright.
+- Restarting a device no longer leaves its window half connected. The iPhone Duo's fold buttons,
+  cover screen and touches come back with the fold it was showing, and the clipboard sync picks up
+  again.
 - Device, Shut Down shuts the open simulators down from the menu.
 - Favorite locations: save named coordinates in Settings and choose them from Features, Location.
 - Screenshots and recordings each have their own folder in Settings, starting from the folder you
