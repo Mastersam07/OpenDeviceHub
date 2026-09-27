@@ -16,11 +16,8 @@ final class FoldableControlTests: XCTestCase {
         return device
     }
 
-    /// Which panel the guest is actually drawing to.
-    ///
-    /// Both panels hand over a frame when a session opens, so the frame alone says nothing. What
-    /// says it is the picture in it: the panel in use carries a lit screen and the other is blank.
-    /// Measured on 27A266a: open, the unfolded panel is lit and the cover blank; shut, the reverse.
+    /// Both panels hand over a frame, so only the picture says which is in use: on 27A266a, open
+    /// lights the unfolded panel and shut lights the cover.
     private func drawnPanels(udid: String, among panels: [DevicePanel]) async throws -> [String] {
         var drawn: [String] = []
         for panel in panels where try await hasPicture(udid: udid, panel: panel) {
@@ -32,9 +29,15 @@ final class FoldableControlTests: XCTestCase {
     private func hasPicture(udid: String, panel: DevicePanel) async throws -> Bool {
         let session = try makeAdapter().openDisplay(udid, panel: panel)
         defer { session.close() }
+        // Xcode 26.6's Swift cannot check a value returned from inside this loop, so the result is
+        // stored and the loop left instead.
         let waited = Task { () -> Bool in
-            for await frame in session.frames { return Self.isLit(frame.surface) }
-            return false
+            var lit = false
+            for await frame in session.frames {
+                lit = Self.isLit(frame.surface)
+                break
+            }
+            return lit
         }
         let timeout = Task {
             try? await Task.sleep(for: .seconds(4))
@@ -62,8 +65,7 @@ final class FoldableControlTests: XCTestCase {
         return lit > 40
     }
 
-    /// Waited rather than run: spinning a run loop inside an async test returns at once, which read
-    /// the guest before it had moved and made these checks look flaky.
+    /// A run loop spun inside an async test returns at once, so this sleeps instead.
     private func settle(_ seconds: Double = 3) async {
         try? await Task.sleep(for: .seconds(seconds))
     }
@@ -86,8 +88,6 @@ final class FoldableControlTests: XCTestCase {
         }
     }
 
-    /// The whole feature in one measurement: fold it open, and the guest starts drawing the larger
-    /// panel. Read back through simctl, which reports whichever panel the guest is actually using.
     func testTheHingeMovesTheGuest() async throws {
         try IntegrationGate.requireEnabled()
         let udid = try foldable().udid
@@ -104,15 +104,11 @@ final class FoldableControlTests: XCTestCase {
         drawn = try await drawnPanels(udid: udid, among: panels)
         XCTAssertEqual(drawn, ["Unfolded"], "opening should hand over to the unfolded panel")
 
-        // Left as it was found.
         try control.setHingeAngle(FoldableControl.closedAngle)
         await settle()
     }
 
-    /// The orientation the guest says it is in, read out of the test host's own log.
-    ///
-    /// A rotation does not change the framebuffer's shape, since it stays portrait native and the
-    /// picture turns inside it, so the only honest readback is asking the guest.
+    /// The framebuffer stays portrait native through a rotation, so only the guest knows its turn.
     private func reportedOrientation(udid: String) throws -> String? {
         let container = try run("/usr/bin/xcrun", [
             "simctl", "get_app_container", udid, IntegrationHost.bundleID, "data",
@@ -142,9 +138,7 @@ final class FoldableControlTests: XCTestCase {
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// A foldable takes its orientation from the same provider as its hinge. This checks both halves
-    /// of that: the ordinary rotation this app uses everywhere else does nothing here, and the
-    /// foldable one works.
+    /// A foldable takes its orientation from the same provider as its hinge.
     func testOnlyTheFoldableRouteTurnsAFoldable() async throws {
         try IntegrationGate.requireEnabled()
         let adapter = try makeAdapter()
@@ -160,12 +154,10 @@ final class FoldableControlTests: XCTestCase {
         await settle(4)
         try control.setOrientation(.portrait)
         await settle(3)
-        // What the guest calls itself is its own panel's orientation, which is the device's turned
-        // by however the panel is built into the housing. So this reads the change, not the name.
+        // The guest reports its panel's orientation, not the device's, so this checks the change.
         let upright = try reportedOrientation(udid: udid)
         XCTAssertNotNil(upright)
 
-        // The route used for every other device, which the provider republishes over.
         try? adapter.setOrientation(.landscapeLeft, udid: udid)
         await settle(3)
         XCTAssertEqual(

@@ -3,7 +3,6 @@ import Testing
 import XPC
 @testable import OpenDeviceHubEngine
 
-/// The guest's hinge events and HID service listing, read the way it writes them.
 @Suite struct CoreDeviceParsingTests {
     private func hingeEvent(_ readings: [(valid: Bool, degrees: Double, unit: String)]) -> xpc_object_t {
         let elements = xpc_array_create(nil, 0)
@@ -53,7 +52,8 @@ import XPC
     @Test func theStreamInputNamesItsChannelAndItsUnit() {
         let channel = UUID()
         let input = HingeAngleStream.input(channel: channel)
-        let proxy = try? #require(XPCValue.dictionary(input, "streamProxy"))
+        let proxy = XPCValue.dictionary(input, "streamProxy")
+        #expect(proxy != nil)
         let side = proxy.flatMap { xpc_dictionary_get_value($0, "sideChannel") }
         #expect(side.map { xpc_get_type($0) == XPC_TYPE_UUID } == true)
         let actual = XPCValue.dictionary(input, "actualInput")
