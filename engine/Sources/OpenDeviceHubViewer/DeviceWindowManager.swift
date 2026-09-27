@@ -294,13 +294,14 @@ public final class DeviceWindowManager {
     }
 
     private var recorders: [String: ScreenRecorder] = [:]
+    private var selfRecording: Set<String> = []
 
-    public var isRecording: Bool { !recorders.isEmpty }
+    public var isRecording: Bool { !recorders.isEmpty || !selfRecording.isEmpty }
 
     /// Starts or stops recording every open device. Returns the files finished by a stop.
     @discardableResult
     public func toggleRecording(into directory: URL, date: Date = Date()) -> [URL] {
-        guard recorders.isEmpty else {
+        guard !isRecording else {
             var finished: [URL] = []
             for (udid, recorder) in recorders {
                 let file = recorder.stop()
@@ -310,6 +311,12 @@ public final class DeviceWindowManager {
                 controllers[udid]?.setDraggableFile(file)
             }
             recorders.removeAll()
+            for udid in selfRecording {
+                guard let file = controllers[udid]?.stopRecording() else { continue }
+                finished.append(file)
+                controllers[udid]?.setDraggableFile(file)
+            }
+            selfRecording.removeAll()
             for controller in controllers.values {
                 controller.setRecordingIndicatorVisible(false)
             }
@@ -319,19 +326,25 @@ public final class DeviceWindowManager {
         for (udid, controller) in controllers {
             let name = ScreenshotWriter.fileName(deviceName: controller.deviceTitle, date: date)
                 .replacingOccurrences(of: ".png", with: ".mov")
-            guard let recorder = try? ScreenRecorder(udid: udid, url: directory.appending(path: name)) else {
-                continue
+            let url = directory.appending(path: name)
+            if controller.recordsItself {
+                guard (try? controller.startRecording(to: url)) != nil else { continue }
+                selfRecording.insert(udid)
+            } else {
+                guard let recorder = try? ScreenRecorder(udid: udid, url: url) else { continue }
+                recorders[udid] = recorder
             }
-            recorders[udid] = recorder
             controller.setRecordingIndicatorVisible(true)
         }
         return []
     }
 
     public func stopRecording() {
-        guard !recorders.isEmpty else { return }
+        guard isRecording else { return }
         for recorder in recorders.values { recorder.stop() }
         recorders.removeAll()
+        for udid in selfRecording { _ = controllers[udid]?.stopRecording() }
+        selfRecording.removeAll()
         for controller in controllers.values {
             controller.setRecordingIndicatorVisible(false)
         }
