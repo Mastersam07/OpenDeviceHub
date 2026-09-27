@@ -18,7 +18,9 @@ under it until the next heading becomes that version's release notes in the upda
 - Restarting a device no longer leaves its window half connected. The iPhone Duo's fold buttons,
   cover screen and touches come back with the fold it was showing, and the clipboard sync picks up
   again.
-- Device, Shut Down shuts the open simulators down from the menu.
+- Device, Shut Down shuts a simulator down from the menu.
+- Restart, Shut Down, Erase, the hardware buttons, rotation, Shake, location and text size act on
+  the simulator in front, not on every open one.
 - Favorite locations: save named coordinates in Settings and choose them from Features, Location.
 - Screenshots and recordings each have their own folder in Settings, starting from the folder you
   had already chosen, and Save Screen can put the picture on the clipboard instead of in a file.
