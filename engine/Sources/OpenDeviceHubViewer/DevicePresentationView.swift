@@ -7,14 +7,20 @@ import AppKit
 public final class DevicePresentationView: NSView {
     public let bar: DeviceControlBar
     public let chrome: DeviceChromeView
+    public let model: DuoModelView?
 
     private var isFullScreen = false
 
-    public init(bar: DeviceControlBar, chrome: DeviceChromeView) {
+    public init(bar: DeviceControlBar, chrome: DeviceChromeView, model: DuoModelView? = nil) {
         self.bar = bar
         self.chrome = chrome
+        self.model = model
         super.init(frame: .zero)
-        addSubview(chrome)
+        if let model {
+            addSubview(model)
+        } else {
+            addSubview(chrome)
+        }
         addSubview(bar)
     }
 
@@ -41,6 +47,11 @@ public final class DevicePresentationView: NSView {
         let border = PresentationLayout.resizeBorder
         let inside = bounds.insetBy(dx: border, dy: border)
         if !inside.contains(local), !bar.frame.contains(local) { return nil }
+        // A shut device leaves clear space in its frame; a click there is not the window's.
+        if let model, !bar.frame.contains(local), model.frame.contains(local),
+           !model.hasHardware(at: model.convert(local, from: self)) {
+            return nil
+        }
         return super.hitTest(point)
     }
 
@@ -68,5 +79,6 @@ public final class DevicePresentationView: NSView {
         bar.isFullScreen = isFullScreen
         chrome.fillsMargin = isFullScreen
         chrome.frame = layout.device
+        model?.frame = layout.device
     }
 }

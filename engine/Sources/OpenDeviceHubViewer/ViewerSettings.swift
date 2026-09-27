@@ -61,6 +61,19 @@ public struct ViewerSettings: Sendable {
         }
     }
 
+    /// Stored as the port index, since a port's UUID is minted fresh on every boot.
+    public func panelIndex(for udid: String) -> Int? {
+        storage.text(forKey: prefix + "panel." + udid).flatMap(Int.init)
+    }
+
+    public func setPanelIndex(_ index: Int?, for udid: String) {
+        guard let index else {
+            storage.removeText(forKey: prefix + "panel." + udid)
+            return
+        }
+        storage.setText(String(index), forKey: prefix + "panel." + udid)
+    }
+
     /// What Previous fills the New Simulator panel with.
     public var lastCreatedSimulator: LastCreatedSimulator? {
         get {

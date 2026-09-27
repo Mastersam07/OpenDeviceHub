@@ -166,7 +166,14 @@ public final class DeviceScreenView: MTKView, NSDraggingSource {
         onContact?(contactPoint(for: event), .ended, style(for: event))
     }
 
+    public var onPinchFold: ((Double) -> Void)?
+
     public override func magnify(with event: NSEvent) {
+        if let onPinchFold {
+            // A full gesture sweeps the whole 180 degrees.
+            onPinchFold(event.magnification * 180)
+            return
+        }
         // A trackpad pinch reports a relative change, so it is accumulated into a spread measured
         // in view points, starting from a quarter of the shorter edge.
         updateGesture(phase: event.phase, spreadDelta: event.magnification * min(bounds.width, bounds.height), angleDelta: 0)

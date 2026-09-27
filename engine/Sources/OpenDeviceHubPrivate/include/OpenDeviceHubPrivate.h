@@ -73,7 +73,8 @@
 @end
 
 @protocol ODHSimDisplayDescriptorState <NSObject>
-/// 0 is the device's own screen. A second port with class 1 exists and stays empty while unused.
+/// 0 is a panel the device actually has, 1 an external display port that stays empty while unused.
+/// A foldable reports more than one port with class 0, one per panel, all live at the same time.
 @property (nonatomic, readonly) unsigned short displayClass;
 @property (nonatomic, readonly) unsigned int defaultWidthForDisplay;
 @property (nonatomic, readonly) unsigned int defaultHeightForDisplay;
@@ -107,6 +108,8 @@
 
 @protocol ODHSimDeviceIOPort <NSObject>
 @property (nonatomic, readonly, nullable) id descriptor;
+/// Stable for the life of the boot, which is what lets a chosen panel be remembered.
+@property (nonatomic, readonly, nullable) NSUUID *uuid;
 @end
 
 @protocol ODHSimDeviceIO <NSObject>

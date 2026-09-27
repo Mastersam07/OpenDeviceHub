@@ -45,7 +45,13 @@ public final class DeviceWindowManager {
         scaleMode: ScaleMode,
         bezelEnabled: Bool,
         keepOnTop: Bool,
-        showFPS: Bool
+        showFPS: Bool,
+        foldsAtHinge: Bool = false,
+        chrome: DeviceChrome? = nil,
+        panelNativeRotation: Int = 0,
+        unfoldedPanel: DevicePanel? = nil,
+        cover: FoldableCover? = nil,
+        retarget: ((Int) -> Void)? = nil
     ) throws -> DeviceWindowController {
         if let existing = controllers[device.udid] {
             existing.window?.makeKeyAndOrderFront(nil)
@@ -64,7 +70,12 @@ public final class DeviceWindowManager {
             keepOnTop: keepOnTop,
             frameStore: frameStore,
             fpsLabel: showFPS ? device.name : nil,
-            chrome: ChromeLocator.chrome(forDeviceType: device.deviceTypeIdentifier)
+            chrome: chrome ?? ChromeLocator.chrome(forDeviceType: device.deviceTypeIdentifier),
+            foldsAtHinge: foldsAtHinge,
+            panelNativeRotation: panelNativeRotation,
+            unfoldedPanel: unfoldedPanel,
+            cover: cover,
+            retarget: retarget
         )
         controller.onClose = { [weak self] udid in
             self?.controllers.removeValue(forKey: udid)
@@ -165,11 +176,17 @@ public final class DeviceWindowManager {
     }
 
     public func close(_ udid: String) {
+        close(udid, shuttingDown: true)
+    }
+
+    private func close(_ udid: String, shuttingDown: Bool) {
         guard let controller = controllers.removeValue(forKey: udid) else { return }
         controller.onClose = nil
         controller.stop()
         controller.window?.close()
-        shutdownIfAsked(udid)
+        if shuttingDown {
+            shutdownIfAsked(udid)
+        }
     }
 
     /// Closing a window shuts its device down, which is what Simulator.app does and what someone

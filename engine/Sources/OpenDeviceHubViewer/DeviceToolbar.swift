@@ -38,10 +38,16 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate, NSToolbarItemValidation 
         static let home = NSToolbarItem.Identifier("odh.home")
         static let capture = NSToolbarItem.Identifier("odh.capture")
         static let rotate = NSToolbarItem.Identifier("odh.rotate")
+        static let fold = NSToolbarItem.Identifier("odh.fold")
     }
+
+    var onFoldMode: ((DeviceControlBar.FoldMode) -> Void)?
 
     private let actions: DeviceToolbarActions
     private let items: [NSToolbarItem]
+    private var installed: NSToolbar?
+    private var foldItem: NSToolbarItem?
+    private var foldControl: NSSegmentedControl?
     private var captureItem: NSToolbarItem { items[1] }
     private var isRecording = false
     private var isEnabled = true
@@ -73,7 +79,9 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate, NSToolbarItemValidation 
     }
 
     func install(on window: NSWindow) {
-        let toolbar = NSToolbar(identifier: "odh.device")
+        // AppKit keeps every toolbar with the same identifier in step, item by item, so one
+        // window's fold item coming and going would strip items off the others' toolbars.
+        let toolbar = NSToolbar(identifier: "odh.device.\(UUID().uuidString)")
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = false
@@ -83,6 +91,53 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate, NSToolbarItemValidation 
         window.toolbar = toolbar
         window.toolbarStyle = .unified
         window.titlebarSeparatorStyle = .none
+        installed = toolbar
+    }
+
+    /// In full screen AppKit hides the bar and shows this toolbar, so the fold positions live here.
+    func setFoldModes(visible: Bool) {
+        guard let installed else { return }
+        let present = installed.items.contains { $0.itemIdentifier == Item.fold }
+        if visible, !present {
+            if foldItem == nil {
+                let control = NSSegmentedControl(
+                    images: DeviceControlBar.FoldMode.allCases.map { $0.image ?? NSImage() },
+                    trackingMode: .selectOne,
+                    target: self,
+                    action: #selector(foldModeChanged)
+                )
+                control.segmentStyle = .rounded
+                for (index, mode) in DeviceControlBar.FoldMode.allCases.enumerated() {
+                    control.setImageScaling(.scaleProportionallyDown, forSegment: index)
+                    control.setToolTip(mode.label, forSegment: index)
+                    control.setWidth(40, forSegment: index)
+                }
+                control.sizeToFit()
+                let item = NSToolbarItem(itemIdentifier: Item.fold)
+                item.view = control
+                item.label = "Fold"
+                item.visibilityPriority = .high
+                foldItem = item
+                foldControl = control
+            }
+            installed.insertItem(withItemIdentifier: Item.fold, at: 0)
+        } else if !visible, present, let index = installed.items.firstIndex(where: { $0.itemIdentifier == Item.fold }) {
+            installed.removeItem(at: index)
+        }
+    }
+
+    /// Moves the selection without reporting it.
+    func showFoldAngle(_ degrees: Double) {
+        foldControl?.selectedSegment = DeviceControlBar.FoldMode.mode(forHingeAngle: degrees).rawValue
+    }
+
+    var hasFoldModes: Bool {
+        installed?.items.contains { $0.itemIdentifier == Item.fold } ?? false
+    }
+
+    @objc private func foldModeChanged(_ sender: NSSegmentedControl) {
+        guard let mode = DeviceControlBar.FoldMode(rawValue: sender.selectedSegment) else { return }
+        onFoldMode?(mode)
     }
 
     /// While a recording runs the camera becomes the way to stop it, so one button covers both
@@ -110,7 +165,7 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate, NSToolbarItemValidation 
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        toolbarDefaultItemIdentifiers(toolbar)
+        toolbarDefaultItemIdentifiers(toolbar) + [Item.fold]
     }
 
     func toolbar(
@@ -118,7 +173,8 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate, NSToolbarItemValidation 
         itemForItemIdentifier identifier: NSToolbarItem.Identifier,
         willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
-        items.first { $0.itemIdentifier == identifier }
+        if identifier == Item.fold { return foldItem }
+        return items.first { $0.itemIdentifier == identifier }
     }
 
     private func describeCapture(_ item: NSToolbarItem) {

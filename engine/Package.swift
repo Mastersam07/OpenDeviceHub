@@ -56,7 +56,7 @@ let package = Package(
         ),
         .testTarget(
             name: "OpenDeviceHubIntegrationTests",
-            dependencies: ["OpenDeviceHubEngine"]
+            dependencies: ["OpenDeviceHubEngine", "OpenDeviceHubViewer"]
         ),
     ],
     swiftLanguageModes: [.v6]

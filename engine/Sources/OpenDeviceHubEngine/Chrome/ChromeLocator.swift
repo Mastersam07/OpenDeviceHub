@@ -61,8 +61,13 @@ public enum ChromeLocator {
     /// missing, so a device with no artwork simply keeps the masked screen.
     public static func chrome(forDeviceType identifier: String) -> DeviceChrome? {
         guard let deviceType = deviceTypeBundle(identifier: identifier),
-              let chromeIdentifier = chromeIdentifier(deviceTypeBundle: deviceType),
-              let bundle = chromeBundle(identifier: chromeIdentifier) else { return nil }
+              let chromeIdentifier = chromeIdentifier(deviceTypeBundle: deviceType) else { return nil }
+        return chrome(identifier: chromeIdentifier)
+    }
+
+    /// Chrome by its own identifier: a foldable's two panels declare different bodies.
+    public static func chrome(identifier: String) -> DeviceChrome? {
+        guard let bundle = chromeBundle(identifier: identifier) else { return nil }
         let description = bundle.appendingPathComponent("Contents/Resources/chrome.json")
         guard let data = try? Data(contentsOf: description) else { return nil }
         return try? DeviceChrome.parse(json: data, bundle: bundle)

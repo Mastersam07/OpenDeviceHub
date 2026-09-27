@@ -1,0 +1,208 @@
+import Foundation
+import XPC
+
+/// Input addressed at one screen, where the older path only reaches a foldable's cover. Keys and
+/// buttons travel here too: the legacy client's reports are dropped once this path is in use.
+public final class PanelInputSession: InputSession, @unchecked Sendable {
+    private let connection: xpc_connection_t
+    private var target: UInt64
+    private let fallback: any InputSession
+    private let lock = NSLock()
+    private var isActivated = false
+
+    init(digitizerPort: mach_port_t, screenID: Int, fallback: any InputSession) throws {
+        typealias MakeEndpoint = @convention(c) (mach_port_t, UInt64, UInt64) -> xpc_object_t?
+        typealias MakeConnection = @convention(c) (xpc_object_t) -> xpc_connection_t?
+        typealias EnableGuestToHost = @convention(c) (xpc_connection_t) -> Void
+
+        guard let image = dlopen(nil, RTLD_NOW),
+              let endpointSymbol = dlsym(image, "xpc_endpoint_create_mach_port_4sim"),
+              let connectionSymbol = dlsym(image, "xpc_connection_create_from_endpoint"),
+              let enableSymbol = dlsym(image, "xpc_connection_enable_sim2host_4sim"),
+              let endpoint = unsafeBitCast(endpointSymbol, to: MakeEndpoint.self)(digitizerPort, 0, 0),
+              let made = unsafeBitCast(connectionSymbol, to: MakeConnection.self)(endpoint) else {
+            throw EngineError.symbolNotFound(
+                name: "xpc_endpoint_create_mach_port_4sim",
+                framework: "libxpc"
+            )
+        }
+        unsafeBitCast(enableSymbol, to: EnableGuestToHost.self)(made)
+
+        connection = made
+        target = UInt64(max(screenID, 0))
+        self.fallback = fallback
+        xpc_connection_set_target_queue(made, .global(qos: .userInteractive))
+        xpc_connection_set_event_handler(made) { _ in }
+        xpc_connection_resume(made)
+    }
+
+    public func touch(_ event: TouchEvent) async throws {
+        try await activate()
+        guard let first = event.points.first else { return }
+        let payload = xpc_dictionary_create(nil, nil, 0)
+        func contact(_ point: CGPoint) -> xpc_object_t {
+            let value = xpc_dictionary_create(nil, nil, 0)
+            xpc_dictionary_set_double(value, "x", point.x)
+            xpc_dictionary_set_double(value, "y", point.y)
+            return value
+        }
+        xpc_dictionary_set_value(payload, "pointOne", contact(first))
+        if event.points.count > 1 {
+            xpc_dictionary_set_value(payload, "pointTwo", contact(event.points[1]))
+        }
+        xpc_dictionary_set_uint64(payload, "eventType", Self.code(for: event.phase))
+        xpc_dictionary_set_uint64(payload, "edge", Self.code(for: event.edge))
+        // Zero is the device's default screen, wrong while a foldable shows its unfolded panel.
+        xpc_dictionary_set_uint64(payload, "target", currentTarget)
+        send("IndigoDigitizerEvent", payload: payload)
+    }
+
+    /// Points every touch from now on at another screen, without reopening the connection.
+    public func setTarget(screenID: Int) {
+        lock.lock()
+        target = UInt64(max(screenID, 0))
+        lock.unlock()
+    }
+
+    private var currentTarget: UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return target
+    }
+
+    public func key(_ event: KeyEvent) async throws {
+        try await activate()
+        let payload = xpc_dictionary_create(nil, nil, 0)
+        xpc_dictionary_set_uint64(payload, "usageCode", UInt64(event.usage))
+        xpc_dictionary_set_uint64(payload, "state", event.phase == .down ? 1 : 2)
+        send("IndigoKeyboardButtonEvent", payload: payload)
+    }
+
+    public func button(_ button: HardwareButton, phase: ButtonPhase) async throws {
+        guard let usage = Self.consumerUsages[button] else {
+            throw EngineError.capabilityUnavailable(name: "hardware button \(button)")
+        }
+        try await activate()
+        let payload = xpc_dictionary_create(nil, nil, 0)
+        xpc_dictionary_set_uint64(payload, "usagePage", Self.consumerUsagePage)
+        xpc_dictionary_set_uint64(payload, "usageCode", usage)
+        xpc_dictionary_set_uint64(payload, "state", phase == .down ? 1 : 2)
+        send("IndigoButtonEvent", payload: payload)
+    }
+
+    /// Consumer page usages for every button, confirmed on Xcode 27 (27A266a). The camera control
+    /// is the Snapshot usage, which the guest answers by taking a screenshot of itself.
+    private static let consumerUsagePage: UInt64 = 0x0c
+    private static let consumerUsages: [HardwareButton: UInt64] = [
+        .home: 0x40,
+        .lock: 0x30,
+        .volumeUp: 0xe9,
+        .volumeDown: 0xea,
+        .siri: 0xcf,
+        .cameraControl: 0x65,
+    ]
+
+    private func send(_ type: String, payload: xpc_object_t) {
+        let message = xpc_dictionary_create(nil, nil, 0)
+        xpc_dictionary_set_string(message, "messageType", type)
+        xpc_dictionary_set_bool(message, "isBarrier", false)
+        xpc_dictionary_set_string(message, "featureIdentifier", FoldableControl.digitizerServiceName)
+        xpc_dictionary_set_value(message, "payload", payload)
+        xpc_connection_send_message(connection, message)
+    }
+
+    public func close() {
+        fallback.close()
+        xpc_connection_cancel(connection)
+    }
+
+    /// The guest ignores reports until the feature is on, which counts only once it has answered:
+    /// marking it on after a silence would drop every touch until the window was closed.
+    private func activate() async throws {
+        guard !hasActivated else { return }
+        for attempt in 1...FoldableControl.activationAttempts {
+            if await probe() {
+                markActivated()
+                // The guest needs a moment after the feature comes up before it acts on a report.
+                try? await Task.sleep(for: .milliseconds(150))
+                return
+            }
+            guard attempt < FoldableControl.activationAttempts else { break }
+            try await Task.sleep(for: FoldableControl.activationBackoff)
+        }
+        throw EngineError.privateCall(
+            symbol: "IndigoKeyboardButtonEvent",
+            message: "the device's input did not answer after \(FoldableControl.activationAttempts) tries"
+        )
+    }
+
+    /// Whether the guest answers the barrier that turns the feature on, within four seconds.
+    private func probe() async -> Bool {
+        let payload = xpc_dictionary_create(nil, nil, 0)
+        xpc_dictionary_set_uint64(payload, "usageCode", 0)
+        xpc_dictionary_set_uint64(payload, "state", 2)
+
+        let message = xpc_dictionary_create(nil, nil, 0)
+        xpc_dictionary_set_string(message, "messageType", "IndigoKeyboardButtonEvent")
+        xpc_dictionary_set_bool(message, "isBarrier", true)
+        xpc_dictionary_set_string(message, "featureIdentifier", FoldableControl.digitizerServiceName)
+        xpc_dictionary_set_value(message, "payload", payload)
+
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            let once = OneAnswer(continuation)
+            xpc_connection_send_message_with_reply(connection, message, .global(qos: .userInitiated)) { reply in
+                once.finish(xpc_get_type(reply) != XPC_TYPE_ERROR)
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 4) { once.finish(false) }
+        }
+    }
+
+    private var hasActivated: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isActivated
+    }
+
+    private func markActivated() {
+        lock.lock()
+        defer { lock.unlock() }
+        isActivated = true
+    }
+
+    private static func code(for phase: TouchEvent.Phase) -> UInt64 {
+        switch phase {
+        case .began: 0
+        case .moved: 1
+        case .ended, .cancelled: 2
+        }
+    }
+
+    private static func code(for edge: TouchEvent.Edge) -> UInt64 {
+        switch edge {
+        case .none: 0
+        case .top: 1
+        case .left: 2
+        case .bottom: 3
+        case .right: 4
+        }
+    }
+}
+
+private final class OneAnswer: @unchecked Sendable {
+    private let continuation: CheckedContinuation<Bool, Never>
+    private let lock = NSLock()
+    private var isDone = false
+
+    init(_ continuation: CheckedContinuation<Bool, Never>) {
+        self.continuation = continuation
+    }
+
+    func finish(_ answered: Bool) {
+        lock.lock()
+        let alreadyDone = isDone
+        isDone = true
+        lock.unlock()
+        guard !alreadyDone else { return }
+        continuation.resume(returning: answered)
+    }
+}
