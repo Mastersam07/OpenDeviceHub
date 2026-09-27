@@ -542,20 +542,23 @@ public final class DuoModelView: SCNView {
         }
         let body = parts.map { abs($0.centre.x) + $0.size.x / 2 }.max() ?? 0
         let top = parts.map { abs($0.centre.z) + $0.size.z / 2 }.max() ?? 0
-        // A button is a bar between one and two units long that stands proud of the body, on the
-        // top edge or the right edge.
+        // A button is a bar between one and two units long that stands proud of the body in both
+        // of its short directions. The top edge also carries a flat strip, a decal with no height at
+        // all, which is not a button and once passed for one and shifted every label along by one.
         func isBar(_ part: Part) -> Bool {
             let longest = max(part.size.x, part.size.z)
-            return longest > 1 && longest < 2 && part.size.y > 0.1
+            let shortest = min(part.size.x, part.size.z)
+            return longest > 1 && longest < 2 && part.size.y > 0.1 && shortest > 0.05
         }
         let volume = parts
             .filter { isBar($0) && $0.centre.z < -(top - 0.5) && $0.size.x > $0.size.z }
             .sorted { $0.centre.x < $1.centre.x }
+        // The power button is the upper of the parts on the right edge, taken by its thickest face.
         let side = parts
-            .filter { isBar($0) && $0.centre.x > body - 0.5 && $0.size.z > $0.size.x }
-            .sorted { $0.centre.z < $1.centre.z }
+            .filter { isBar($0) && $0.centre.x > body - 0.5 && $0.size.z > $0.size.x && $0.centre.z < 0 }
+            .sorted { $0.size.x > $1.size.x }
         var found: [(HardwareButton, SCNNode)] = []
-        if volume.count >= 2 {
+        if volume.count == 2 {
             found.append((.volumeDown, volume[0].node))
             found.append((.volumeUp, volume[1].node))
         }
@@ -593,8 +596,11 @@ public final class DuoModelView: SCNView {
     }
 
     /// Which of the body's buttons is under this point of the view, or within reach of it, if any.
+    /// A point on the screen is a touch whatever button it is near: the reach is for the bezel
+    /// side of a button, not the screen side.
     func hardwareButton(at point: CGPoint) -> HardwareButton? {
-        buttonRects.first { $0.rect.contains(point) }?.button
+        guard let button = buttonRects.first(where: { $0.rect.contains(point) })?.button else { return nil }
+        return screenPoint(at: point) == nil ? button : nil
     }
 
     /// Where a button is in the view, for a pointer that wants to find it.
@@ -635,7 +641,9 @@ public final class DuoModelView: SCNView {
         hover(nil)
     }
 
-    /// A button under the pointer lights up and says what it is, the way the bezel's buttons rise.
+    /// A button under the pointer lights up, takes the pointing hand, and gets a badge beside it,
+    /// outside the device, saying what it is. The buttons themselves are a few points tall at a
+    /// window's size, so the badge is what makes a hover visible, the way Device Hub's does.
     private func hover(_ button: HardwareButton?) {
         guard button != hoveredButton else { return }
         if let hoveredButton, let node = hardwareButtons.first(where: { $0.button == hoveredButton })?.node {
@@ -644,13 +652,43 @@ public final class DuoModelView: SCNView {
         hoveredButton = button
         if let button, let node = hardwareButtons.first(where: { $0.button == button })?.node {
             for material in node.geometry?.materials ?? [] {
-                material.emission.contents = NSColor(white: 0.55, alpha: 1)
+                material.emission.contents = NSColor(white: 0.8, alpha: 1)
             }
             NSCursor.pointingHand.set()
-            toolTip = Self.name(of: button)
+            showBadge(for: button, pressed: false)
         } else {
             NSCursor.arrow.set()
-            toolTip = nil
+            badge.isHidden = true
+        }
+    }
+
+    private let badge = HardwareButtonBadge()
+
+    /// The badge sits just outside the device next to the button: above a button on the top edge,
+    /// beside one on the side, and always inside the view.
+    private func showBadge(for button: HardwareButton, pressed: Bool) {
+        guard let rect = hardwareButtonRect(button) else { return }
+        badge.show(Self.name(of: button), symbol: Self.symbol(of: button), pressed: pressed)
+        let size = badge.fittingSize
+        let onTop = rect.width > rect.height
+        var origin = onTop
+            ? CGPoint(x: rect.midX - size.width / 2, y: rect.maxY + 4)
+            : CGPoint(x: rect.maxX + 4, y: rect.midY - size.height / 2)
+        origin.x = min(max(origin.x, 2), bounds.width - size.width - 2)
+        origin.y = min(max(origin.y, 2), bounds.height - size.height - 2)
+        badge.frame = CGRect(origin: origin, size: size)
+        if badge.superview == nil { addSubview(badge) }
+        badge.isHidden = false
+    }
+
+    nonisolated static func symbol(of button: HardwareButton) -> String {
+        switch button {
+        case .volumeUp: "speaker.plus"
+        case .volumeDown: "speaker.minus"
+        case .lock: "lock"
+        case .home: "house"
+        case .siri: "waveform"
+        case .actionButton: "button.horizontal"
         }
     }
 
@@ -706,6 +744,7 @@ public final class DuoModelView: SCNView {
     public override func mouseDown(with event: NSEvent) {
         if let button = hardwareButton(at: convert(event.locationInWindow, from: nil)) {
             pressedButton = button
+            showBadge(for: button, pressed: true)
             onHardwareButton?(button, .down)
             return
         }
@@ -720,6 +759,7 @@ public final class DuoModelView: SCNView {
     public override func mouseUp(with event: NSEvent) {
         if let pressedButton {
             self.pressedButton = nil
+            showBadge(for: pressedButton, pressed: false)
             onHardwareButton?(pressedButton, .up)
             return
         }
@@ -862,5 +902,50 @@ struct ScrollDrag {
         offset.width += deltaX * factor
         offset.height -= deltaY * factor
         return CGPoint(x: anchor.x + offset.width, y: anchor.y + offset.height)
+    }
+}
+
+/// A small label that names a hardware button beside it: a symbol and a word on a dark rounded
+/// backing, blue while the button is held.
+final class HardwareButtonBadge: NSView {
+    private let symbol = NSImageView()
+    private let label = NSTextField(labelWithString: "")
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.backgroundColor = NSColor(white: 0.12, alpha: 0.92).cgColor
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.textColor = .white
+        symbol.imageScaling = .scaleProportionallyDown
+        symbol.contentTintColor = .white
+        addSubview(symbol)
+        addSubview(label)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("not supported")
+    }
+
+    func show(_ name: String, symbol symbolName: String, pressed: Bool) {
+        symbol.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: name)
+        label.stringValue = name
+        let tint: NSColor = pressed ? .systemBlue : .white
+        symbol.contentTintColor = tint
+        label.textColor = tint
+        label.sizeToFit()
+        needsLayout = true
+    }
+
+    override var fittingSize: NSSize {
+        NSSize(width: 16 + 18 + 6 + label.frame.width + 2, height: 28)
+    }
+
+    override func layout() {
+        super.layout()
+        symbol.frame = CGRect(x: 8, y: 5, width: 18, height: 18)
+        label.frame = CGRect(x: 32, y: (bounds.height - label.frame.height) / 2, width: label.frame.width, height: label.frame.height)
     }
 }

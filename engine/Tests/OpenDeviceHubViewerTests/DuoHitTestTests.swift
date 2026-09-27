@@ -107,5 +107,26 @@ extension DuoHitTestTests {
         XCTAssertGreaterThan(found[.lock, default: 0], 0, "the power button is not on the body")
         XCTAssertNil(found[.home])
         XCTAssertGreaterThan(onScreen, found.values.reduce(0, +) * 20, "the buttons are small next to the screen")
+
+        // The two volume buttons are neighbours on the top edge, down to the left of up, a small
+        // gap apart; the power button stands on the right edge. A flat strip on the top edge is not
+        // a button, and once counted as one, which shifted every label along by one.
+        let down = try XCTUnwrap(view.hardwareButtonRect(.volumeDown))
+        let up = try XCTUnwrap(view.hardwareButtonRect(.volumeUp))
+        let lock = try XCTUnwrap(view.hardwareButtonRect(.lock))
+        XCTAssertLessThan(down.midX, up.midX, "volume down is to the left of volume up")
+        XCTAssertLessThan(up.minX - down.maxX, 30, "the volume buttons are neighbours, not \(up.minX - down.maxX) points apart")
+        XCTAssertGreaterThan(down.midX, view.bounds.midX, "the volume buttons are on the right half")
+        XCTAssertGreaterThan(lock.midX, up.maxX, "the power button is further right, on the side")
+        XCTAssertGreaterThan(lock.height, lock.width, "the power button stands along the side")
+
+        // Shut, they are still two different buttons under the pointer.
+        view.setShowingCover(true, nativeRotation: 0)
+        view.setHingeAngle(0)
+        let shutDown = try XCTUnwrap(view.hardwareButtonRect(.volumeDown))
+        let shutUp = try XCTUnwrap(view.hardwareButtonRect(.volumeUp))
+        XCTAssertEqual(view.hardwareButton(at: CGPoint(x: shutDown.midX - 4, y: shutDown.midY)), .volumeDown)
+        XCTAssertEqual(view.hardwareButton(at: CGPoint(x: shutUp.midX + 4, y: shutUp.midY)), .volumeUp)
+        XCTAssertNotNil(view.hardwareButtonRect(.lock))
     }
 }
