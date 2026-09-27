@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import os
 import OpenDeviceHubEngine
 
 final class FoldableControlTests: XCTestCase {
@@ -29,22 +30,20 @@ final class FoldableControlTests: XCTestCase {
     private func hasPicture(udid: String, panel: DevicePanel) async throws -> Bool {
         let session = try makeAdapter().openDisplay(udid, panel: panel)
         defer { session.close() }
-        // Xcode 26.6's Swift cannot check a value returned from inside this loop, so the result is
-        // stored and the loop left instead.
-        let waited = Task { () -> Bool in
-            var lit = false
+        // Xcode 26.6's Swift cannot check a task closure that hands a frame's reading back as its
+        // value, so the reading goes into a lock and the wait is an expectation.
+        let lit = OSAllocatedUnfairLock(initialState: false)
+        let arrived = XCTestExpectation(description: "a frame arrives")
+        let watcher = Task {
             for await frame in session.frames {
-                lit = Self.isLit(frame.surface)
-                break
+                lit.withLock { $0 = Self.isLit(frame.surface) }
+                arrived.fulfill()
+                return
             }
-            return lit
         }
-        let timeout = Task {
-            try? await Task.sleep(for: .seconds(4))
-            waited.cancel()
-        }
-        defer { timeout.cancel() }
-        return await waited.value
+        defer { watcher.cancel() }
+        await fulfillment(of: [arrived], timeout: 4)
+        return lit.withLock { $0 }
     }
 
     private static func isLit(_ surface: IOSurfaceRef) -> Bool {
