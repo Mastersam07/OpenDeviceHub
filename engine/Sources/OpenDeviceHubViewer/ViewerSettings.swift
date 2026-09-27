@@ -61,10 +61,7 @@ public struct ViewerSettings: Sendable {
         }
     }
 
-    /// Which of a device's screens to show, for the foldables that have more than one.
-    ///
-    /// Stored as the port index rather than the port's UUID, because the UUIDs are minted fresh on
-    /// every boot and the index is what survives one.
+    /// Stored as the port index, since a port's UUID is minted fresh on every boot.
     public func panelIndex(for udid: String) -> Int? {
         storage.text(forKey: prefix + "panel." + udid).flatMap(Int.init)
     }

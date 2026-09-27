@@ -294,8 +294,7 @@ public enum ViewerMenu {
         screenItem.submenu = screenMenu
         screenItem.icon("rectangle.on.rectangle")
         deviceMenu.addItem(screenItem)
-        // Built when the menu opens, because it describes whichever device is in front, and hidden
-        // outright on the ordinary devices that have one screen.
+        // Rebuilt when the menu opens, since it describes whichever device is in front.
         target.trackScreenMenu(screenItem, in: deviceMenu)
 
         let orientationItem = NSMenuItem(title: "Orientation", action: nil, keyEquivalent: "")
@@ -546,8 +545,6 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
         retitleCommandLineToolItem()
     }
 
-    /// A device with one screen has nothing to choose between, so the item is not there at all
-    /// rather than present and inert.
     private func rebuildScreenMenu() {
         guard let screenItem, let submenu = screenItem.submenu else { return }
         let panels = actions.panels()

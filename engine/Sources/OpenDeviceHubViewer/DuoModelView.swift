@@ -5,29 +5,10 @@ import OpenDeviceHubEngine
 import SceneKit
 import simd
 
-/// A foldable drawn as the physical device, bending as the hinge moves, with the guest's screen on
-/// its surface.
-///
-/// The model is Apple's own, read from the installed Xcode and never copied into this project. It is
-/// the only way to show the difference between a device lying open and one bent halfway, because the
-/// guest draws exactly the same picture in both.
-///
-/// The asset carries one 37.5 second animation and no documentation. Everything below was either
-/// measured from it or taken from prior art that had already measured it, and each is the kind of
-/// detail that silently produces a wrong picture rather than an error:
-///
-/// - A pose is chosen by freezing the animation, not by running a clock. The animations are taken
-///   off the nodes and re-added as players with no speed and a time offset. Driving the view's own
-///   scene time instead loses the fight with the view, which advances that clock itself.
-/// - The fold is the closing clip between 10.833 and 15.833 seconds. Other stretches of the timeline
-///   also run flat to shut, but they turn the hardware as well, so the device ends up facing the
-///   wrong way.
-/// - The framebuffer is tagged sRGB. SceneKit shades in linear space, and an untagged one is read as
-///   though already linear, which washes the picture out.
-/// - Tone mapping is off, which otherwise lifts the blacks of a picture that is already finished.
+/// A foldable drawn as the physical device, bent by the hinge, with the guest's screen on it.
 @MainActor
 public final class DuoModelView: SCNView {
-    /// Where each pose sits in the asset's timeline.
+    /// Times in the asset's closing clip. Its other flat-to-shut stretches also turn the hardware.
     enum Pose {
         static let open: TimeInterval = 260.0 / 24
         static let partlyOpen: TimeInterval = 300.0 / 24
@@ -50,46 +31,32 @@ public final class DuoModelView: SCNView {
     private let cameraNode = SCNNode()
     private let innerScreen: SCNNode
     private let coverScreen: SCNNode
-    /// The buttons on the body, found by where they sit rather than by name, and what each does.
     private let hardwareButtons: [(button: HardwareButton, node: SCNNode)]
     private struct ButtonLift {
         let node: SCNNode
-        /// Which way is out of the body, in the node's own frame. One of its axes in this asset.
         let outward: SIMD3<Float>
-        /// How far the node's origin, which is at the button's outer face, is from its inner face.
         let depth: Float
     }
     private let lifts: [HardwareButton: ButtonLift]
-    /// How long a button takes to come up under the pointer or settle back. Zero for a test that
-    /// wants to look straight away.
     var liftDuration: TimeInterval = 0.12
     private var hoveredButton: HardwareButton?
     private var pressedButton: HardwareButton?
     private var tracking: NSTrackingArea?
 
-    /// Reports a press on one of the body's buttons, down and then up.
     public var onHardwareButton: ((HardwareButton, ButtonPhase) -> Void)?
     private let metalDevice: MTLDevice
-    /// How far the panel being shown is built round in its housing. The two panels of a foldable
-    /// are built differently, so this follows whichever one the guest is drawing to.
     private var nativeQuarterTurns: Int
     private var activeScreen: SCNNode
 
-    /// Built once per screen: reading and skinning the geometry is not something to do per click.
     private var hitMeshes: [ObjectIdentifier: DuoScreenHitMesh] = [:]
     private var measuredSize = CGSize.zero
-    /// Renders small probe frames so the device can be centred by looking at it. The view itself
-    /// cannot be asked for a picture until it is on screen, and the pose has to be right before then.
+    /// The view cannot snapshot until it is on screen, and the pose has to be framed before then.
     private let probe = SCNRenderer(device: MTLCreateSystemDefaultDevice(), options: nil)
 
-    /// Where the hinge has been put, kept here rather than read back from the view.
     public private(set) var hingeAngle: Double = 180
-    /// How the device itself is standing. The picture inside the panel is already turned by the
-    /// guest, so the hardware is turned to match by rolling the camera.
     private var guestQuarterTurns = 0
 
-    /// Nil when the installed Xcode ships no foldable model, which leaves the caller on the ordinary
-    /// flat renderer rather than showing nothing.
+    /// Nil when the installed Xcode ships no foldable model.
     public init?(metalDevice: MTLDevice, showingCover: Bool, nativeRotation: Int = 0) {
         guard let install = try? XcodeLocator.locate() else { return nil }
         let asset = install.appRoot.appending(
@@ -101,8 +68,7 @@ public final class DuoModelView: SCNView {
                   .animationImportPolicy: SCNSceneSource.AnimationImportPolicy.play,
               ]) else { return nil }
 
-        // By shape, not by name: every name in this asset is obfuscated and changes between Xcode
-        // releases. A screen is a perfectly flat face, and the two are told apart by size.
+        // Names in this asset are obfuscated and change with Xcode, so screens are found by shape.
         let faces = Self.flatFaces(in: scene.rootNode)
         guard let inner = Self.closest(to: CGSize(width: 15.797, height: 11.082), among: faces),
               let cover = Self.closest(to: CGSize(width: 11.230, height: 7.739), among: faces),
@@ -141,7 +107,6 @@ public final class DuoModelView: SCNView {
         allowsCameraControl = false
         rendersContinuously = true
         preferredFramesPerSecond = 30
-        // Nothing plays: the pose is frozen and only changes when the hinge does.
         isPlaying = false
         loops = false
 
@@ -153,7 +118,7 @@ public final class DuoModelView: SCNView {
         fatalError("not supported")
     }
 
-    /// Bends the device. 0 is shut and 180 is flat open, the same scale the hinge itself uses.
+    /// 0 is shut and 180 is flat open, the same scale the hinge itself uses.
     public func setHingeAngle(_ degrees: Double) {
         hingeAngle = min(max(degrees, 0), 180)
         applyPose(at: Pose.time(forHingeAngle: hingeAngle))
@@ -172,8 +137,7 @@ public final class DuoModelView: SCNView {
         needsLayout = true
     }
 
-    /// Turns the device. Everything on screen turns, the hardware included, because the guest has
-    /// already turned its own picture inside the panel.
+    /// The hardware turns too: the guest has already turned its picture inside the panel.
     public func setOrientation(_ orientation: DeviceOrientation) {
         let turns = ((orientation.degrees / 90) % 4 + 4) % 4
         guard turns != guestQuarterTurns else { return }
@@ -181,26 +145,19 @@ public final class DuoModelView: SCNView {
         frameCamera()
     }
 
-    /// Which panel the guest is drawing to, so the picture goes on the face that is being shown.
-    /// The panels are built into the housing at different angles, so the turn comes with it.
+    /// The panels are built into the housing at different angles, so the turn comes with the panel.
     public func setShowingCover(_ showingCover: Bool, nativeRotation: Int) {
         activeScreen = showingCover ? coverScreen : innerScreen
         nativeQuarterTurns = ((-nativeRotation / 90) % 4 + 4) % 4
         frameCamera()
     }
 
-    /// Whether there is hardware under this point of the view. Outside it the view is clear, and a
-    /// click there belongs to whatever is behind the window.
-    ///
-    /// Read from a picture of the device rather than asked of SceneKit: its own hit test answers
-    /// from a skinned mesh's authored pose, and missed two thirds of the points actually drawn even
-    /// with the device flat. Before a picture exists, everything counts as hardware.
+    /// Read from a render: SceneKit's hit test uses a skinned mesh's authored pose and misses.
     public func hasHardware(at point: CGPoint) -> Bool {
         guard let silhouette else { return true }
         let x = Int(point.x / bounds.width * CGFloat(silhouette.width))
         let y = Int((1 - point.y / bounds.height) * CGFloat(silhouette.height))
-        // A pixel of the picture is a few points of the view, so the neighbours count too: the
-        // edge of the hardware errs towards being hardware.
+        // A silhouette pixel is a few view points, so the edge errs towards hardware.
         for dy in -1...1 {
             for dx in -1...1 {
                 let column = x + dx, row = y + dy
@@ -213,13 +170,10 @@ public final class DuoModelView: SCNView {
 
     private var silhouette: (width: Int, height: Int, pixels: [Bool])?
 
-    /// Puts the guest's picture on the face being shown.
     public func setScreen(_ surface: IOSurfaceRef) {
         setScreen(surface, on: activeScreen, quarterTurns: nativeQuarterTurns)
     }
 
-    /// Puts a panel's picture on its own face, whichever face is being shown. Both panels stay
-    /// textured, so the camera can swing from one to the other with the pictures already there.
     public func setScreen(_ surface: IOSurfaceRef, onCover: Bool, nativeRotation: Int) {
         setScreen(
             surface,
@@ -230,6 +184,7 @@ public final class DuoModelView: SCNView {
 
     private func setScreen(_ surface: IOSurfaceRef, on screen: SCNNode, quarterTurns: Int) {
         let descriptor = MTLTextureDescriptor()
+        // Tagged sRGB: SceneKit shades in linear space and reads an untagged framebuffer as linear.
         descriptor.pixelFormat = .bgra8Unorm_srgb
         descriptor.width = IOSurfaceGetWidth(surface)
         descriptor.height = IOSurfaceGetHeight(surface)
@@ -247,8 +202,7 @@ public final class DuoModelView: SCNView {
         }
     }
 
-    /// Freezing rather than playing: each animation is taken off its node and put back as a player
-    /// with no speed, so the rig sits at one time and stays there.
+    /// Frozen players rather than the view's scene time, which the view advances itself.
     private func applyPose(at time: TimeInterval) {
         for pose in poses {
             pose.node.removeAnimation(forKey: pose.key, blendOutDuration: 0)
@@ -275,12 +229,7 @@ public final class DuoModelView: SCNView {
         return frozen
     }
 
-    /// Where the camera stands for a given fold.
-    ///
-    /// Driven by the hinge angle rather than by any face's normal, because a skinned node keeps the
-    /// transform it was authored with whatever its bones do: a screen's "normal" is only true when
-    /// the device is flat, which is how a shut device came to be shown edge on. The closing clip
-    /// turns the hardware as well, and this turns with it so the cover ends up facing us.
+    /// By hinge angle, not a face's normal, which a skinned node keeps from its authored pose.
     nonisolated static func cameraOrbit(forHingeAngle degrees: Double) -> Double {
         let handoff = FoldableControl.handoffAngle
         let progress = degrees > handoff
@@ -289,9 +238,7 @@ public final class DuoModelView: SCNView {
         return -.pi / 4 * progress
     }
 
-    /// Where the hardware is right now, taken from the bones, which are the only part of a skinned
-    /// mesh that moves with the pose. They run along the hinge rather than across the panels, so
-    /// they say where the device is but not how large it is.
+    /// The bones are the only part of a skinned mesh that moves with the pose.
     private func posedCentre() -> SIMD3<Float> {
         let bones = (innerScreen.skinner?.bones ?? []) + (coverScreen.skinner?.bones ?? [])
         guard !bones.isEmpty else { return .zero }
@@ -302,9 +249,7 @@ public final class DuoModelView: SCNView {
         return points.reduce(SIMD3<Float>.zero, +) / Float(points.count)
     }
 
-    /// The open device's extents, measured once from the larger panel as it was authored, which is
-    /// flat, and then held. Every pose is framed from these, so nothing lurches while the hinge
-    /// moves and the viewport stays the one the open device was sized for.
+    /// Measured once from the flat authored pose and held, so the framing does not lurch.
     private var referenceHalfAcross: Float = 0
     private var referenceHalfUp: Float = 0
 
@@ -329,9 +274,7 @@ public final class DuoModelView: SCNView {
         referenceHalfUp = half(SIMD3<Float>(0, 0, -1))
     }
 
-    /// How much of the open device's width the pose takes up on screen. Flat it is all of it; as the
-    /// device shuts and the camera swings round to the cover, only one panel is in the way, so the
-    /// framing width comes in to half. The fold recedes in depth rather than growing.
+    /// Comes in to half as the device shuts and the camera swings round to the cover.
     nonisolated static func projectedWidthFraction(hingeAngle: Double, orbit: Double) -> Float {
         Float(max(sin(min(max(hingeAngle, 0), 180) * .pi / 360), abs(orbit) / .pi))
     }
@@ -345,8 +288,6 @@ public final class DuoModelView: SCNView {
         let aspect = Float(max(bounds.width, 1) / max(bounds.height, 1))
         let verticalField = Float(31) * .pi / 180
         let horizontalField = 2 * atan(tan(verticalField / 2) * aspect)
-        // A quarter turn lays the device's long axis across the window, so which of its extents has
-        // to fit which field swaps with it.
         let upright = guestQuarterTurns.isMultiple(of: 2)
         return max(
             (upright ? referenceHalfUp : halfAcross) / tan(verticalField / 2),
@@ -362,8 +303,7 @@ public final class DuoModelView: SCNView {
         let orbit = Self.cameraOrbit(forHingeAngle: hingeAngle)
         let direction = SIMD3<Float>(Float(sin(orbit)), Float(cos(orbit)), 0)
         let centre = posedCentre()
-        // A bent device stands taller than a flat one and needs a little more room. Only while bent:
-        // open is the common view and should stay tight to the window.
+        // A bent device stands taller and needs more room; open stays tight to the window.
         let bend = Float(sin(.pi * (180 - min(max(hingeAngle, 0), 180)) / 180))
         cameraNode.simdPosition = centre + direction * (heldDistance() * (1 + 0.2 * bend))
         cameraNode.look(
@@ -375,7 +315,6 @@ public final class DuoModelView: SCNView {
         projectButtons()
     }
 
-    /// Where the device is in the picture, as fractions of it, or nil when it is not in it at all.
     private func measureOnScreen() -> (minX: Float, maxX: Float, minY: Float, maxY: Float)? {
         guard let scene else { return nil }
         probe.scene = scene
@@ -409,8 +348,7 @@ public final class DuoModelView: SCNView {
         )
     }
 
-    /// Which way is up for the camera, rolled by however the device is standing. The model's own up
-    /// is the negative z axis; a quarter turn takes it to the axis across the view instead.
+    /// The model's own up is negative z.
     nonisolated static func cameraUp(quarterTurns: Int, direction: SIMD3<Float>) -> SIMD3<Float> {
         let modelUp = SIMD3<Float>(0, 0, -1)
         let across = simd_normalize(simd_cross(modelUp, direction))
@@ -422,17 +360,10 @@ public final class DuoModelView: SCNView {
         }
     }
 
-    /// Nudges the camera until the device sits in the middle of the picture.
-    ///
-    /// Measured rather than worked out. Everything in this model that could say where the device is
-    /// turns out to be misleading: a skinned node keeps the transform it was authored with, the
-    /// bounding box is the rest pose, and the cover panel hangs off a single bone sitting near the
-    /// origin. What the camera sees cannot be wrong.
+    /// Measured from a render: a skinned node's transform and bounding box are its rest pose.
     private func recentre() {
         let aspect = Float(max(bounds.width, 1) / max(bounds.height, 1))
-        // A shut device starts a long way from the middle, and while it is off the edge of the
-        // picture the measured box is cut short, so each pass corrects less than it should and it
-        // takes several to walk it in. Each pass is a small render, so the extra ones are cheap.
+        // A box cut off by the picture's edge under-corrects; several passes walk it in.
         for _ in 0..<8 {
             guard let seen = measureOnScreen() else { return }
             let offsetX = (seen.minX + seen.maxX) / 2 - 0.5
@@ -465,7 +396,7 @@ public final class DuoModelView: SCNView {
         scene.rootNode.addChildNode(fill)
     }
 
-    /// A face with no thickness at all, which is what a screen is in this model.
+    /// A screen in this model is a face with no thickness.
     private static func flatFaces(in root: SCNNode) -> [(node: SCNNode, size: CGSize)] {
         var faces: [(SCNNode, CGSize)] = []
         root.enumerateHierarchy { node, _ in
@@ -493,7 +424,6 @@ public final class DuoModelView: SCNView {
         }?.node
     }
 
-    /// Turns the picture to match how the panel is built into the device.
     nonisolated static func textureTransform(quarterTurns: Int) -> SCNMatrix4 {
         switch ((quarterTurns % 4) + 4) % 4 {
         case 1:
@@ -516,7 +446,7 @@ public final class DuoModelView: SCNView {
         }
     }
 
-    /// The device as it is drawn, for a screenshot. Nil before the view has rendered once.
+    /// Nil before the view has rendered once.
     public func screenshotPNG() -> Data? {
         let image = snapshot()
         guard image.size.width > 1,
@@ -525,11 +455,8 @@ public final class DuoModelView: SCNView {
         return raster.representation(using: .png, properties: [:])
     }
 
-    /// The body's buttons, by shape and place at the authored pose, which is flat open. The two bars
-    /// side by side on the top edge are the volume buttons, down then up going right, which is how
-    /// Device Hub labels them; the upper of the two parts on the right edge is the power button and
-    /// the lower is the camera control. Names in this asset are obfuscated and change between Xcode
-    /// releases, so nothing here is looked up by name.
+    /// By place at the flat authored pose: the top edge bars are volume down then up going right,
+    /// the right edge's upper part is power and its lower is camera control. Names are obfuscated.
     nonisolated static func hardwareButtons(in root: SCNNode) -> [(button: HardwareButton, node: SCNNode)] {
         struct Part {
             let node: SCNNode
@@ -555,9 +482,7 @@ public final class DuoModelView: SCNView {
         }
         let body = parts.map { abs($0.centre.x) + $0.size.x / 2 }.max() ?? 0
         let top = parts.map { abs($0.centre.z) + $0.size.z / 2 }.max() ?? 0
-        // A button is a bar between one and two units long that stands proud of the body in both
-        // of its short directions. The top edge also carries a flat strip, a decal with no height at
-        // all, which is not a button and once passed for one and shifted every label along by one.
+        // The top edge also carries a flat decal strip with no height, which is not a button.
         func isBar(_ part: Part) -> Bool {
             let longest = max(part.size.x, part.size.z)
             let shortest = min(part.size.x, part.size.z)
@@ -566,8 +491,6 @@ public final class DuoModelView: SCNView {
         let volume = parts
             .filter { isBar($0) && $0.centre.z < -(top - 0.5) && $0.size.x > $0.size.z }
             .sorted { $0.centre.x < $1.centre.x }
-        // The parts on the right edge, each taken by its thickest face: the power button stands
-        // above the middle and the camera control below it.
         let side = parts.filter { isBar($0) && $0.centre.x > body - 0.5 && $0.size.z > $0.size.x }
         let power = side.filter { $0.centre.z < 0 }.sorted { $0.size.x > $1.size.x }.first
         let camera = side.filter { $0.centre.z > 0 }.sorted { $0.size.x > $1.size.x }.first
@@ -585,12 +508,8 @@ public final class DuoModelView: SCNView {
         return found
     }
 
-    /// A button is moved by moving what it is skinned to. Each button hangs off a bone of its own,
-    /// which the pose animates, so the button is re-skinned to a node under that bone and that node
-    /// is moved instead; the bone's other parts, the two caps on the power button, are re-skinned
-    /// with it and follow. Outward is fixed in the bone's own frame at the authored pose, flat open,
-    /// where the top edge faces negative z and the right edge positive x, so it turns with the half
-    /// the button sits on.
+    /// A skinned node does not move itself, so each button is re-skinned to a node under its bone.
+    /// At the authored pose the top edge faces negative z and the right edge positive x.
     private static func lifts(
         for buttons: [(button: HardwareButton, node: SCNNode)],
         in root: SCNNode
@@ -637,13 +556,9 @@ public final class DuoModelView: SCNView {
         return lifts
     }
 
-    /// How far around a button the pointer still counts as on it, in points. The buttons stand only
-    /// a few points proud of the body at a window's size, and a pointer is not that precise.
+    /// The buttons stand only a few points proud of the body at a window's size.
     private static let buttonReach: CGFloat = 6
 
-    /// Where each button is in the view, as a rectangle, worked out once per pose and camera from
-    /// the button's posed vertices. A hover then costs a containment test, not a ray against three
-    /// meshes for every point the pointer passes.
     private var buttonRects: [(button: HardwareButton, rect: CGRect)] = []
 
     private func projectButtons() {
@@ -664,9 +579,7 @@ public final class DuoModelView: SCNView {
         }
     }
 
-    /// Which of the body's buttons is under this point of the view, or within reach of it, if any.
-    /// A point on the screen is a touch whatever button it is near: the reach is for the bezel
-    /// side of a button, not the screen side.
+    /// A point on the screen is a touch whatever button is near; the reach is for the bezel side.
     func hardwareButton(at point: CGPoint) -> HardwareButton? {
         let button: HardwareButton?
         if let hoveredButton, let liftedReach, liftedReach.contains(point) {
@@ -678,7 +591,6 @@ public final class DuoModelView: SCNView {
         return screenPoint(at: point) == nil ? button : nil
     }
 
-    /// Where a button is in the view, for a pointer that wants to find it.
     func hardwareButtonRect(_ button: HardwareButton) -> CGRect? {
         buttonRects.first { $0.button == button }?.rect
     }
@@ -716,10 +628,6 @@ public final class DuoModelView: SCNView {
         hover(nil)
     }
 
-    /// A button under the pointer comes up out of the body, lights a little, takes the pointing
-    /// hand and gets its symbol beside it, the way Device Hub's does. Coming up is what makes it
-    /// visible: the buttons are a few points tall at a window's size, and a shut device hides the
-    /// volume buttons behind its front edge altogether.
     private func hover(_ button: HardwareButton?) {
         guard button != hoveredButton else { return }
         if let hoveredButton {
@@ -738,16 +646,11 @@ public final class DuoModelView: SCNView {
         }
     }
 
-    /// How far a button comes up under the pointer, and how far it stays up while pressed, in the
-    /// model's units. The buttons stand a tenth of a unit proud of the body, so a hover nearly
-    /// doubles that.
+    /// The buttons stand a tenth of a unit proud of the body.
     private static let hoverRise: Float = 0.08
     private static let pressRise: Float = 0.03
 
-    /// How far a button is brought out just to be seen. Seen straight on, a shut device hides its
-    /// volume buttons a tenth of a unit behind its front edge and shows the power button edge on,
-    /// so shut, each is brought out to stand a little proud of the edge that hides it, as the
-    /// buttons on a real phone do. Open, nothing hides them and they sit where they were built.
+    /// Shut, the front edge hides the volume buttons by a tenth of a unit and shows power edge on.
     private func restLift(of button: HardwareButton) -> Float {
         let shut = Float(min(max((FoldableControl.handoffAngle - hingeAngle) / FoldableControl.handoffAngle, 0), 1))
         let hidden: Float = Self.isOnTopEdge(button) ? 0.1 : 0
@@ -758,9 +661,7 @@ public final class DuoModelView: SCNView {
         button == .volumeUp || button == .volumeDown
     }
 
-    /// Pushes a button out of the body along the direction it faces, or lets it back in. The button
-    /// is stretched as it moves so its inner face stays in the body: it rises out rather than
-    /// floating off. The rise is on top of whatever the pose needs to show the button at all.
+    /// Scaled as it moves so the inner face stays in the body rather than floating off.
     private func lift(_ button: HardwareButton, by rise: Float) {
         guard let lift = lifts[button] else { return }
         let amount = restLift(of: button) + rise
@@ -772,7 +673,6 @@ public final class DuoModelView: SCNView {
         liftedReach = rise > 0 ? reach(of: button, lifted: amount) : nil
     }
 
-    /// Puts every button where the pose wants it, before the pose is measured.
     private func settleLifts() {
         let animated = liftDuration
         liftDuration = 0
@@ -782,8 +682,7 @@ public final class DuoModelView: SCNView {
         liftDuration = animated
     }
 
-    /// The hovered button's rectangle grown to where it is once it has come up, so the pointer can
-    /// follow it out without the hover ending under it.
+    /// Grown to the lifted position, so the pointer can follow the button out and keep the hover.
     private var liftedReach: CGRect?
 
     private func reach(of button: HardwareButton, lifted amount: Float) -> CGRect? {
@@ -804,8 +703,6 @@ public final class DuoModelView: SCNView {
         }
     }
 
-    /// How far a button stands out beyond where the pose alone puts it, for a test that wants to
-    /// know it moved.
     func liftOffset(of button: HardwareButton) -> Float {
         guard let lift = lifts[button] else { return 0 }
         return simd_length(lift.node.simdPosition) - restLift(of: button)
@@ -813,8 +710,6 @@ public final class DuoModelView: SCNView {
 
     private let badge = HardwareButtonBadge()
 
-    /// The badge sits just outside the device next to the button: above a button on the top edge,
-    /// beside one on the side, and always inside the view.
     private func showBadge(for button: HardwareButton, pressed: Bool) {
         guard let rect = hardwareButtonRect(button) else { return }
         badge.show(Self.name(of: button), symbol: Self.symbol(of: button), pressed: pressed)
@@ -854,12 +749,10 @@ public final class DuoModelView: SCNView {
         }
     }
 
-    /// Where a click landed on the shown screen, 0 to 1 across and down.
+    /// The point is 0 to 1 across and down the shown screen.
     public var onTouch: ((CGPoint, TouchEvent.Phase) -> Void)?
 
-    /// A scroll is sent as a finger dragging the content: down on the screen begins a contact under
-    /// the pointer, each turn of the wheel moves it, and a pause lifts it. The moved pointer is hit
-    /// tested each time, so the drag follows the screen however the device is posed or turned.
+    /// A scroll is a finger drag: the first turn touches down, each moves it, a pause lifts it.
     public override func scrollWheel(with event: NSEvent) {
         let pointer = convert(event.locationInWindow, from: nil)
         if scrollDrag == nil {
@@ -919,15 +812,11 @@ public final class DuoModelView: SCNView {
         report(event, phase: .ended)
     }
 
-    /// Where the finger last was on the screen. A drag that runs off the edge of the screen stops
-    /// there rather than vanishing, and a release off the screen lifts from there, since a contact
-    /// that never lifts leaves the guest holding a finger down.
+    /// A release off the screen lifts from here, or the guest is left holding a finger down.
     private var lastContact: CGPoint?
 
-    /// How far off the screen a press still counts as a press on its edge, in points. A home swipe
-    /// begun on the bezel just under the screen is meant for the screen's bottom edge.
+    /// A home swipe begun on the bezel just under the screen is meant for its bottom edge.
     private static let pressReach: CGFloat = 24
-    /// How far off the screen a drag follows along the screen's edge before it stays put.
     private static let dragReach: CGFloat = 60
 
     private func report(_ event: NSEvent, phase: TouchEvent.Phase) {
@@ -949,8 +838,6 @@ public final class DuoModelView: SCNView {
         onTouch?(guestPoint, phase)
     }
 
-    /// The nearest point of the screen to a point of the view that is not on it, out to `reach`.
-    /// Found by looking outward from the point, which needs no geometry beyond the hit test.
     private func nearestScreenPoint(to point: CGPoint, within reach: CGFloat) -> CGPoint? {
         var distance: CGFloat = 3
         while distance <= reach {
@@ -964,7 +851,7 @@ public final class DuoModelView: SCNView {
         return nil
     }
 
-    /// Where a click on the window lands on the guest's screen, 0 to 1 across and down.
+    /// 0 to 1 across and down the guest's screen.
     func screenPoint(at point: CGPoint) -> CGPoint? {
         guard let mesh = hitMesh(), let posed = posedScreen(mesh) else { return nil }
         let near = unprojectPoint(SCNVector3(point.x, point.y, 0))
@@ -975,16 +862,10 @@ public final class DuoModelView: SCNView {
             posed: posed
         ) else { return nil }
 
-        // The picture was turned to meet the panel, so the same turn is undone to get back to what
-        // the guest thinks it is showing. This asset's texture coordinates already run down the
-        // picture, the way the guest counts, so nothing is flipped after it: measured on 27A266a by
-        // sampling the device's own framebuffer through each turn and flip and keeping the one whose
-        // colours match what is drawn under the pointer.
+        // The asset's texture coordinates already run down the picture, so nothing is flipped after
+        // the unturn: measured on 27A266a by sampling the guest's framebuffer under the pointer.
         let turned = Self.unturn(SIMD2<Float>(uv.x, uv.y), quarterTurns: nativeQuarterTurns)
-        // Kept a fraction inside the screen: a contact on the very last pixel of an edge is one the
-        // guest sometimes drops, and a swipe from the bezel lands exactly there. Half a percent is
-        // well inside the edge band the guest reads its gestures from, and where this app's own
-        // gestures have always started.
+        // The guest sometimes drops a contact on an edge's last pixel, where a bezel swipe lands.
         return CGPoint(
             x: min(max(CGFloat(turned.x), Self.inset), 1 - Self.inset),
             y: min(max(CGFloat(turned.y), Self.inset), 1 - Self.inset)
@@ -993,7 +874,6 @@ public final class DuoModelView: SCNView {
 
     private static let inset: CGFloat = 0.005
 
-    /// The inverse of the turn put on the texture.
     nonisolated static func unturn(_ uv: SIMD2<Float>, quarterTurns: Int) -> SIMD2<Float> {
         switch ((quarterTurns % 4) + 4) % 4 {
         case 1: SIMD2<Float>(uv.y, 1 - uv.x)
@@ -1009,9 +889,6 @@ public final class DuoModelView: SCNView {
         hitMesh(for: activeScreen)
     }
 
-    /// The shown screen's vertices where they are for this pose. The bones move only with the hinge,
-    /// so the skinning is done once per pose and screen rather than once per ray, which a search
-    /// for the nearest point of the screen would otherwise pay many times over.
     private var posedCache: (screen: ObjectIdentifier, hinge: Double, positions: [SIMD3<Float>])?
 
     private func posedScreen(_ mesh: DuoScreenHitMesh) -> [SIMD3<Float>]? {
@@ -1035,8 +912,7 @@ public final class DuoModelView: SCNView {
     }
 }
 
-/// The finger a scroll stands in for: where it went down in the view, how far the scrolling has
-/// carried it since, and the last point of it that was on the screen, which is where it lifts.
+/// The finger a scroll stands in for.
 struct ScrollDrag {
     let anchor: CGPoint
     private(set) var offset = CGSize.zero
@@ -1047,9 +923,7 @@ struct ScrollDrag {
         last = start
     }
 
-    /// Where the finger is now, in the view. A mouse wheel reports lines rather than points, and a
-    /// line is about a dozen of them. The view counts up and a scroll counts down, so a scroll down
-    /// moves the finger down.
+    /// A wheel reports lines of about a dozen points; the view's y counts up and a scroll's down.
     mutating func move(deltaX: CGFloat, deltaY: CGFloat, precise: Bool) -> CGPoint {
         let factor: CGFloat = precise ? 1 : 12
         offset.width += deltaX * factor
@@ -1058,7 +932,6 @@ struct ScrollDrag {
     }
 }
 
-/// A hardware button's symbol on a small dark disc beside it, blue while the button is held.
 final class HardwareButtonBadge: NSView {
     private let symbol = NSImageView()
     private static let diameter: CGFloat = 28
@@ -1078,8 +951,7 @@ final class HardwareButtonBadge: NSView {
         fatalError("not supported")
     }
 
-    /// The badge is a label, not a control: the pointer passes straight through it to the button
-    /// it names.
+    /// The pointer passes through to the button the badge names.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     func show(_ name: String, symbol symbolName: String, pressed: Bool) {

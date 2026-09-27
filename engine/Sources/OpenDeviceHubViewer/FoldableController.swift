@@ -1,13 +1,7 @@
 import Foundation
 import OpenDeviceHubEngine
 
-/// Holds the fold control for each open foldable, and follows the guest's own account of its hinge
-/// and its active panel.
-///
-/// The connection has to be turned on before the guest acts on anything, which takes a round trip,
-/// so the first angle a window asks for is sent once that finishes rather than dropped. Which panel
-/// the guest is drawing to is never inferred from the angle sent: the guest reports it, and the
-/// window follows that report.
+/// The active panel is never inferred from the angle sent: the guest reports it.
 @MainActor
 public final class FoldableController {
     private let open: (String) throws -> any HingeControl
@@ -37,7 +31,6 @@ public final class FoldableController {
         readDisplays = displayReport
     }
 
-    /// The angle this device was last put at, or nil when it has not been touched in this session.
     public func angle(for udid: String) -> Double? {
         wanted[udid]
     }
@@ -47,9 +40,7 @@ public final class FoldableController {
         guard let control = control(for: udid) else { return }
 
         guard ready.contains(udid) else {
-            // A slider sends many angles a second, and turning the feature on is a round trip, so
-            // only the first starts it. The rest leave their angle behind and the one in flight
-            // sends whichever is latest when it finishes.
+            // Activation is a round trip: the first angle starts it and the latest follows it.
             guard !activating.contains(udid) else { return }
             activating.insert(udid)
             Task { [weak self] in
@@ -76,7 +67,6 @@ public final class FoldableController {
             throw EngineError.capabilityUnavailable(name: "hinge on \(udid)")
         }
         guard ready.contains(udid) else {
-            // The feature has to be on first, and that is a round trip, so this lands just after.
             Task { [weak self] in
                 try? await control.activate()
                 self?.ready.insert(udid)
@@ -89,8 +79,6 @@ public final class FoldableController {
         followers[udid]?.watcher.poke()
     }
 
-    /// Follows the guest: `onPanel` is called with the panel it is drawing to whenever that changes,
-    /// and `onHinge` with its hinge angle as it moves, whoever is moving it.
     public func follow(
         _ udid: String,
         onPanel: @escaping @MainActor (DisplayReport.Display) -> Void,
@@ -119,7 +107,6 @@ public final class FoldableController {
         followers[udid] = Follower(watcher: watcher, hinge: hinge, task: task)
     }
 
-    /// The panel the guest was last reported drawing to, once it has been read.
     public func activePanel(for udid: String) -> DisplayReport.Display? {
         followers[udid]?.watcher.activePanel
     }
@@ -143,8 +130,7 @@ public final class FoldableController {
             report?("the hinge did not move: \(error.localizedDescription)")
             return
         }
-        // The guest moves its picture at its own threshold; the watcher is asked to look now
-        // rather than on its clock.
+        // The guest switches panels at its own threshold, so the watcher looks now.
         followers[udid]?.watcher.poke()
     }
 

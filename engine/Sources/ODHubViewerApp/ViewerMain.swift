@@ -115,11 +115,7 @@ struct ODHubViewer: ParsableCommand {
 
             var failures: [String] = []
 
-            // A foldable has two screens and only one can be in a window, so the choice is
-            // remembered per device. Anything else has one screen and this is always nil.
-            // A foldable takes its orientation from the same provider as its hinge, which overwrites
-            // an ordinary rotation the moment it is sent. So it is turned through the fold control
-            // and everything else the usual way.
+            // The hinge provider overwrites an ordinary rotation, so a foldable turns through it.
             let turn: @MainActor (DeviceOrientation, String) -> Void = { orientation, udid in
                 guard let controller = manager.controller(for: udid) else { return }
                 do {
@@ -148,16 +144,12 @@ struct ODHubViewer: ParsableCommand {
                 recent.remember(udid)
                 pasteboard.adopt(udid)
 
-                // Only a foldable can be folded. It opens unfolded, which is the pose worth seeing
-                // and the one its own tooling starts on, unless it has already been put somewhere
-                // else in this session.
+                // Opens unfolded, which is where the device's own tooling starts.
                 if let controller = manager.controller(for: udid), controller.foldsAtHinge {
                     let angle = foldables.angle(for: udid) ?? DeviceControlBar.FoldMode.fullyOpen.angle
                     controller.showHingeAngle(angle)
                     controller.onHingeAngle = { angle in foldables.setAngle(angle, for: udid) }
                     foldables.setAngle(angle, for: udid)
-                    // From here the guest leads: its report says which panel it draws to and its
-                    // hinge stream says where the fold is, whoever moved it.
                     foldables.follow(
                         udid,
                         onPanel: { [weak controller] panel in
@@ -576,9 +568,7 @@ struct ODHubViewer: ParsableCommand {
             device = try adapter.devices().first { $0.udid == device.udid } ?? device
         }
 
-        // More than one built in screen means a hinge between them. A foldable opens on the panel
-        // it lies open on, keeps the cover warm too, and aims its touches at whichever the guest is
-        // drawing to.
+        // More than one built in screen means a hinge between them.
         let panels = (try? adapter.panels(device.udid)) ?? []
         let foldsAtHinge = panels.count > 1
         let unfolded = foldsAtHinge ? panels.first { $0.name == "Unfolded" } : nil
@@ -611,16 +601,14 @@ struct ODHubViewer: ParsableCommand {
             keepOnTop: keepOnTop,
             showFPS: fps,
             foldsAtHinge: foldsAtHinge,
-            // A foldable's panels declare different bodies, so the one being shown brings its own
-            // rather than the device type's, which names only the cover's.
+            // The device type's chrome names only the cover's body, so the panel's own is used.
             chrome: panel?.chromeIdentifier.flatMap { ChromeLocator.chrome(identifier: $0) },
             panelNativeRotation: panel?.nativeRotation ?? 0,
             unfoldedPanel: unfolded,
             cover: cover,
             retarget: retarget
         )
-        // Only the flat renderer needs this: the model turns the picture on the texture instead,
-        // and turning it twice is how the unfolded panel ended up on its side.
+        // The model turns the picture itself; setting this too turns the unfolded panel twice.
         if let panel, !controller.foldsAtHinge {
             controller.nativeRotation = panel.nativeRotation
         }

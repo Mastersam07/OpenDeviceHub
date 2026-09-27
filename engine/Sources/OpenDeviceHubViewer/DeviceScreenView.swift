@@ -166,13 +166,11 @@ public final class DeviceScreenView: MTKView, NSDraggingSource {
         onContact?(contactPoint(for: event), .ended, style(for: event))
     }
 
-    /// On a foldable a pinch folds the device instead of reaching the guest, which is what the
-    /// gesture means when the thing on screen has a hinge in it.
     public var onPinchFold: ((Double) -> Void)?
 
     public override func magnify(with event: NSEvent) {
         if let onPinchFold {
-            // Spread opens it and pinch closes it, across the full sweep in roughly one gesture.
+            // A full gesture sweeps the whole 180 degrees.
             onPinchFold(event.magnification * 180)
             return
         }

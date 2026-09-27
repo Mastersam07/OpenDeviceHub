@@ -1,9 +1,7 @@
 import AppKit
 import OpenDeviceHubEngine
 
-/// The pose artwork Xcode ships, in the plug in Device Hub draws a foldable with. Nothing is copied
-/// out of it: it is read from the installed Xcode, and where that is missing a system symbol stands
-/// in.
+/// Artwork read from the installed Xcode's Device Hub plug in, never copied into this project.
 @MainActor
 enum DeviceKitIcons {
     private static let bundle: Bundle? = {
@@ -18,7 +16,6 @@ enum DeviceKitIcons {
     }
 }
 
-
 /// The floating bar above a device: the window's own buttons, the device's name over its runtime,
 /// and the native toolbar items, all on one piece of titlebar material.
 ///
@@ -29,13 +26,11 @@ enum DeviceKitIcons {
 public final class DeviceControlBar: NSVisualEffectView {
     private let name = NSTextField(labelWithString: "")
     private let runtime = NSTextField(labelWithString: "")
-    /// Only a foldable has one: the three positions it can be in, centred in the bar.
     private var foldModes: NSSegmentedControl?
-    /// Reports the position chosen, so the window can fold the device.
     public var onFoldMode: ((FoldMode) -> Void)?
     /// Clear of the window's close, minimise and zoom buttons, the last of which ends at 80.
     private let titleLeading: CGFloat = 96
-    /// What AppKit's own action group takes on the right, which nothing may be laid out under.
+    /// What AppKit's action group takes on the right; nothing may be laid out under it.
     private static let actionGroupWidth: CGFloat = 150
 
     public init(deviceName: String, runtimeName: String) {
@@ -64,7 +59,7 @@ public final class DeviceControlBar: NSVisualEffectView {
         fatalError("not supported")
     }
 
-    /// The positions a foldable can be put in, matching the names the guest's own tooling uses.
+    /// Named as the guest's own tooling names them.
     public enum FoldMode: Int, CaseIterable {
         case cover, partiallyOpen, fullyOpen
 
@@ -76,9 +71,7 @@ public final class DeviceControlBar: NSVisualEffectView {
             }
         }
 
-        /// Drawn rather than written: the three names together are wider than the bar has to spare,
-        /// and the shapes say which is which at a glance. Xcode ships artwork for exactly these
-        /// three poses, so it is used where it is installed.
+        /// Xcode's artwork for these three poses; the names together are too wide for the bar.
         var assetName: String {
             switch self {
             case .cover: "v68.closed"
@@ -103,8 +96,6 @@ public final class DeviceControlBar: NSVisualEffectView {
             return NSImage(systemSymbolName: symbol, accessibilityDescription: label)
         }
 
-        /// Which pose an angle counts as. Anything at or below the handoff is closed, and only a
-        /// hinge all the way over is fully open.
         public static func mode(forHingeAngle angle: Double) -> FoldMode {
             if angle <= 15 { return .cover }
             if angle >= 179.5 { return .fullyOpen }
@@ -121,8 +112,6 @@ public final class DeviceControlBar: NSVisualEffectView {
 
     }
 
-    /// Adds the fold positions. Called only for a device that has a hinge, so every other window
-    /// keeps a bar with nothing extra in it.
     public func addFoldModes() {
         guard foldModes == nil else { return }
         let control = NSSegmentedControl(
@@ -145,7 +134,7 @@ public final class DeviceControlBar: NSVisualEffectView {
         needsLayout = true
     }
 
-    /// Moves the selection without reporting it, for an angle that came from a pinch or elsewhere.
+    /// Moves the selection without reporting it.
     public func showFoldAngle(_ degrees: Double) {
         foldModes?.selectedSegment = FoldMode.mode(forHingeAngle: degrees).rawValue
     }
@@ -172,8 +161,6 @@ public final class DeviceControlBar: NSVisualEffectView {
         let leading = isFullScreen ? 12 : titleLeading
         let width = max(bounds.width - leading - 12, 0)
         let top = (bounds.height - 30) / 2
-        // Centred in the bar, but never under the action group AppKit lays out on the right, and
-        // never over the title: the title gives way to it instead.
         var titleWidth = width
         if let foldModes {
             foldModes.sizeToFit()

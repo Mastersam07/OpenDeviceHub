@@ -111,8 +111,7 @@ final class PresentationLayoutTests: XCTestCase {
 }
 
 extension PresentationLayoutTests {
-    /// A foldable's unfolded panel is built sideways, so its picture is landscape while the guest
-    /// still believes it is upright.
+    /// A sideways built panel shows landscape while the guest still believes it is upright.
     func testAPanelBuiltSidewaysTurnsThePicture() {
         XCTAssertEqual(DeviceWindowController.shown(.portrait, nativeRotation: 0), .portrait)
         XCTAssertEqual(DeviceWindowController.shown(.portrait, nativeRotation: 270), .landscapeLeft)

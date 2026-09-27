@@ -41,7 +41,6 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate, NSToolbarItemValidation 
         static let fold = NSToolbarItem.Identifier("odh.fold")
     }
 
-    /// Reports a fold position chosen from the toolbar, for the window that has one.
     var onFoldMode: ((DeviceControlBar.FoldMode) -> Void)?
 
     private let actions: DeviceToolbarActions
@@ -93,9 +92,7 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate, NSToolbarItemValidation 
         installed = toolbar
     }
 
-    /// Puts the fold positions on the toolbar, or takes them off. The window's own bar carries them
-    /// the rest of the time, but in full screen AppKit hides that bar's band and reveals this
-    /// toolbar over it, so this is the only place they can be reached.
+    /// In full screen AppKit hides the bar and shows this toolbar, so the fold positions live here.
     func setFoldModes(visible: Bool) {
         guard let installed else { return }
         let present = installed.items.contains { $0.itemIdentifier == Item.fold }
@@ -127,7 +124,7 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate, NSToolbarItemValidation 
         }
     }
 
-    /// Moves the fold selection without reporting it, to match an angle from elsewhere.
+    /// Moves the selection without reporting it.
     func showFoldAngle(_ degrees: Double) {
         foldControl?.selectedSegment = DeviceControlBar.FoldMode.mode(forHingeAngle: degrees).rawValue
     }

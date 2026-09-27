@@ -7,9 +7,7 @@ import OpenDeviceHubEngine
 
 @MainActor
 final class DuoHitTestTests: XCTestCase {
-    /// A click in the middle of the window should land in the middle of the screen, and clicks
-    /// either side of it should land either side. Checked at each pose, because the whole point of
-    /// skinning the mesh by hand is that a bent screen is not where SceneKit thinks it is.
+    /// Checked at each pose, because a bent screen is not where SceneKit thinks it is.
     func testClicksLandWhereTheyAreAimed() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("no Metal device") }
         guard let view = DuoModelView(metalDevice: device, showingCover: false, nativeRotation: 0)
@@ -27,17 +25,14 @@ final class DuoHitTestTests: XCTestCase {
             XCTAssertEqual(centre.x, 0.5, accuracy: 0.12, "middle of the window at \(Int(angle))")
             XCTAssertEqual(centre.y, 0.5, accuracy: 0.12, "middle of the window at \(Int(angle))")
 
-            // Left of the middle should read left of the middle, and right likewise.
             let left = view.screenPoint(at: CGPoint(x: 220, y: 220))
             let right = view.screenPoint(at: CGPoint(x: 420, y: 220))
             if let left, let right {
                 XCTAssertLessThan(left.x, right.x, "left and right are swapped at \(Int(angle))")
             }
 
-            // And the same up and down. The guest counts down its screen, so a click higher up the
-            // window has to come out smaller, which a stray flip in the mapping would reverse: every
-            // tap then landed mirrored, while swipes, which the guest reads from the edge, still
-            // worked and hid it.
+            // The guest counts y down its screen, so a higher click comes out smaller. A flip here
+            // mirrors every tap while edge swipes still work and hide it.
             let above = view.screenPoint(at: CGPoint(x: 320, y: 300))
             let below = view.screenPoint(at: CGPoint(x: 320, y: 140))
             if let above, let below {
@@ -46,9 +41,7 @@ final class DuoHitTestTests: XCTestCase {
         }
     }
 
-    /// The two panels are built into the housing at different angles, so following the guest from
-    /// one to the other has to bring the angle with it. Keeping the first panel's angle turned the
-    /// cover's picture a quarter turn and took every click on it with it.
+    /// The two panels are built into the housing at different angles.
     func testFollowingToTheOtherPanelBringsItsOwnBuildAngle() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("no Metal device") }
         guard let view = DuoModelView(metalDevice: device, showingCover: false, nativeRotation: 270)
@@ -80,8 +73,6 @@ final class DuoHitTestTests: XCTestCase {
 }
 
 extension DuoHitTestTests {
-    /// The body's buttons are found by where they sit, hit tested as the screens are, and nothing
-    /// else on the body answers as a button.
     func testTheBodysButtonsAreWhereTheyAre() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("no Metal device") }
         guard let view = DuoModelView(metalDevice: device, showingCover: false, nativeRotation: 270)
@@ -111,9 +102,7 @@ extension DuoHitTestTests {
         XCTAssertNil(found[.home])
         XCTAssertGreaterThan(onScreen, found.values.reduce(0, +) * 20, "the buttons are small next to the screen")
 
-        // The two volume buttons are neighbours on the top edge, down to the left of up, a small
-        // gap apart; the power button stands on the right edge. A flat strip on the top edge is not
-        // a button, and once counted as one, which shifted every label along by one.
+        // A flat strip on the top edge is not a button; counting it shifts every label by one.
         let down = try XCTUnwrap(view.hardwareButtonRect(.volumeDown))
         let up = try XCTUnwrap(view.hardwareButtonRect(.volumeUp))
         let lock = try XCTUnwrap(view.hardwareButtonRect(.lock))
@@ -122,13 +111,11 @@ extension DuoHitTestTests {
         XCTAssertGreaterThan(down.midX, view.bounds.midX, "the volume buttons are on the right half")
         XCTAssertGreaterThan(lock.midX, up.maxX, "the power button is further right, on the side")
         XCTAssertGreaterThan(lock.height, lock.width, "the power button stands along the side")
-        // The camera control is the lower part on the same edge.
         let camera = try XCTUnwrap(view.hardwareButtonRect(.cameraControl))
         XCTAssertGreaterThan(camera.height, camera.width, "the camera control stands along the side")
         XCTAssertEqual(camera.midX, lock.midX, accuracy: 12, "on the same edge as the power button")
         XCTAssertLessThan(camera.maxY, lock.minY, "and below it")
 
-        // Shut, they are still two different buttons under the pointer.
         view.setShowingCover(true, nativeRotation: 0)
         view.setHingeAngle(0)
         let shutDown = try XCTUnwrap(view.hardwareButtonRect(.volumeDown))
@@ -138,9 +125,7 @@ extension DuoHitTestTests {
         XCTAssertNotNil(view.hardwareButtonRect(.lock))
     }
 
-    /// A shut device hides its volume buttons behind its front edge, so a button under the pointer
-    /// has to come up out of the body to be seen at all. Only the hovered one moves, the pointer can
-    /// follow it out, and it goes back when the pointer leaves. The symbol beside it takes no clicks.
+    /// Shut, the volume buttons hide behind the front edge, so the hovered one rises to be seen.
     func testAHoveredButtonComesUpOutOfTheBody() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("no Metal device") }
         guard let view = DuoModelView(metalDevice: device, showingCover: true, nativeRotation: 0)
@@ -151,7 +136,6 @@ extension DuoHitTestTests {
         view.setHingeAngle(0)
         let up = try XCTUnwrap(view.hardwareButtonRect(.volumeUp))
         let down = try XCTUnwrap(view.hardwareButtonRect(.volumeDown))
-        // Room above each button for it to rise into.
         let aboveUp = up.insetBy(dx: 0, dy: -14)
         let aboveDown = down.insetBy(dx: 0, dy: -14)
 
@@ -171,7 +155,6 @@ extension DuoHitTestTests {
         XCTAssertGreaterThan(upAfter, upBefore + 60, "the button is now drawn where it was hidden")
         XCTAssertEqual(downAfter, downBefore, accuracy: 8, "the other button is where it was")
 
-        // The pointer can follow the button up past where it used to end.
         let justAbove = CGPoint(x: up.midX, y: up.maxY + 3)
         XCTAssertEqual(view.hardwareButton(at: justAbove), .volumeUp)
 
@@ -187,7 +170,6 @@ extension DuoHitTestTests {
         XCTAssertEqual(drawnPoints(renderer, view, in: aboveUp), upBefore, accuracy: 8)
     }
 
-    /// How many points of the view, within this rectangle, have something drawn in them.
     private func drawnPoints(_ renderer: SCNRenderer, _ view: DuoModelView, in rect: CGRect) -> Int {
         renderer.pointOfView = view.pointOfView
         let image = renderer.snapshot(atTime: 0, with: view.bounds.size, antialiasingMode: .none)

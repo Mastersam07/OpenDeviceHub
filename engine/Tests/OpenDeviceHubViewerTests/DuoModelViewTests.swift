@@ -3,8 +3,8 @@ import XCTest
 @testable import OpenDeviceHubViewer
 
 final class DuoModelViewTests: XCTestCase {
-    /// The fold is the closing clip, not the start of the timeline. Other stretches also run flat
-    /// to shut while turning the hardware, which puts the device on its side.
+    /// The fold is the timeline's closing clip: the earlier stretches also run flat to shut, but
+    /// turn the device on its side.
     func testTheFoldMapsOntoTheClosingClip() {
         XCTAssertEqual(DuoModelView.Pose.time(forHingeAngle: 180), 260.0 / 24, accuracy: 0.001)
         XCTAssertEqual(DuoModelView.Pose.time(forHingeAngle: 0), 380.0 / 24, accuracy: 0.001)
@@ -20,7 +20,6 @@ final class DuoModelViewTests: XCTestCase {
         XCTAssertEqual(DuoModelView.Pose.time(forHingeAngle: -90), 380.0 / 24, accuracy: 0.001)
     }
 
-    /// Turning the picture back to meet the panel, which is built sideways.
     func testTheTextureTurnsWithThePanel() {
         XCTAssertEqual(DuoModelView.textureTransform(quarterTurns: 0).m11, 1)
         XCTAssertEqual(DuoModelView.textureTransform(quarterTurns: 1).m12, -1)
@@ -31,8 +30,6 @@ final class DuoModelViewTests: XCTestCase {
 
 @MainActor
 final class DuoModelAssetTests: XCTestCase {
-    /// Loads the model Xcode ships and finds both of its screens. Skips where the asset is absent,
-    /// which is every Xcode without a foldable.
     func testTheModelLoadsAndBothScreensAreFound() throws {
         guard let device = MTLCreateSystemDefaultDevice() else {
             throw XCTSkip("no Metal device")

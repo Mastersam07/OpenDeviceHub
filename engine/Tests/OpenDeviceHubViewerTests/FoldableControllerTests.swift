@@ -36,8 +36,6 @@ final class FoldableControllerTests: XCTestCase {
         return controller
     }
 
-    /// The feature has to be turned on before the guest acts, so the first angle waits for that
-    /// rather than being dropped.
     func testTheFirstAngleIsSentOnceTheFeatureIsOn() async throws {
         let controller = makeController()
         controller.setAngle(120, for: "A")
@@ -48,8 +46,6 @@ final class FoldableControllerTests: XCTestCase {
         XCTAssertEqual(hinges["A"]?.angles, [120])
     }
 
-    /// A slider moves many times while the feature is coming up, and the guest should end at the
-    /// angle the user left it on, not the one they started from.
     func testTheLatestAngleWinsWhileActivating() async throws {
         let controller = makeController()
         controller.setAngle(30, for: "A")

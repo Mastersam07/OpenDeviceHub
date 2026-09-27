@@ -2,7 +2,6 @@ import AppKit
 import XCTest
 @testable import OpenDeviceHubViewer
 
-/// The fold positions reach the native toolbar only while they are needed there.
 @MainActor
 final class DeviceToolbarFoldTests: XCTestCase {
     private func makeToolbar() -> (DeviceToolbar, NSWindow) {
@@ -29,7 +28,6 @@ final class DeviceToolbarFoldTests: XCTestCase {
         XCTAssertEqual(window.toolbar?.items.first?.itemIdentifier.rawValue, "odh.fold", "leading the row")
         XCTAssertEqual(window.toolbar?.items.count, 5)
 
-        // Asking twice adds nothing twice.
         toolbar.setFoldModes(visible: true)
         XCTAssertEqual(window.toolbar?.items.count, 5)
 

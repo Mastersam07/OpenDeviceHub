@@ -1,24 +1,13 @@
 import SceneKit
 import simd
 
-/// Turns a click into a point on a foldable's screen.
-///
-/// SceneKit's own hit test uses the geometry as it was authored, and this screen is skinned across
-/// the hinge, so the surface it tests is not the surface on screen. A click on a bent device either
-/// misses or lands somewhere else entirely.
-///
-/// So the vertices are skinned here, on the processor, using the bones as they are currently posed,
-/// and the ray is intersected against those triangles. The texture coordinate at the hit is the
-/// guest's own coordinate, which is what input needs.
+/// Hit tests the screen skinned on the processor; SceneKit's own hit test uses the authored pose.
 struct DuoScreenHitMesh {
-    /// For diagnosing: how much geometry was read out of the asset.
     var triangleCount: Int { triangles.count }
     var vertexCount: Int { restPositions.count }
     private let restPositions: [SIMD3<Float>]
     private let textureCoordinates: [SIMD2<Float>]
     private let triangles: [(Int, Int, Int)]
-    /// Each corner names its own position and its own texture coordinate, which the asset indexes
-    /// separately.
     private let cornerList: [(position: Int, uv: Int)]
     private let boneIndices: [[Int]]
     private let boneWeights: [[Float]]
@@ -31,9 +20,7 @@ struct DuoScreenHitMesh {
 
         let sources = geometry.sources
         guard let vertexSlot = sources.firstIndex(where: { $0.semantic == .vertex }) else { return nil }
-        // A button has no picture on it and may carry no texture coordinates. It is still hit
-        // tested; its corners then read their position index for the coordinate, which is never
-        // looked at.
+        // A button has no texture coordinates; its uv index aliases the position index, unused.
         let uvSlot = sources.firstIndex(where: { $0.semantic == .texcoord }) ?? vertexSlot
 
         let vertices = Self.vectors(from: sources[vertexSlot], components: 3).map {
@@ -48,16 +35,14 @@ struct DuoScreenHitMesh {
         var indices = Self.integers(from: skinner.boneIndices, components: influences)
         var weights = Self.vectors(from: skinner.boneWeights, components: influences)
         if indices.isEmpty, weights.isEmpty, bind.count == 1 {
-            // A panel that does not bend hangs off one bone, and the asset then stores no weights at
-            // all. Every vertex follows that bone completely.
+            // A panel on one bone has no weights stored; every vertex follows that bone.
             indices = Array(repeating: [0], count: vertices.count)
             weights = Array(repeating: [1], count: vertices.count)
         }
         guard indices.count == vertices.count, weights.count == vertices.count else { return nil }
 
-        // The asset stores polygons, not triangles, in the layout USD uses: a vertex count for each
-        // polygon, then one index per corner for every source the geometry has. Positions and
-        // texture coordinates are indexed independently, so a corner is a pair rather than a number.
+        // USD layout: a vertex count per polygon, then one index per corner for every source, with
+        // positions and texture coordinates indexed independently.
         var corners: [(position: Int, uv: Int)] = []
         var faces: [(Int, Int, Int)] = []
         for element in geometry.elements {
@@ -81,8 +66,7 @@ struct DuoScreenHitMesh {
                     let base = cursor + corner * sources.count
                     corners.append((read(base + vertexSlot), read(base + uvSlot)))
                 }
-                // Fanned from the first corner, which is right for the convex quads and triangles
-                // this model is made of.
+                // A fan from the first corner, which is right for this model's convex quads.
                 for offset in 1..<(count - 1) {
                     faces.append((first, first + offset, first + offset + 1))
                 }
@@ -100,14 +84,12 @@ struct DuoScreenHitMesh {
         inverseBind = bind.map { simd_float4x4($0.scnMatrix4Value) }
     }
 
-    /// Where the ray meets the screen, in the guest's coordinates, or nil when it misses.
+    /// The hit as texture coordinates, or nil when the ray misses.
     func hit(from start: SIMD3<Float>, to end: SIMD3<Float>, bones: [SCNNode]) -> SIMD2<Float>? {
         guard !bones.isEmpty else { return nil }
         return hit(from: start, to: end, posed: skinned(bones: bones))
     }
 
-    /// The same, against vertices already skinned, for a caller that tests many rays against one
-    /// pose and does not want the skinning done again for each.
     func hit(from start: SIMD3<Float>, to end: SIMD3<Float>, posed: [SIMD3<Float>]) -> SIMD2<Float>? {
         let direction = end - start
         var best: (distance: Float, uv: SIMD2<Float>)?
@@ -125,7 +107,6 @@ struct DuoScreenHitMesh {
             if best == nil || hit.distance < best!.distance {
                 guard first.uv < textureCoordinates.count, second.uv < textureCoordinates.count,
                       third.uv < textureCoordinates.count else { continue }
-                // The same weights that place the point on the triangle place it in the picture.
                 let uv = textureCoordinates[first.uv] * (1 - hit.u - hit.v)
                     + textureCoordinates[second.uv] * hit.u
                     + textureCoordinates[third.uv] * hit.v
@@ -135,13 +116,10 @@ struct DuoScreenHitMesh {
         return best?.uv
     }
 
-    /// The vertices where they currently are, for framing the screen as it is posed rather than as
-    /// it was authored.
     func posedPositions(bones: [SCNNode]) -> [SIMD3<Float>] {
         skinned(bones: bones)
     }
 
-    /// The vertices where they currently are, rather than where they were authored.
     private func skinned(bones: [SCNNode]) -> [SIMD3<Float>] {
         let boneTransforms = bones.map { simd_float4x4($0.presentation.worldTransform) }
         return restPositions.indices.map { index in
