@@ -102,6 +102,37 @@
 - (void)unregisterIOSurfacesChangeCallbackWithUUID:(NSUUID *_Nonnull)uuid;
 @end
 
+/// A screen's backlight as CoreSimDeviceIO reports it. `state` is an integer whose values are read
+/// from a foldable on Xcode 27 (27A266a) rather than from any header.
+@protocol ODHSimScreenBacklight <NSObject>
+@property (nonatomic, readonly) int state;
+@property (nonatomic, readonly) double brightnessFactor;
+@end
+
+/// What a screen says about itself. On Xcode 27 (27A266a) the protocol carries these and more; only
+/// what is read is declared. Everything is nullable: the object is a remote proxy.
+@protocol ODHSimScreenProperties <NSObject>
+@property (nonatomic, readonly) unsigned int screenID;
+@property (nonatomic, readonly, nullable) NSString *name;
+@property (nonatomic, readonly, nullable) NSString *uniqueId;
+@property (nonatomic, readonly) int powerState;
+@property (nonatomic, readonly) unsigned int uiOrientation;
+@property (nonatomic, readonly) CGSize pixelSize;
+@property (nonatomic, readonly, nullable) id backlight;
+@end
+
+/// The new style screen callbacks a display port descriptor vends alongside the old ones, on Xcode
+/// 27 (27A266a). Every block argument is `id` and may be nil: the descriptor is a remote proxy.
+@protocol ODHSimScreen <NSObject>
+@property (nonatomic, readonly, nullable) id screenProperties;
+- (void)registerScreenCallbacksWithUUID:(NSUUID *_Nonnull)uuid
+                          callbackQueue:(dispatch_queue_t _Nonnull)queue
+                          frameCallback:(void (^_Nonnull)(void))frameCallback
+                surfacesChangedCallback:(void (^_Nonnull)(id _Nullable, id _Nullable))surfacesChangedCallback
+              propertiesChangedCallback:(void (^_Nonnull)(id _Nullable))propertiesChangedCallback;
+- (void)unregisterScreenCallbacksWithUUID:(NSUUID *_Nonnull)uuid;
+@end
+
 @protocol ODHSimDeviceIOPortDescriptor <NSObject>
 @property (nonatomic, readonly, nullable) id state;
 @end

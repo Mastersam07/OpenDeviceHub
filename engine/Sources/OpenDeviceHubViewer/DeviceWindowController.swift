@@ -588,6 +588,11 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     public var screenPixelSize: CGSize { session.pixelSize }
 
+    /// What each of the window's panels announces about itself, the unfolded one first.
+    public var screenChanges: [AsyncStream<ScreenProperties>] {
+        [session.screenChanges] + (cover.map { [$0.session.screenChanges] } ?? [])
+    }
+
     /// The turn between the framebuffer a touch is addressed in and the layout the guest shows.
     public var layoutTurn: DeviceOrientation {
         Self.shown(orientation, nativeRotation: panelBuildAngle)
