@@ -15,8 +15,19 @@ under it until the next heading becomes that version's release notes in the upda
 - Recording the iPhone Duo records the screen it is using, follows it through a fold, and keeps the
   picture the right way up.
 - A window opens the way its device is already turned, instead of assuming it is upright.
+- Device, Shut Down shuts the open simulators down from the menu.
+- Favorite locations: save named coordinates in Settings and choose them from Features, Location.
+- Screenshots and recordings each have their own folder in Settings, starting from the folder you
+  had already chosen, and Save Screen can put the picture on the clipboard instead of in a file.
+- Clipboard sync can be turned on or off in Settings as well as from the Edit menu, and the two stay
+  in step.
+- The screen shown while a device is shut down or starting stays inside its rounded corners.
+- The Settings window can be resized, and scrolls.
 - The disk image opens as an installer window: drag the app onto Applications. The mounted disk
   shows the app's icon.
+
+Shut Down, favorite locations and the capture and clipboard settings were contributed by
+@stephen-zeng.
 
 ## 0.1.0
 
