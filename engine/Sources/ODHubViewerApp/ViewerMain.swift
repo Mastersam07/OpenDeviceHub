@@ -231,7 +231,10 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 saveScreenshot: {
-                    present(manager.saveScreenshots(into: CaptureStaging.directory()))
+                    present(manager.saveScreenshots(
+                        into: CaptureStaging.directory(),
+                        copyToClipboard: settings.copiesScreenshotsToClipboard
+                    ))
                 },
                 copyScreenshot: {
                     print(manager.copyScreenshotToClipboard() ? "screenshot copied" : "nothing to copy")
@@ -486,6 +489,7 @@ struct ODHubViewer: ParsableCommand {
                         automaticUpdates: updates.map { updater in { updater.checksAutomatically } },
                         setAutomaticUpdates: updates.map { updater in { updater.checksAutomatically = $0 } },
                         checkForUpdates: updates.map { updater in { updater.checkForUpdates() } },
+                        setPasteboardSync: { pasteboard.setAutomatic($0) },
                         forgetWindowPositions: { store.forgetAll() },
                         rememberedWindowCount: { store.rememberedCount },
                         openLinks: deviceLinks
@@ -634,6 +638,7 @@ struct ODHubViewer: ParsableCommand {
             udid: device.udid,
             manager: manager,
             adapter: adapter,
+            copyScreenshotsToClipboard: { manager.copiesScreenshotsToClipboard },
             rotate: rotate,
             present: present
         )
@@ -755,6 +760,7 @@ private func installToolbar(
     udid: String,
     manager: DeviceWindowManager,
     adapter: any SimulatorAdapter,
+    copyScreenshotsToClipboard: @escaping @MainActor () -> Bool,
     rotate: @escaping @MainActor (DeviceOrientation, String) -> Void,
     present: @escaping @MainActor ([URL]) -> Void
 ) {
@@ -780,7 +786,11 @@ private func installToolbar(
             }
         },
         saveScreenshot: {
-            present(manager.saveScreenshots(into: CaptureStaging.directory(), only: udid))
+            present(manager.saveScreenshots(
+                into: CaptureStaging.directory(),
+                only: udid,
+                copyToClipboard: copyScreenshotsToClipboard()
+            ))
         },
         stopRecording: {
             present(manager.toggleRecording(into: CaptureStaging.directory()))

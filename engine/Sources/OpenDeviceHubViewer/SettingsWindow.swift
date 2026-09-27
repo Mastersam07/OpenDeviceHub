@@ -9,6 +9,7 @@ public struct SettingsActions {
     public var automaticUpdates: (() -> Bool)?
     public var setAutomaticUpdates: ((Bool) -> Void)?
     public var checkForUpdates: (() -> Void)?
+    public var setPasteboardSync: ((Bool) -> Void)?
     public var forgetWindowPositions: () -> Void
     public var rememberedWindowCount: () -> Int
     public var openLinks: DefaultDeviceApplication?
@@ -17,6 +18,7 @@ public struct SettingsActions {
         automaticUpdates: (() -> Bool)? = nil,
         setAutomaticUpdates: ((Bool) -> Void)? = nil,
         checkForUpdates: (() -> Void)? = nil,
+        setPasteboardSync: ((Bool) -> Void)? = nil,
         forgetWindowPositions: @escaping () -> Void,
         rememberedWindowCount: @escaping () -> Int,
         openLinks: DefaultDeviceApplication? = nil
@@ -24,6 +26,7 @@ public struct SettingsActions {
         self.automaticUpdates = automaticUpdates
         self.setAutomaticUpdates = setAutomaticUpdates
         self.checkForUpdates = checkForUpdates
+        self.setPasteboardSync = setPasteboardSync
         self.forgetWindowPositions = forgetWindowPositions
         self.rememberedWindowCount = rememberedWindowCount
         self.openLinks = openLinks
@@ -68,6 +71,8 @@ private struct SettingsView: View {
 
     @State private var shutsDownOnWindowClose: Bool
     @State private var bootsMostRecentOnStart: Bool
+    @State private var syncsPasteboard: Bool
+    @State private var copiesScreenshotsToClipboard: Bool
     @State private var automaticUpdates: Bool
     @State private var captureDirectory: URL?
     @State private var rememberedWindows: Int
@@ -79,6 +84,8 @@ private struct SettingsView: View {
         self.actions = actions
         _shutsDownOnWindowClose = State(initialValue: settings.shutsDownOnWindowClose)
         _bootsMostRecentOnStart = State(initialValue: settings.bootsMostRecentOnStart)
+        _syncsPasteboard = State(initialValue: settings.syncsPasteboard)
+        _copiesScreenshotsToClipboard = State(initialValue: settings.copiesScreenshotsToClipboard)
         _automaticUpdates = State(initialValue: actions.automaticUpdates?() ?? false)
         _captureDirectory = State(initialValue: settings.captureDirectory)
         _rememberedWindows = State(initialValue: actions.rememberedWindowCount())
@@ -109,6 +116,15 @@ private struct SettingsView: View {
             }
 
             Section("Screenshots and recordings") {
+                Toggle("Copy screenshots to the clipboard", isOn: Binding(
+                    get: { copiesScreenshotsToClipboard },
+                    set: { value in
+                        settings.copiesScreenshotsToClipboard = value
+                        copiesScreenshotsToClipboard = value
+                    }
+                ))
+                .help("Save Screen also places the captured image on the Mac clipboard.")
+
                 LabeledContent {
                     HStack(spacing: 8) {
                         if captureDirectory != nil {
@@ -129,6 +145,18 @@ private struct SettingsView: View {
                             .truncationMode(.middle)
                     }
                 }
+            }
+
+            Section("Pasteboard") {
+                Toggle("Automatically sync the Mac and device pasteboards", isOn: Binding(
+                    get: { syncsPasteboard },
+                    set: { value in
+                        settings.syncsPasteboard = value
+                        actions.setPasteboardSync?(value)
+                        syncsPasteboard = value
+                    }
+                ))
+                .help("Copies made on either side are sent to the other side automatically.")
             }
 
             Section("Windows") {

@@ -29,6 +29,9 @@ public final class DeviceWindowManager {
 
     public var openCount: Int { controllers.count }
 
+    /// Current screenshot preference, read by per-window toolbar actions at invocation time.
+    public var copiesScreenshotsToClipboard: Bool { settings.copiesScreenshotsToClipboard }
+
     public func isOpen(_ udid: String) -> Bool {
         controllers[udid] != nil
     }
@@ -265,12 +268,19 @@ public final class DeviceWindowManager {
     public func saveScreenshots(
         into directory: URL,
         date: Date = Date(),
-        only udid: String? = nil
+        only udid: String? = nil,
+        copyToClipboard: Bool = false
     ) -> [URL] {
         var written: [URL] = []
         let chosen = udid.map { controllers[$0].map { [$0] } ?? [] } ?? Array(controllers.values)
         for controller in chosen {
             guard let data = controller.screenshotPNG() else { continue }
+            // Copying is deliberately done from the same PNG bytes that are written to disk, so the
+            // two actions cannot disagree about bezel/chrome or pixel dimensions.
+            if copyToClipboard, let image = NSImage(data: data) {
+                NSPasteboard.general.clearContents()
+                _ = NSPasteboard.general.writeObjects([image])
+            }
             let url = directory.appending(path: ScreenshotWriter.fileName(
                 deviceName: controller.deviceTitle,
                 date: date

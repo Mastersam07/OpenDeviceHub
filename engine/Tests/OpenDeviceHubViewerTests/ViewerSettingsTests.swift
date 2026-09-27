@@ -11,6 +11,7 @@ final class ViewerSettingsTests: XCTestCase {
         let settings = settings()
         XCTAssertTrue(settings.shutsDownOnWindowClose)
         XCTAssertTrue(settings.bootsMostRecentOnStart)
+        XCTAssertFalse(settings.copiesScreenshotsToClipboard)
         XCTAssertNil(settings.captureDirectory)
     }
 
@@ -36,6 +37,13 @@ final class ViewerSettingsTests: XCTestCase {
         let settings = settings()
         settings.shutsDownOnWindowClose = false
         XCTAssertTrue(settings.bootsMostRecentOnStart)
+    }
+
+    func testCopyScreenshotsPreferenceSurvivesBeingTurnedOn() {
+        let settings = settings()
+        settings.copiesScreenshotsToClipboard = true
+        XCTAssertTrue(settings.copiesScreenshotsToClipboard)
+        XCTAssertEqual(settings.syncsPasteboard, true)
     }
 
     func testTheCaptureDirectoryRoundTrips() {
