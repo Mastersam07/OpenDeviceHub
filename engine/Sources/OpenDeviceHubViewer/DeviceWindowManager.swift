@@ -6,6 +6,7 @@ import OpenDeviceHubEngine
 @MainActor
 public final class DeviceWindowManager {
     private var controllers: [String: DeviceWindowController] = [:]
+    private var deviceTypes: [String: String] = [:]
     private var followTask: Task<Void, Never>?
     // Held because a notifier closes itself when it goes, which would end the stream silently.
     private var notifier: (any DeviceNotifier)?
@@ -79,6 +80,7 @@ public final class DeviceWindowManager {
         )
         controller.onClose = { [weak self] udid in
             self?.controllers.removeValue(forKey: udid)
+            self?.deviceTypes.removeValue(forKey: udid)
             self?.shutdownIfAsked(udid)
             self?.onDeviceClosed?(udid)
         }
@@ -89,6 +91,7 @@ public final class DeviceWindowManager {
             self?.report("\(device.name) stopped taking input")
         }
         controllers[device.udid] = controller
+        deviceTypes[device.udid] = device.deviceTypeIdentifier
 
         // Only place the window when nothing was remembered for this device, so a window the user
         // moved stays where they put it.
@@ -242,6 +245,10 @@ public final class DeviceWindowManager {
     public var openUDIDs: [String] { Array(controllers.keys) }
 
     public func controller(for udid: String) -> DeviceWindowController? { controllers[udid] }
+
+    public func hasCameraControl(_ udid: String) -> Bool {
+        deviceTypes[udid].map { DeviceTypeProfile.hasCameraControl(deviceType: $0) } ?? false
+    }
     /// The device the user is looking at, which is where an action that can only land on one goes.
     public var frontmostUDID: String? {
         controllers.first { $0.value.window?.isKeyWindow == true }?.key ?? controllers.keys.first
