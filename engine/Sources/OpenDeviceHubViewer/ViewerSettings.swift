@@ -32,6 +32,13 @@ public struct ViewerSettings: Sendable {
         nonmutating set { setFlag("syncsPasteboard", newValue) }
     }
 
+    /// Saves a still capture to the Mac clipboard instead of creating a screenshot file. The
+    /// explicit Copy Screen menu item is always available; this preference controls Save Screen.
+    public var savesScreenshotsToClipboard: Bool {
+        get { flag("savesScreenshotsToClipboard", default: false) }
+        nonmutating set { setFlag("savesScreenshotsToClipboard", newValue) }
+    }
+
     /// With nothing booted, opening the app starts the simulator you had last. Turn it off and a
     /// launch with nothing running opens no window.
     public var bootsMostRecentOnStart: Bool {
@@ -39,8 +46,8 @@ public struct ViewerSettings: Sendable {
         nonmutating set { setFlag("bootMostRecentOnStart", newValue) }
     }
 
-    /// Where screenshots and recordings are written. Empty means the Desktop, which is where they
-    /// went before this was a choice.
+    /// Legacy shared capture location retained for backwards-compatible migration. New settings
+    /// should use `screenshotDirectory` and `recordingDirectory` independently.
     public var captureDirectory: URL? {
         get {
             guard let path = storage.text(forKey: prefix + "captureDirectory"), !path.isEmpty else {
@@ -59,6 +66,20 @@ public struct ViewerSettings: Sendable {
             while path.count > 1, path.hasSuffix("/") { path.removeLast() }
             storage.setText(path, forKey: prefix + "captureDirectory")
         }
+    }
+
+    /// Where screenshots are written. Existing installs using `captureDirectory` are migrated
+    /// lazily by reading that value until a dedicated choice is made.
+    public var screenshotDirectory: URL? {
+        get { directory("screenshotDirectory", fallingBackTo: captureDirectory) }
+        nonmutating set { setDirectory(newValue, key: "screenshotDirectory") }
+    }
+
+    /// Where recordings are written. Existing installs using `captureDirectory` are migrated
+    /// lazily by reading that value until a dedicated choice is made.
+    public var recordingDirectory: URL? {
+        get { directory("recordingDirectory", fallingBackTo: captureDirectory) }
+        nonmutating set { setDirectory(newValue, key: "recordingDirectory") }
     }
 
     /// Stored as the port index, since a port's UUID is minted fresh on every boot.
@@ -89,6 +110,22 @@ public struct ViewerSettings: Sendable {
         }
     }
 
+    /// Named coordinates shown in Features > Location.
+    public var locationFavorites: [LocationFavorite] {
+        get {
+            guard let text = storage.text(forKey: prefix + "locationFavorites"),
+                  let data = text.data(using: .utf8),
+                  let values = try? JSONDecoder().decode([LocationFavorite].self, from: data)
+            else { return [] }
+            return values
+        }
+        nonmutating set {
+            guard let data = try? JSONEncoder().encode(newValue),
+                  let text = String(data: data, encoding: .utf8) else { return }
+            storage.setText(text, forKey: prefix + "locationFavorites")
+        }
+    }
+
     private func flag(_ name: String, default fallback: Bool) -> Bool {
         switch storage.text(forKey: prefix + name) {
         case "true": true
@@ -99,6 +136,37 @@ public struct ViewerSettings: Sendable {
 
     private func setFlag(_ name: String, _ value: Bool) {
         storage.setText(value ? "true" : "false", forKey: prefix + name)
+    }
+
+    /// Nothing stored falls back to the shared folder older versions used; an empty value is a
+    /// deliberate choice of the Desktop.
+    private func directory(_ key: String, fallingBackTo legacy: URL?) -> URL? {
+        guard let stored = storage.text(forKey: prefix + key) else { return legacy }
+        return stored.isEmpty ? nil : URL(fileURLWithPath: stored, isDirectory: true)
+    }
+
+    private func setDirectory(_ value: URL?, key: String) {
+        guard let value else {
+            storage.setText("", forKey: prefix + key)
+            return
+        }
+        var path = value.standardizedFileURL.path(percentEncoded: false)
+        while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        storage.setText(path, forKey: prefix + key)
+    }
+}
+
+public struct LocationFavorite: Codable, Equatable, Identifiable, Sendable {
+    public let id: UUID
+    public var name: String
+    public var latitude: Double
+    public var longitude: Double
+
+    public init(id: UUID = UUID(), name: String, latitude: Double, longitude: Double) {
+        self.id = id
+        self.name = name
+        self.latitude = latitude
+        self.longitude = longitude
     }
 }
 

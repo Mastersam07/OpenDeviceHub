@@ -11,6 +11,7 @@ final class ViewerSettingsTests: XCTestCase {
         let settings = settings()
         XCTAssertTrue(settings.shutsDownOnWindowClose)
         XCTAssertTrue(settings.bootsMostRecentOnStart)
+        XCTAssertFalse(settings.savesScreenshotsToClipboard)
         XCTAssertNil(settings.captureDirectory)
     }
 
@@ -38,6 +39,53 @@ final class ViewerSettingsTests: XCTestCase {
         XCTAssertTrue(settings.bootsMostRecentOnStart)
     }
 
+    func testSaveScreenshotsToClipboardPreferenceSurvivesBeingTurnedOn() {
+        let settings = settings()
+        settings.savesScreenshotsToClipboard = true
+        XCTAssertTrue(settings.savesScreenshotsToClipboard)
+    }
+
+    func testBothFoldersStartAtTheSharedFolderOlderVersionsSaved() {
+        let storage = InMemoryPreferences()
+        let shared = URL(fileURLWithPath: "/Users/someone/Captures", isDirectory: true)
+        ViewerSettings(storage: storage, prefix: "test.").captureDirectory = shared
+
+        let settings = ViewerSettings(storage: storage, prefix: "test.")
+        XCTAssertEqual(settings.screenshotDirectory, shared)
+        XCTAssertEqual(settings.recordingDirectory, shared)
+    }
+
+    func testChoosingOneFolderLeavesTheOtherAlone() {
+        let storage = InMemoryPreferences()
+        let shared = URL(fileURLWithPath: "/Users/someone/Captures", isDirectory: true)
+        let stills = URL(fileURLWithPath: "/Users/someone/Stills", isDirectory: true)
+        let settings = ViewerSettings(storage: storage, prefix: "test.")
+        settings.captureDirectory = shared
+
+        settings.screenshotDirectory = stills
+
+        XCTAssertEqual(settings.screenshotDirectory, stills)
+        XCTAssertEqual(settings.recordingDirectory, shared)
+    }
+
+    func testUsingTheDesktopForOneFolderOverridesTheSharedOne() {
+        let storage = InMemoryPreferences()
+        let settings = ViewerSettings(storage: storage, prefix: "test.")
+        settings.captureDirectory = URL(fileURLWithPath: "/Users/someone/Captures", isDirectory: true)
+
+        settings.recordingDirectory = nil
+
+        XCTAssertNil(ViewerSettings(storage: storage, prefix: "test.").recordingDirectory)
+        XCTAssertNotNil(ViewerSettings(storage: storage, prefix: "test.").screenshotDirectory)
+    }
+
+    func testAFolderIsStoredWithoutATrailingSlash() {
+        let storage = InMemoryPreferences()
+        ViewerSettings(storage: storage, prefix: "test.").screenshotDirectory =
+            URL(fileURLWithPath: "/Users/someone/Stills/", isDirectory: true)
+        XCTAssertEqual(storage.text(forKey: "test.screenshotDirectory"), "/Users/someone/Stills")
+    }
+
     func testTheCaptureDirectoryRoundTrips() {
         let settings = settings()
         let chosen = URL(fileURLWithPath: "/Users/someone/My Captures", isDirectory: true)
@@ -60,6 +108,28 @@ final class ViewerSettingsTests: XCTestCase {
         let storage = InMemoryPreferences()
         storage.setText("", forKey: "test.captureDirectory")
         XCTAssertNil(ViewerSettings(storage: storage, prefix: "test.").captureDirectory)
+    }
+
+    func testLocationFavoritesRoundTripInOrder() {
+        let storage = InMemoryPreferences()
+        let settings = ViewerSettings(storage: storage, prefix: "test.")
+        let favorites = [
+            LocationFavorite(name: "Cupertino", latitude: 37.3349, longitude: -122.0090),
+            LocationFavorite(name: "London", latitude: 51.5072, longitude: -0.1276),
+        ]
+
+        settings.locationFavorites = favorites
+
+        XCTAssertEqual(ViewerSettings(storage: storage, prefix: "test.").locationFavorites, favorites)
+    }
+
+    func testMissingOrMalformedLocationFavoritesReadAsEmpty() {
+        let storage = InMemoryPreferences()
+        let settings = ViewerSettings(storage: storage, prefix: "test.")
+        XCTAssertTrue(settings.locationFavorites.isEmpty)
+
+        storage.setText("not json", forKey: "test.locationFavorites")
+        XCTAssertTrue(settings.locationFavorites.isEmpty)
     }
 }
 

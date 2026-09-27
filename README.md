@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Mastersam07/OpenDeviceHub/releases/download/v0.1.0/OpenDeviceHub-0.1.0.dmg">
+  <a href="https://github.com/Mastersam07/OpenDeviceHub/releases/latest/download/OpenDeviceHub.dmg">
     <img src="icons/download-button.png" width="332" alt="Download for macOS">
   </a>
 </p>
@@ -30,7 +30,7 @@
 
 ## Install
 
-Download [OpenDeviceHub-0.1.0.dmg](https://github.com/Mastersam07/OpenDeviceHub/releases/download/v0.1.0/OpenDeviceHub-0.1.0.dmg),
+Download [OpenDeviceHub.dmg](https://github.com/Mastersam07/OpenDeviceHub/releases/latest/download/OpenDeviceHub.dmg),
 drag OpenDeviceHub to Applications and launch it. Every version, with its checksums, is on
 [Releases](https://github.com/Mastersam07/OpenDeviceHub/releases). The app is signed with a Developer ID certificate and
 notarized, so there is no Gatekeeper warning, and it updates itself from the app menu.
@@ -66,11 +66,13 @@ simulators.
   two lists follow each other, so a device an installed runtime cannot run is never offered.
 - **Screenshots and recordings**: a capture appears beside the window first, where you can open,
   copy, save it elsewhere, reveal it in the Finder or throw it away. Left alone it files itself. The
-  folder is yours to choose.
+  folder is yours to choose. Settings independently choose screenshot and recording folders, or can
+  make Save Screen write the image to the Mac clipboard without creating a screenshot file.
 - **The clipboard stays in step**: copy on the Mac and it is on the device; copy on the device and it
   is on the Mac when you switch to another app. Or do it by hand from Edit.
 - **Settings**: whether closing a window shuts the device down, whether launching opens the
-  simulator you had last, where captures go, and which app opens device links.
+  simulator you had last, where captures go, whether screenshots are saved to the clipboard instead,
+  whether pasteboards stay in sync, and which app opens device links.
 - **Drag and drop**: drop a file or a link onto a device to open it there.
 - **Follows the device**: shut a simulator down from anywhere and its window says so and offers to
   start it again; boot it and the window reattaches on its own.

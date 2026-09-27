@@ -42,12 +42,15 @@ public enum ViewerMenu {
         public var hasCameraControl: () -> Bool
         public var rotate: (Bool) -> Void
         public var restart: () -> Void
+        public var shutdown: () -> Void
         public var erase: () -> Void
         public var stepTextSize: (SimctlService.ContentSizeStep) -> Void
         public var toggleIncreaseContrast: () -> Void
         public var triggerICloudSync: () -> Void
         public var setLocation: (SimctlService.LocationScenario?) -> Void
         public var setCustomLocation: () -> Void
+        public var locationFavorites: () -> [LocationFavorite]
+        public var setFavoriteLocation: (LocationFavorite) -> Void
         public var toggleKeyboardInput: (Bool) -> Void
         public var toggleHardwareKeyboard: (Bool) -> Void
         public var matchKeyboardLanguage: (Bool) -> Void
@@ -87,12 +90,15 @@ public enum ViewerMenu {
             hasCameraControl: @escaping () -> Bool = { false },
             rotate: @escaping (Bool) -> Void,
             restart: @escaping () -> Void,
+            shutdown: @escaping () -> Void = {},
             erase: @escaping () -> Void,
             stepTextSize: @escaping (SimctlService.ContentSizeStep) -> Void,
             toggleIncreaseContrast: @escaping () -> Void,
             triggerICloudSync: @escaping () -> Void,
             setLocation: @escaping (SimctlService.LocationScenario?) -> Void,
             setCustomLocation: @escaping () -> Void,
+            locationFavorites: @escaping () -> [LocationFavorite] = { [] },
+            setFavoriteLocation: @escaping (LocationFavorite) -> Void = { _ in },
             toggleKeyboardInput: @escaping (Bool) -> Void,
             toggleHardwareKeyboard: @escaping (Bool) -> Void,
             matchKeyboardLanguage: @escaping (Bool) -> Void,
@@ -129,12 +135,15 @@ public enum ViewerMenu {
             self.hasCameraControl = hasCameraControl
             self.rotate = rotate
             self.restart = restart
+            self.shutdown = shutdown
             self.erase = erase
             self.stepTextSize = stepTextSize
             self.toggleIncreaseContrast = toggleIncreaseContrast
             self.triggerICloudSync = triggerICloudSync
             self.setLocation = setLocation
             self.setCustomLocation = setCustomLocation
+            self.locationFavorites = locationFavorites
+            self.setFavoriteLocation = setFavoriteLocation
             self.toggleKeyboardInput = toggleKeyboardInput
             self.toggleHardwareKeyboard = toggleHardwareKeyboard
             self.matchKeyboardLanguage = matchKeyboardLanguage
@@ -274,7 +283,7 @@ public enum ViewerMenu {
         }
         // Both are the manual halves of the sync, so they are redundant while it is on. Simulator.app
         // greys them for the same reason.
-        target.trackPasteboardItems(get: getItem, send: sendItem)
+        target.trackPasteboardItems(sync: syncItem, get: getItem, send: sendItem)
 
         editMenu.addItem(.separator())
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
@@ -284,6 +293,7 @@ public enum ViewerMenu {
         let deviceItem = NSMenuItem()
         let deviceMenu = NSMenu(title: "Device")
         deviceMenu.addItem(target.item("Restart", #selector(MenuTarget.restart), "", []))
+        deviceMenu.addItem(target.item("Shut Down", #selector(MenuTarget.shutdown), "", []))
         deviceMenu.addItem(target.item("Erase All Content and Settings\u{2026}", #selector(MenuTarget.erase), "", []))
         deviceMenu.addItem(.separator())
         let rotateLeft = target.item("Rotate Left", #selector(MenuTarget.rotateLeft), String(UnicodeScalar(NSLeftArrowFunctionKey)!), [.command])
@@ -392,15 +402,9 @@ public enum ViewerMenu {
 
         let locationItem = NSMenuItem(title: "Location", action: nil, keyEquivalent: "")
         let locationMenu = NSMenu(title: "Location")
-        locationMenu.addItem(target.item("None", #selector(MenuTarget.clearLocation), "", []))
-        locationMenu.addItem(target.item("Custom Location\u{2026}", #selector(MenuTarget.customLocation), "", []))
-        locationMenu.addItem(.separator())
-        for scenario in SimctlService.LocationScenario.allCases {
-            let item = target.item(scenario.rawValue, #selector(MenuTarget.locationScenario(_:)), "", [])
-            item.representedObject = scenario.rawValue
-            locationMenu.addItem(item)
-        }
         locationItem.submenu = locationMenu
+        target.trackLocationMenu(locationItem, in: locationMenu)
+        target.rebuildLocationMenu()
         featuresMenu.addItem(locationItem)
         featuresItem.submenu = featuresMenu
         bar.addItem(featuresItem)
@@ -520,10 +524,12 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private var matchesKeyboardLanguage = true
     private weak var getPasteboardItem: NSMenuItem?
     private weak var sendPasteboardItem: NSMenuItem?
-    private lazy var syncsPasteboardNow = actions.syncsPasteboard()
+    private weak var syncPasteboardItem: NSMenuItem?
     private weak var screenItem: NSMenuItem?
     private weak var cameraControlItem: NSMenuItem?
     private weak var deviceMenu: NSMenu?
+    private weak var locationItem: NSMenuItem?
+    private weak var locationMenu: NSMenu?
 
     init(actions: ViewerMenu.Actions, commandLineTool: CommandLineToolMenu? = nil) {
         self.actions = actions
@@ -544,6 +550,12 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
         menu.delegate = self
     }
 
+    func trackLocationMenu(_ item: NSMenuItem, in menu: NSMenu) {
+        locationItem = item
+        locationMenu = menu
+        menu.delegate = self
+    }
+
     func trackCameraControlItem(_ item: NSMenuItem) {
         cameraControlItem = item
         item.isHidden = !actions.hasCameraControl()
@@ -555,7 +567,34 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
             rebuildScreenMenu()
             return
         }
+        if menu === locationMenu {
+            rebuildLocationMenu()
+            return
+        }
         retitleCommandLineToolItem()
+    }
+
+    func rebuildLocationMenu() {
+        guard let menu = locationMenu else { return }
+        menu.removeAllItems()
+        menu.addItem(item("None", #selector(MenuTarget.clearLocation), "", []))
+        menu.addItem(item("Custom Location\u{2026}", #selector(MenuTarget.customLocation), "", []))
+        let favorites = actions.locationFavorites()
+        if !favorites.isEmpty {
+            menu.addItem(.separator())
+            for favorite in favorites {
+                let entry = item(favorite.name, #selector(MenuTarget.favoriteLocation(_:)), "", [])
+                entry.representedObject = favorite
+                entry.toolTip = String(format: "%.5f, %.5f", favorite.latitude, favorite.longitude)
+                menu.addItem(entry)
+            }
+        }
+        menu.addItem(.separator())
+        for scenario in SimctlService.LocationScenario.allCases {
+            let entry = item(scenario.rawValue, #selector(MenuTarget.locationScenario(_:)), "", [])
+            entry.representedObject = scenario.rawValue
+            menu.addItem(entry)
+        }
     }
 
     private func rebuildScreenMenu() {
@@ -657,12 +696,17 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     @objc func cameraControl() { actions.pressButton(.cameraControl) }
     @objc func appSwitcher() { actions.appSwitcher() }
     @objc func restart() { actions.restart() }
+    @objc func shutdown() { actions.shutdown() }
     @objc func erase() { actions.erase() }
     @objc func textSizeUp() { actions.stepTextSize(.increment) }
     @objc func textSizeDown() { actions.stepTextSize(.decrement) }
     @objc func iCloudSync() { actions.triggerICloudSync() }
     @objc func clearLocation() { actions.setLocation(nil) }
     @objc func customLocation() { actions.setCustomLocation() }
+    @objc func favoriteLocation(_ sender: NSMenuItem) {
+        guard let favorite = sender.representedObject as? LocationFavorite else { return }
+        actions.setFavoriteLocation(favorite)
+    }
     @objc func newSimulator() { actions.newSimulator?() }
 
     /// Both start on, because that is what the app does before anyone touches the menu.
@@ -672,17 +716,19 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
         actions.toggleKeyboardInput(sendsKeyboardInput)
     }
 
-    var syncsPasteboard: Bool { syncsPasteboardNow }
+    /// Read from the setting each time, because Settings changes it as well as this menu.
+    var syncsPasteboard: Bool { actions.syncsPasteboard() }
 
-    func trackPasteboardItems(get: NSMenuItem, send: NSMenuItem) {
+    func trackPasteboardItems(sync: NSMenuItem, get: NSMenuItem, send: NSMenuItem) {
+        syncPasteboardItem = sync
         getPasteboardItem = get
         sendPasteboardItem = send
     }
 
     @objc func automaticPasteboardSync(_ sender: NSMenuItem) {
-        syncsPasteboardNow.toggle()
-        sender.state = syncsPasteboardNow ? .on : .off
-        actions.toggleAutomaticPasteboardSync(syncsPasteboardNow)
+        let syncs = !syncsPasteboard
+        sender.state = syncs ? .on : .off
+        actions.toggleAutomaticPasteboardSync(syncs)
     }
 
     @objc func getPasteboard() { actions.getPasteboard() }
@@ -719,8 +765,12 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
 
     public func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item === stopRecordingItem { return actions.isRecording() }
+        if item === syncPasteboardItem {
+            item.state = syncsPasteboard ? .on : .off
+            return item.action != nil
+        }
         if item === getPasteboardItem || item === sendPasteboardItem {
-            return item.action != nil && !syncsPasteboardNow
+            return item.action != nil && !syncsPasteboard
         }
         return item.action != nil
     }

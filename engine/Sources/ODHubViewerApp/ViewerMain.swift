@@ -112,8 +112,8 @@ struct ODHubViewer: ParsableCommand {
 
             let previews = CapturePreviewPresenter(report: { print($0) })
             let present: @MainActor ([URL]) -> Void = { urls in
-                let destination = recordingDirectory(settings)
                 for url in urls {
+                    let destination = captureDirectory(for: url, settings: settings)
                     previews.show(
                         PendingCapture(temporary: url, destination: destination),
                         beside: NSApp.keyWindow ?? manager.openUDIDs.first.flatMap(manager.controller(for:))?.window
@@ -240,7 +240,11 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 saveScreenshot: {
-                    present(manager.saveScreenshots(into: CaptureStaging.directory()))
+                    if settings.savesScreenshotsToClipboard {
+                        print(manager.copyScreenshotToClipboard() ? "screenshot saved to clipboard" : "nothing to save")
+                    } else {
+                        present(manager.saveScreenshots(into: CaptureStaging.directory()))
+                    }
                 },
                 copyScreenshot: {
                     print(manager.copyScreenshotToClipboard() ? "screenshot copied" : "nothing to copy")
@@ -322,6 +326,11 @@ struct ODHubViewer: ParsableCommand {
                         runOnEveryDevice("restart", udid) { try SimctlService().restart(udid: $0) }
                     }
                 },
+                shutdown: {
+                    for udid in manager.openUDIDs {
+                        runOnEveryDevice("shutdown", udid) { try SimctlService().shutdown(udid: $0) }
+                    }
+                },
                 erase: {
                     // Destructive and not undoable, so it asks, names the device, and Erase is not
                     // the default button.
@@ -378,6 +387,18 @@ struct ODHubViewer: ParsableCommand {
                             try SimctlService().setLocation(
                                 latitude: point.latitude,
                                 longitude: point.longitude,
+                                udid: $0
+                            )
+                        }
+                    }
+                },
+                locationFavorites: { settings.locationFavorites },
+                setFavoriteLocation: { favorite in
+                    for udid in manager.openUDIDs {
+                        runOnEveryDevice("location", udid) {
+                            try SimctlService().setLocation(
+                                latitude: favorite.latitude,
+                                longitude: favorite.longitude,
                                 udid: $0
                             )
                         }
@@ -481,6 +502,7 @@ struct ODHubViewer: ParsableCommand {
                         automaticUpdates: updates.map { updater in { updater.checksAutomatically } },
                         setAutomaticUpdates: updates.map { updater in { updater.checksAutomatically = $0 } },
                         checkForUpdates: updates.map { updater in { updater.checkForUpdates() } },
+                        setPasteboardSync: { pasteboard.setAutomatic($0) },
                         forgetWindowPositions: { store.forgetAll() },
                         rememberedWindowCount: { store.rememberedCount },
                         openLinks: deviceLinks
@@ -631,6 +653,7 @@ struct ODHubViewer: ParsableCommand {
             udid: device.udid,
             manager: manager,
             adapter: adapter,
+            saveScreenshotsToClipboard: { manager.savesScreenshotsToClipboard },
             rotate: rotate,
             present: present
         )
@@ -752,6 +775,7 @@ private func installToolbar(
     udid: String,
     manager: DeviceWindowManager,
     adapter: any SimulatorAdapter,
+    saveScreenshotsToClipboard: @escaping @MainActor () -> Bool,
     rotate: @escaping @MainActor (DeviceOrientation, String) -> Void,
     present: @escaping @MainActor ([URL]) -> Void
 ) {
@@ -777,7 +801,11 @@ private func installToolbar(
             }
         },
         saveScreenshot: {
-            present(manager.saveScreenshots(into: CaptureStaging.directory(), only: udid))
+            if saveScreenshotsToClipboard() {
+                print(manager.copyScreenshotToClipboard(only: udid) ? "screenshot saved to clipboard" : "nothing to save")
+            } else {
+                present(manager.saveScreenshots(into: CaptureStaging.directory(), only: udid))
+            }
         },
         stopRecording: {
             present(manager.toggleRecording(into: CaptureStaging.directory()))
@@ -852,8 +880,11 @@ enum CaptureStaging {
     }
 }
 
-private func recordingDirectory(_ settings: ViewerSettings = ViewerSettings()) -> URL {
-    if let chosen = settings.captureDirectory,
+private func captureDirectory(for capture: URL, settings: ViewerSettings = ViewerSettings()) -> URL {
+    let chosen = capture.pathExtension.lowercased() == "mov"
+        ? settings.recordingDirectory
+        : settings.screenshotDirectory
+    if let chosen,
        FileManager.default.fileExists(atPath: chosen.path(percentEncoded: false)) {
         return chosen
     }
