@@ -19,8 +19,8 @@ under it until the next heading becomes that version's release notes in the upda
   cover screen and touches come back with the fold it was showing, and the clipboard sync picks up
   again.
 - Device, Shut Down shuts a simulator down from the menu.
-- Restart, Shut Down, Erase, the hardware buttons, rotation, Shake, location and text size act on
-  the simulator in front, not on every open one.
+- Every menu action acts on the simulator in front, not on every open one, and ticks such as Stay
+  On Top, Slow Animations and Connect Hardware Keyboard show that simulator's own setting.
 - Favorite locations: save named coordinates in Settings and choose them from Features, Location.
 - Screenshots and recordings each have their own folder in Settings, starting from the folder you
   had already chosen, and Save Screen can put the picture on the clipboard instead of in a file.
