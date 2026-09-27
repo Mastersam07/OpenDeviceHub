@@ -79,7 +79,9 @@ final class DeviceToolbar: NSObject, NSToolbarDelegate, NSToolbarItemValidation 
     }
 
     func install(on window: NSWindow) {
-        let toolbar = NSToolbar(identifier: "odh.device")
+        // AppKit keeps every toolbar with the same identifier in step, item by item, so one
+        // window's fold item coming and going would strip items off the others' toolbars.
+        let toolbar = NSToolbar(identifier: "odh.device.\(UUID().uuidString)")
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = false

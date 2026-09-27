@@ -51,4 +51,23 @@ final class DeviceToolbarFoldTests: XCTestCase {
         control?.sendAction(control?.action, to: control?.target)
         XCTAssertEqual(chosen, .partiallyOpen)
     }
+
+    /// AppKit keeps toolbars that share an identifier in step, so a fold item coming and going on
+    /// a foldable's window must not take an item off an ordinary window's toolbar next to it.
+    func testOneWindowsFoldPositionsLeaveAnotherWindowsToolbarAlone() {
+        let (foldable, foldableWindow) = makeToolbar()
+        let (ordinary, ordinaryWindow) = makeToolbar()
+        let before = ordinaryWindow.toolbar?.items.map(\.itemIdentifier.rawValue)
+        XCTAssertEqual(before?.count, 4)
+
+        foldable.setFoldModes(visible: true)
+        XCTAssertEqual(foldableWindow.toolbar?.items.count, 5)
+        XCTAssertEqual(ordinaryWindow.toolbar?.items.map(\.itemIdentifier.rawValue), before, "the other toolbar gained nothing")
+
+        foldable.setFoldModes(visible: false)
+        XCTAssertEqual(foldableWindow.toolbar?.items.count, 4)
+        XCTAssertEqual(ordinaryWindow.toolbar?.items.map(\.itemIdentifier.rawValue), before, "the other toolbar lost nothing")
+        XCTAssertFalse(ordinary.hasFoldModes)
+    }
 }
+
