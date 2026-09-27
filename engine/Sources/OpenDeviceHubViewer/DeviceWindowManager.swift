@@ -267,8 +267,17 @@ public final class DeviceWindowManager {
         deviceTypes[udid].map { DeviceTypeProfile.hasCameraControl(deviceType: $0) } ?? false
     }
     /// The device the user is looking at, which is where an action that can only land on one goes.
+    /// With Settings or an alert in front, that is the device window highest in the stack.
     public var frontmostUDID: String? {
-        controllers.first { $0.value.window?.isKeyWindow == true }?.key ?? controllers.keys.first
+        if let key = controllers.first(where: { $0.value.window?.isKeyWindow == true }) {
+            return key.key
+        }
+        for window in NSApplication.shared.orderedWindows {
+            if let shown = controllers.first(where: { $0.value.window === window }) {
+                return shown.key
+            }
+        }
+        return controllers.keys.first
     }
 
 

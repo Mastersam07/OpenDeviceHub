@@ -292,11 +292,9 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 shake: {
-                    let simctl = SimctlService()
-                    for udid in manager.openUDIDs {
-                        do { try simctl.shake(udid: udid) } catch {
-                            print("shake failed: \(error.localizedDescription)")
-                        }
+                    guard let udid = manager.frontmostUDID else { return }
+                    do { try SimctlService().shake(udid: udid) } catch {
+                        print("shake failed: \(error.localizedDescription)")
                     }
                 },
                 toggleSlowAnimations: {
@@ -309,17 +307,17 @@ struct ODHubViewer: ParsableCommand {
                 },
                 toggleLatencyOverlay: { manager.toggleLatencyOverlay() },
                 pressButton: { button in
-                    for udid in manager.openUDIDs where button != .cameraControl || manager.hasCameraControl(udid) {
-                        Task {
-                            do {
-                                guard let session = manager.controller(for: udid)?.inputSession
-                                else { return }
-                                try await session.button(button, phase: .down)
-                                try await Task.sleep(for: .milliseconds(15))
-                                try await session.button(button, phase: .up)
-                            } catch {
-                                print("\(button) failed: \(error.localizedDescription)")
-                            }
+                    guard let udid = manager.frontmostUDID,
+                          button != .cameraControl || manager.hasCameraControl(udid) else { return }
+                    Task {
+                        do {
+                            guard let session = manager.controller(for: udid)?.inputSession
+                            else { return }
+                            try await session.button(button, phase: .down)
+                            try await Task.sleep(for: .milliseconds(15))
+                            try await session.button(button, phase: .up)
+                        } catch {
+                            print("\(button) failed: \(error.localizedDescription)")
                         }
                     }
                 },
@@ -327,44 +325,39 @@ struct ODHubViewer: ParsableCommand {
                     manager.frontmostUDID.map { manager.hasCameraControl($0) } ?? false
                 },
                 rotate: { left in
-                    for udid in manager.openUDIDs {
-                        guard let controller = manager.controller(for: udid) else { continue }
-                        let next = left
-                            ? controller.currentOrientation.rotatedLeft
-                            : controller.currentOrientation.rotatedRight
-                        turn(next, udid)
-                    }
+                    guard let udid = manager.frontmostUDID,
+                          let controller = manager.controller(for: udid) else { return }
+                    let next = left
+                        ? controller.currentOrientation.rotatedLeft
+                        : controller.currentOrientation.rotatedRight
+                    turn(next, udid)
                 },
                 restart: {
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("restart", udid) { try SimctlService().restart(udid: $0) }
-                    }
+                    guard let udid = manager.frontmostUDID else { return }
+                    runOnEveryDevice("restart", udid) { try SimctlService().restart(udid: $0) }
                 },
                 shutdown: {
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("shutdown", udid) { try SimctlService().shutdown(udid: $0) }
-                    }
+                    guard let udid = manager.frontmostUDID else { return }
+                    runOnEveryDevice("shutdown", udid) { try SimctlService().shutdown(udid: $0) }
                 },
                 erase: {
                     // Destructive and not undoable, so it asks, names the device, and Erase is not
                     // the default button.
-                    for udid in manager.openUDIDs {
-                        guard let controller = manager.controller(for: udid) else { continue }
-                        let alert = NSAlert()
-                        alert.alertStyle = .warning
-                        alert.messageText = "Erase \(controller.deviceTitle)?"
-                        alert.informativeText = "Every app, setting and file on this simulator is deleted. This cannot be undone, and the device is left shut down."
-                        alert.addButton(withTitle: "Cancel")
-                        alert.addButton(withTitle: "Erase")
-                        guard alert.runModal() == .alertSecondButtonReturn else { continue }
-                        runOnEveryDevice("erase", udid) { try SimctlService().erase(udid: $0) }
-                    }
+                    guard let udid = manager.frontmostUDID,
+                          let controller = manager.controller(for: udid) else { return }
+                    let alert = NSAlert()
+                    alert.alertStyle = .warning
+                    alert.messageText = "Erase \(controller.deviceTitle)?"
+                    alert.informativeText = "Every app, setting and file on this simulator is deleted. This cannot be undone, and the device is left shut down."
+                    alert.addButton(withTitle: "Cancel")
+                    alert.addButton(withTitle: "Erase")
+                    guard alert.runModal() == .alertSecondButtonReturn else { return }
+                    runOnEveryDevice("erase", udid) { try SimctlService().erase(udid: $0) }
                 },
                 stepTextSize: { step in
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("text size", udid) {
-                            try SimctlService().stepContentSize(step, udid: $0)
-                        }
+                    guard let udid = manager.frontmostUDID else { return }
+                    runOnEveryDevice("text size", udid) {
+                        try SimctlService().stepContentSize(step, udid: $0)
                     }
                 },
                 toggleIncreaseContrast: {
@@ -384,38 +377,35 @@ struct ODHubViewer: ParsableCommand {
                     }
                 },
                 setLocation: { scenario in
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("location", udid) { device in
-                            if let scenario {
-                                try SimctlService().runLocation(scenario, udid: device)
-                            } else {
-                                try SimctlService().clearLocation(udid: device)
-                            }
+                    guard let udid = manager.frontmostUDID else { return }
+                    runOnEveryDevice("location", udid) { device in
+                        if let scenario {
+                            try SimctlService().runLocation(scenario, udid: device)
+                        } else {
+                            try SimctlService().clearLocation(udid: device)
                         }
                     }
                 },
                 setCustomLocation: {
-                    guard let point = CustomLocationPrompt.ask() else { return }
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("location", udid) {
-                            try SimctlService().setLocation(
-                                latitude: point.latitude,
-                                longitude: point.longitude,
-                                udid: $0
-                            )
-                        }
+                    guard let udid = manager.frontmostUDID,
+                          let point = CustomLocationPrompt.ask() else { return }
+                    runOnEveryDevice("location", udid) {
+                        try SimctlService().setLocation(
+                            latitude: point.latitude,
+                            longitude: point.longitude,
+                            udid: $0
+                        )
                     }
                 },
                 locationFavorites: { settings.locationFavorites },
                 setFavoriteLocation: { favorite in
-                    for udid in manager.openUDIDs {
-                        runOnEveryDevice("location", udid) {
-                            try SimctlService().setLocation(
-                                latitude: favorite.latitude,
-                                longitude: favorite.longitude,
-                                udid: $0
-                            )
-                        }
+                    guard let udid = manager.frontmostUDID else { return }
+                    runOnEveryDevice("location", udid) {
+                        try SimctlService().setLocation(
+                            latitude: favorite.latitude,
+                            longitude: favorite.longitude,
+                            udid: $0
+                        )
                     }
                 },
                 toggleKeyboardInput: { enabled in
@@ -488,9 +478,8 @@ struct ODHubViewer: ParsableCommand {
                     ), settings: settings)
                 },
                 setOrientation: { orientation in
-                    for udid in manager.openUDIDs {
-                        turn(orientation, udid)
-                    }
+                    guard let udid = manager.frontmostUDID else { return }
+                    turn(orientation, udid)
                 },
                 appSwitcher: {
                     for udid in manager.openUDIDs {
