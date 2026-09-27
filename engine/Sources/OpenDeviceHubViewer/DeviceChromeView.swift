@@ -121,7 +121,15 @@ public final class DeviceChromeView: NSView {
     public override func layout() {
         super.layout()
         screenView.frame = screenRect
-        overlay?.frame = screenRect
+        if let overlay {
+            // The screen has rounded corners and the overlay is a plain view, so unmasked it
+            // paints into the bezel.
+            overlay.frame = screenRect
+            overlay.wantsLayer = true
+            overlay.layer?.cornerCurve = .continuous
+            overlay.layer?.cornerRadius = screenCornerRadius
+            overlay.layer?.masksToBounds = screenCornerRadius > 0
+        }
     }
 
     /// Covers the device's screen, and only the screen, so the body still frames whatever the
@@ -135,6 +143,23 @@ public final class DeviceChromeView: NSView {
             }
             needsLayout = true
         }
+    }
+
+    /// The screen's corner radius in view points. The chrome's radius is the body's outside edge,
+    /// so the bezel comes off first: an iPhone 17 Pro Max's 80 less its 18 is the 62 its device
+    /// type gives for the screen.
+    private var screenCornerRadius: CGFloat {
+        guard let chrome, hasChrome, screenSize.width > 0 else { return 0 }
+        let upright = ChromeGeometry.contentSize(screen: screenSize, chrome: chrome)
+        guard upright.width > 0 else { return 0 }
+        let scale = orientation.isLandscape
+            ? occupiedRect.height / upright.width
+            : occupiedRect.width / upright.width
+        let bezel = max(
+            max(chrome.insets.left, chrome.insets.right),
+            max(chrome.insets.top, chrome.insets.bottom)
+        )
+        return max(0, chrome.cornerRadius - bezel) * scale
     }
 
     public override func draw(_ dirtyRect: NSRect) {

@@ -30,6 +30,9 @@ public final class DeviceWindowManager {
 
     public var openCount: Int { controllers.count }
 
+    /// Current screenshot preference, read by per-window toolbar actions at invocation time.
+    public var savesScreenshotsToClipboard: Bool { settings.savesScreenshotsToClipboard }
+
     public func isOpen(_ udid: String) -> Bool {
         controllers[udid] != nil
     }
@@ -296,9 +299,14 @@ public final class DeviceWindowManager {
 
     /// Copies the frontmost device's screen to the Mac clipboard.
     @discardableResult
-    public func copyScreenshotToClipboard() -> Bool {
-        let controller = controllers.values.first { $0.window?.isKeyWindow == true }
-            ?? controllers.values.first
+    public func copyScreenshotToClipboard(only udid: String? = nil) -> Bool {
+        let controller: DeviceWindowController?
+        if let udid {
+            controller = controllers[udid]
+        } else {
+            controller = controllers.values.first { $0.window?.isKeyWindow == true }
+                ?? controllers.values.first
+        }
         guard let data = controller?.screenshotPNG(),
               let image = NSImage(data: data) else { return false }
         NSPasteboard.general.clearContents()
