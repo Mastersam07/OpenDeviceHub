@@ -33,6 +33,7 @@ final class FoldableControllerTests: XCTestCase {
             return hinge
         })
         controller.report = { _ in }
+        controller.reducesMotion = { false }
         return controller
     }
 
@@ -109,6 +110,16 @@ final class FoldableControllerTests: XCTestCase {
         XCTAssertEqual(drawn, Array(sent), "the window is shown the same run")
         XCTAssertEqual(events.first, .began(target: 0))
         XCTAssertEqual(events.last, .ended)
+    }
+
+    func testReduceMotionJumpsToThePreset() async throws {
+        let controller = makeController()
+        controller.reducesMotion = { true }
+        controller.setAngle(180, for: "A")
+        try await Task.sleep(for: .milliseconds(120))
+        controller.setAngle(0, for: "A", eased: true)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(hinges["A"]?.angles, [180, 0], "one send, no run")
     }
 
     /// A pinch during a move takes over from where the fold visibly is, and the move stops.

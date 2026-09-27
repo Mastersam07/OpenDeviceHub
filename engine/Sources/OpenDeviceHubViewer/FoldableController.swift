@@ -32,6 +32,9 @@ public final class FoldableController {
     public var report: ((String) -> Void)?
     /// A move as it happens, so the window draws the same fold the guest is given.
     public var onMove: ((String, HingeMoveEvent) -> Void)?
+    /// Whether a move should jump instead: the Mac's Reduce Motion setting, which a headless
+    /// machine reports as on.
+    public var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     public init(
         open: @escaping (String) throws -> any HingeControl,
@@ -72,8 +75,7 @@ public final class FoldableController {
             }
             return
         }
-        guard eased, let start = shown[udid], abs(start - degrees) > 0.1,
-              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+        guard eased, let start = shown[udid], abs(start - degrees) > 0.1, !reducesMotion() else {
             send(degrees, to: control, for: udid)
             return
         }
