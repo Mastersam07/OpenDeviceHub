@@ -32,11 +32,11 @@ public struct ViewerSettings: Sendable {
         nonmutating set { setFlag("syncsPasteboard", newValue) }
     }
 
-    /// Puts a still capture on the Mac clipboard as well as filing it. The explicit Copy Screen
-    /// menu item is always available; this preference only controls the Save Screen action.
-    public var copiesScreenshotsToClipboard: Bool {
-        get { flag("copiesScreenshotsToClipboard", default: false) }
-        nonmutating set { setFlag("copiesScreenshotsToClipboard", newValue) }
+    /// Saves a still capture to the Mac clipboard instead of creating a screenshot file. The
+    /// explicit Copy Screen menu item is always available; this preference controls Save Screen.
+    public var savesScreenshotsToClipboard: Bool {
+        get { flag("savesScreenshotsToClipboard", default: false) }
+        nonmutating set { setFlag("savesScreenshotsToClipboard", newValue) }
     }
 
     /// With nothing booted, opening the app starts the simulator you had last. Turn it off and a

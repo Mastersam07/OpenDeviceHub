@@ -72,7 +72,7 @@ private struct SettingsView: View {
     @State private var shutsDownOnWindowClose: Bool
     @State private var bootsMostRecentOnStart: Bool
     @State private var syncsPasteboard: Bool
-    @State private var copiesScreenshotsToClipboard: Bool
+    @State private var savesScreenshotsToClipboard: Bool
     @State private var automaticUpdates: Bool
     @State private var captureDirectory: URL?
     @State private var rememberedWindows: Int
@@ -85,7 +85,7 @@ private struct SettingsView: View {
         _shutsDownOnWindowClose = State(initialValue: settings.shutsDownOnWindowClose)
         _bootsMostRecentOnStart = State(initialValue: settings.bootsMostRecentOnStart)
         _syncsPasteboard = State(initialValue: settings.syncsPasteboard)
-        _copiesScreenshotsToClipboard = State(initialValue: settings.copiesScreenshotsToClipboard)
+        _savesScreenshotsToClipboard = State(initialValue: settings.savesScreenshotsToClipboard)
         _automaticUpdates = State(initialValue: actions.automaticUpdates?() ?? false)
         _captureDirectory = State(initialValue: settings.captureDirectory)
         _rememberedWindows = State(initialValue: actions.rememberedWindowCount())
@@ -116,14 +116,14 @@ private struct SettingsView: View {
             }
 
             Section("Screenshots and recordings") {
-                Toggle("Copy screenshots to the clipboard", isOn: Binding(
-                    get: { copiesScreenshotsToClipboard },
+                Toggle("Save screenshots to the clipboard instead of files", isOn: Binding(
+                    get: { savesScreenshotsToClipboard },
                     set: { value in
-                        settings.copiesScreenshotsToClipboard = value
-                        copiesScreenshotsToClipboard = value
+                        settings.savesScreenshotsToClipboard = value
+                        savesScreenshotsToClipboard = value
                     }
                 ))
-                .help("Save Screen also places the captured image on the Mac clipboard.")
+                .help("Save Screen places the captured image on the Mac clipboard and does not create a file.")
 
                 LabeledContent {
                     HStack(spacing: 8) {
@@ -135,6 +135,7 @@ private struct SettingsView: View {
                         }
                         Button("Choose\u{2026}", action: chooseCaptureDirectory)
                     }
+                    .disabled(savesScreenshotsToClipboard)
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Save to")

@@ -121,7 +121,16 @@ public final class DeviceChromeView: NSView {
     public override func layout() {
         super.layout()
         screenView.frame = screenRect
-        overlay?.frame = screenRect
+        if let overlay {
+            // The screen is not a plain rectangle on phones and watches.  The chrome artwork
+            // rounds the display corners, while an overlay is an ordinary NSView; without a mask
+            // its background (and, more importantly, its controls) can paint into the bezel.
+            overlay.frame = screenRect
+            overlay.wantsLayer = true
+            overlay.layer?.cornerCurve = .continuous
+            overlay.layer?.cornerRadius = screenCornerRadius
+            overlay.layer?.masksToBounds = screenCornerRadius > 0
+        }
     }
 
     /// Covers the device's screen, and only the screen, so the body still frames whatever the
@@ -135,6 +144,24 @@ public final class DeviceChromeView: NSView {
             }
             needsLayout = true
         }
+    }
+
+    /// Radius of the visible glass in view coordinates.  `cornerRadius` describes the outside
+    /// device body, so remove the largest bezel inset before scaling it into the screen frame.
+    /// This keeps the shutdown/booting overlay inside the same rounded boundary as the live frame,
+    /// including when the device is rotated.
+    private var screenCornerRadius: CGFloat {
+        guard let chrome, hasChrome, screenSize.width > 0 else { return 0 }
+        let upright = ChromeGeometry.contentSize(screen: screenSize, chrome: chrome)
+        guard upright.width > 0 else { return 0 }
+        let scale = orientation.isLandscape
+            ? occupiedRect.height / upright.width
+            : occupiedRect.width / upright.width
+        let bezel = max(
+            max(chrome.insets.left, chrome.insets.right),
+            max(chrome.insets.top, chrome.insets.bottom)
+        )
+        return max(0, chrome.cornerRadius - bezel) * scale
     }
 
     public override func draw(_ dirtyRect: NSRect) {
