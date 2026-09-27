@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Mastersam07/OpenDeviceHub/releases/download/v0.1.0/OpenDeviceHub-0.1.0.dmg">
+  <a href="https://github.com/Mastersam07/OpenDeviceHub/releases/latest/download/OpenDeviceHub.dmg">
     <img src="icons/download-button.png" width="332" alt="Download for macOS">
   </a>
 </p>
@@ -30,7 +30,7 @@
 
 ## Install
 
-Download [OpenDeviceHub-0.1.0.dmg](https://github.com/Mastersam07/OpenDeviceHub/releases/download/v0.1.0/OpenDeviceHub-0.1.0.dmg),
+Download [OpenDeviceHub.dmg](https://github.com/Mastersam07/OpenDeviceHub/releases/latest/download/OpenDeviceHub.dmg),
 drag OpenDeviceHub to Applications and launch it. Every version, with its checksums, is on
 [Releases](https://github.com/Mastersam07/OpenDeviceHub/releases). The app is signed with a Developer ID certificate and
 notarized, so there is no Gatekeeper warning, and it updates itself from the app menu.

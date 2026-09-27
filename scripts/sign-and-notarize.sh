@@ -37,6 +37,12 @@ echo "== notarize and staple the disk image =="
 "${repo_root}/scripts/notarize.sh" "${dmg}"
 
 echo
+echo "== the same disk image under a name that never changes =="
+# The README's download button fetches this name from the latest release, so it never needs editing.
+cp "${dmg}" "${repo_root}/build/OpenDeviceHub.dmg"
+echo "${repo_root}/build/OpenDeviceHub.dmg"
+
+echo
 echo "== checksums, from the stapled artifacts =="
 "${repo_root}/scripts/checksums.sh"
 

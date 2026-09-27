@@ -69,7 +69,7 @@ def main() -> int:
 
 ## Known gaps
 
-This is a pre-release. These are the ones worth knowing before you install it:
+These are the ones worth knowing before you install it:
 
 {limitations}
 
