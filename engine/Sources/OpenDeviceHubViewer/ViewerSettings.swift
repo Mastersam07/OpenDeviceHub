@@ -89,6 +89,22 @@ public struct ViewerSettings: Sendable {
         }
     }
 
+    /// Named coordinates shown in Features > Location.
+    public var locationFavorites: [LocationFavorite] {
+        get {
+            guard let text = storage.text(forKey: prefix + "locationFavorites"),
+                  let data = text.data(using: .utf8),
+                  let values = try? JSONDecoder().decode([LocationFavorite].self, from: data)
+            else { return [] }
+            return values
+        }
+        nonmutating set {
+            guard let data = try? JSONEncoder().encode(newValue),
+                  let text = String(data: data, encoding: .utf8) else { return }
+            storage.setText(text, forKey: prefix + "locationFavorites")
+        }
+    }
+
     private func flag(_ name: String, default fallback: Bool) -> Bool {
         switch storage.text(forKey: prefix + name) {
         case "true": true
@@ -99,6 +115,17 @@ public struct ViewerSettings: Sendable {
 
     private func setFlag(_ name: String, _ value: Bool) {
         storage.setText(value ? "true" : "false", forKey: prefix + name)
+    }
+}
+
+public struct LocationFavorite: Codable, Equatable, Identifiable, Sendable {
+    public let id: UUID
+    public var name: String
+    public var latitude: Double
+    public var longitude: Double
+
+    public init(id: UUID = UUID(), name: String, latitude: Double, longitude: Double) {
+        self.id = id; self.name = name; self.latitude = latitude; self.longitude = longitude
     }
 }
 

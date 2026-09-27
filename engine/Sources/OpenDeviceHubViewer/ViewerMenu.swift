@@ -47,6 +47,8 @@ public enum ViewerMenu {
         public var triggerICloudSync: () -> Void
         public var setLocation: (SimctlService.LocationScenario?) -> Void
         public var setCustomLocation: () -> Void
+        public var locationFavorites: () -> [LocationFavorite]
+        public var setFavoriteLocation: (LocationFavorite) -> Void
         public var toggleKeyboardInput: (Bool) -> Void
         public var toggleHardwareKeyboard: (Bool) -> Void
         public var matchKeyboardLanguage: (Bool) -> Void
@@ -92,6 +94,8 @@ public enum ViewerMenu {
             triggerICloudSync: @escaping () -> Void,
             setLocation: @escaping (SimctlService.LocationScenario?) -> Void,
             setCustomLocation: @escaping () -> Void,
+            locationFavorites: @escaping () -> [LocationFavorite] = { [] },
+            setFavoriteLocation: @escaping (LocationFavorite) -> Void = { _ in },
             toggleKeyboardInput: @escaping (Bool) -> Void,
             toggleHardwareKeyboard: @escaping (Bool) -> Void,
             matchKeyboardLanguage: @escaping (Bool) -> Void,
@@ -134,6 +138,8 @@ public enum ViewerMenu {
             self.triggerICloudSync = triggerICloudSync
             self.setLocation = setLocation
             self.setCustomLocation = setCustomLocation
+            self.locationFavorites = locationFavorites
+            self.setFavoriteLocation = setFavoriteLocation
             self.toggleKeyboardInput = toggleKeyboardInput
             self.toggleHardwareKeyboard = toggleHardwareKeyboard
             self.matchKeyboardLanguage = matchKeyboardLanguage
@@ -390,15 +396,9 @@ public enum ViewerMenu {
 
         let locationItem = NSMenuItem(title: "Location", action: nil, keyEquivalent: "")
         let locationMenu = NSMenu(title: "Location")
-        locationMenu.addItem(target.item("None", #selector(MenuTarget.clearLocation), "", []))
-        locationMenu.addItem(target.item("Custom Location\u{2026}", #selector(MenuTarget.customLocation), "", []))
-        locationMenu.addItem(.separator())
-        for scenario in SimctlService.LocationScenario.allCases {
-            let item = target.item(scenario.rawValue, #selector(MenuTarget.locationScenario(_:)), "", [])
-            item.representedObject = scenario.rawValue
-            locationMenu.addItem(item)
-        }
         locationItem.submenu = locationMenu
+        target.trackLocationMenu(locationItem, in: locationMenu)
+        target.rebuildLocationMenu()
         featuresMenu.addItem(locationItem)
         featuresItem.submenu = featuresMenu
         bar.addItem(featuresItem)
@@ -521,6 +521,8 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private lazy var syncsPasteboardNow = actions.syncsPasteboard()
     private weak var screenItem: NSMenuItem?
     private weak var deviceMenu: NSMenu?
+    private weak var locationItem: NSMenuItem?
+    private weak var locationMenu: NSMenu?
 
     init(actions: ViewerMenu.Actions, commandLineTool: CommandLineToolMenu? = nil) {
         self.actions = actions
@@ -541,12 +543,45 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
         menu.delegate = self
     }
 
+    func trackLocationMenu(_ item: NSMenuItem, in menu: NSMenu) {
+        locationItem = item
+        locationMenu = menu
+        menu.delegate = self
+    }
+
     public func menuNeedsUpdate(_ menu: NSMenu) {
         if menu === deviceMenu {
             rebuildScreenMenu()
             return
         }
+        if menu === locationMenu {
+            rebuildLocationMenu()
+            return
+        }
         retitleCommandLineToolItem()
+    }
+
+    func rebuildLocationMenu() {
+        guard let menu = locationMenu else { return }
+        menu.removeAllItems()
+        menu.addItem(item("None", #selector(MenuTarget.clearLocation), "", []))
+        menu.addItem(item("Custom Location\u{2026}", #selector(MenuTarget.customLocation), "", []))
+        let favorites = actions.locationFavorites()
+        if !favorites.isEmpty {
+            menu.addItem(.separator())
+            for favorite in favorites {
+                let entry = item(favorite.name, #selector(MenuTarget.favoriteLocation(_:)), "", [])
+                entry.representedObject = favorite
+                entry.toolTip = String(format: "%.5f, %.5f", favorite.latitude, favorite.longitude)
+                menu.addItem(entry)
+            }
+        }
+        menu.addItem(.separator())
+        for scenario in SimctlService.LocationScenario.allCases {
+            let entry = item(scenario.rawValue, #selector(MenuTarget.locationScenario(_:)), "", [])
+            entry.representedObject = scenario.rawValue
+            menu.addItem(entry)
+        }
     }
 
     private func rebuildScreenMenu() {
@@ -654,6 +689,10 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     @objc func iCloudSync() { actions.triggerICloudSync() }
     @objc func clearLocation() { actions.setLocation(nil) }
     @objc func customLocation() { actions.setCustomLocation() }
+    @objc func favoriteLocation(_ sender: NSMenuItem) {
+        guard let favorite = sender.representedObject as? LocationFavorite else { return }
+        actions.setFavoriteLocation(favorite)
+    }
     @objc func newSimulator() { actions.newSimulator?() }
 
     /// Both start on, because that is what the app does before anyone touches the menu.

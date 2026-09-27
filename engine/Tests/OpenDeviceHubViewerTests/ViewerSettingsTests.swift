@@ -61,6 +61,28 @@ final class ViewerSettingsTests: XCTestCase {
         storage.setText("", forKey: "test.captureDirectory")
         XCTAssertNil(ViewerSettings(storage: storage, prefix: "test.").captureDirectory)
     }
+
+    func testLocationFavoritesRoundTripInOrder() {
+        let storage = InMemoryPreferences()
+        let settings = ViewerSettings(storage: storage, prefix: "test.")
+        let favorites = [
+            LocationFavorite(name: "Cupertino", latitude: 37.3349, longitude: -122.0090),
+            LocationFavorite(name: "London", latitude: 51.5072, longitude: -0.1276),
+        ]
+
+        settings.locationFavorites = favorites
+
+        XCTAssertEqual(ViewerSettings(storage: storage, prefix: "test.").locationFavorites, favorites)
+    }
+
+    func testMissingOrMalformedLocationFavoritesReadAsEmpty() {
+        let storage = InMemoryPreferences()
+        let settings = ViewerSettings(storage: storage, prefix: "test.")
+        XCTAssertTrue(settings.locationFavorites.isEmpty)
+
+        storage.setText("not json", forKey: "test.locationFavorites")
+        XCTAssertTrue(settings.locationFavorites.isEmpty)
+    }
 }
 
 final class InMemoryPreferences: PreferenceStorage, @unchecked Sendable {

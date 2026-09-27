@@ -376,6 +376,18 @@ struct ODHubViewer: ParsableCommand {
                         }
                     }
                 },
+                locationFavorites: { settings.locationFavorites },
+                setFavoriteLocation: { favorite in
+                    for udid in manager.openUDIDs {
+                        runOnEveryDevice("location", udid) {
+                            try SimctlService().setLocation(
+                                latitude: favorite.latitude,
+                                longitude: favorite.longitude,
+                                udid: $0
+                            )
+                        }
+                    }
+                },
                 toggleKeyboardInput: { enabled in
                     for udid in manager.openUDIDs {
                         manager.controller(for: udid)?.sendsKeyboardInput = enabled

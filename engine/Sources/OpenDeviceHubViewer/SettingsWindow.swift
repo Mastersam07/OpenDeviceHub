@@ -71,6 +71,7 @@ private struct SettingsView: View {
     @State private var automaticUpdates: Bool
     @State private var captureDirectory: URL?
     @State private var rememberedWindows: Int
+    @State private var favorites: [LocationFavorite]
     @ObservedObject private var links: DefaultDeviceApplication
 
     init(settings: ViewerSettings, actions: SettingsActions) {
@@ -81,6 +82,7 @@ private struct SettingsView: View {
         _automaticUpdates = State(initialValue: actions.automaticUpdates?() ?? false)
         _captureDirectory = State(initialValue: settings.captureDirectory)
         _rememberedWindows = State(initialValue: actions.rememberedWindowCount())
+        _favorites = State(initialValue: settings.locationFavorites)
         links = actions.openLinks ?? DefaultDeviceApplication()
     }
 
@@ -146,6 +148,21 @@ private struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+            }
+
+            Section("Location favorites") {
+                ForEach(favorites) { favorite in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(favorite.name)
+                            Text(String(format: "%.5f, %.5f", favorite.latitude, favorite.longitude))
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Remove", role: .destructive) { removeFavorite(favorite) }
+                    }
+                }
+                Button("Add Favorite…", action: addFavorite)
             }
 
             if actions.openLinks != nil {
@@ -228,6 +245,17 @@ private struct SettingsView: View {
             : "Version \(Brand.version) (\(Brand.buildNumber))"
     }
 
+    private func addFavorite() {
+        guard let favorite = LocationFavoritePrompt.ask() else { return }
+        favorites.append(favorite)
+        settings.locationFavorites = favorites
+    }
+
+    private func removeFavorite(_ favorite: LocationFavorite) {
+        favorites.removeAll { $0.id == favorite.id }
+        settings.locationFavorites = favorites
+    }
+
     private func chooseCaptureDirectory() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -238,5 +266,22 @@ private struct SettingsView: View {
         guard panel.runModal() == .OK, let chosen = panel.url else { return }
         settings.captureDirectory = chosen
         captureDirectory = chosen
+    }
+}
+
+@MainActor
+private enum LocationFavoritePrompt {
+    static func ask() -> LocationFavorite? {
+        let alert = NSAlert(); alert.messageText = "Add Location Favorite"
+        alert.informativeText = "Enter a name and latitude, longitude."
+        let stack = NSStackView(); stack.orientation = .vertical; stack.spacing = 8
+        let name = NSTextField(); name.placeholderString = "Name"
+        let coordinate = NSTextField(); coordinate.placeholderString = "37.3349, -122.0090"
+        stack.addArrangedSubview(name); stack.addArrangedSubview(coordinate); alert.accessoryView = stack
+        alert.addButton(withTitle: "Add"); alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn,
+              !name.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let point = Coordinate(parsing: coordinate.stringValue) else { return nil }
+        return LocationFavorite(name: name.stringValue.trimmingCharacters(in: .whitespacesAndNewlines), latitude: point.latitude, longitude: point.longitude)
     }
 }
