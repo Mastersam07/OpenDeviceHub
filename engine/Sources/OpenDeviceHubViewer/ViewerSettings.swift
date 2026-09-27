@@ -71,14 +71,14 @@ public struct ViewerSettings: Sendable {
     /// Where screenshots are written. Existing installs using `captureDirectory` are migrated
     /// lazily by reading that value until a dedicated choice is made.
     public var screenshotDirectory: URL? {
-        get { dedicatedDirectory(for: "screenshotDirectory") ?? captureDirectory }
+        get { directory("screenshotDirectory", fallingBackTo: captureDirectory) }
         nonmutating set { setDirectory(newValue, key: "screenshotDirectory") }
     }
 
     /// Where recordings are written. Existing installs using `captureDirectory` are migrated
     /// lazily by reading that value until a dedicated choice is made.
     public var recordingDirectory: URL? {
-        get { dedicatedDirectory(for: "recordingDirectory") ?? captureDirectory }
+        get { directory("recordingDirectory", fallingBackTo: captureDirectory) }
         nonmutating set { setDirectory(newValue, key: "recordingDirectory") }
     }
 
@@ -138,21 +138,15 @@ public struct ViewerSettings: Sendable {
         storage.setText(value ? "true" : "false", forKey: prefix + name)
     }
 
-    private func directory(for name: String) -> URL? {
-        guard let path = storage.text(forKey: prefix + name), !path.isEmpty else { return nil }
-        return URL(fileURLWithPath: path, isDirectory: true)
-    }
-
-    private func dedicatedDirectory(for name: String) -> URL?? {
-        guard let stored = storage.text(forKey: prefix + name) else { return nil }
-        guard !stored.isEmpty else { return .some(nil) }
-        return .some(URL(fileURLWithPath: stored, isDirectory: true))
+    /// Nothing stored falls back to the shared folder older versions used; an empty value is a
+    /// deliberate choice of the Desktop.
+    private func directory(_ key: String, fallingBackTo legacy: URL?) -> URL? {
+        guard let stored = storage.text(forKey: prefix + key) else { return legacy }
+        return stored.isEmpty ? nil : URL(fileURLWithPath: stored, isDirectory: true)
     }
 
     private func setDirectory(_ value: URL?, key: String) {
         guard let value else {
-            // Keep an explicit empty value so a migrated legacy capture directory can be
-            // deliberately cleared for just screenshots or just recordings.
             storage.setText("", forKey: prefix + key)
             return
         }
@@ -169,7 +163,10 @@ public struct LocationFavorite: Codable, Equatable, Identifiable, Sendable {
     public var longitude: Double
 
     public init(id: UUID = UUID(), name: String, latitude: Double, longitude: Double) {
-        self.id = id; self.name = name; self.latitude = latitude; self.longitude = longitude
+        self.id = id
+        self.name = name
+        self.latitude = latitude
+        self.longitude = longitude
     }
 }
 

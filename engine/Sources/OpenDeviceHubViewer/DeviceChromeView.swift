@@ -122,9 +122,8 @@ public final class DeviceChromeView: NSView {
         super.layout()
         screenView.frame = screenRect
         if let overlay {
-            // The screen is not a plain rectangle on phones and watches.  The chrome artwork
-            // rounds the display corners, while an overlay is an ordinary NSView; without a mask
-            // its background (and, more importantly, its controls) can paint into the bezel.
+            // The screen has rounded corners and the overlay is a plain view, so unmasked it
+            // paints into the bezel.
             overlay.frame = screenRect
             overlay.wantsLayer = true
             overlay.layer?.cornerCurve = .continuous
@@ -146,10 +145,9 @@ public final class DeviceChromeView: NSView {
         }
     }
 
-    /// Radius of the visible glass in view coordinates.  `cornerRadius` describes the outside
-    /// device body, so remove the largest bezel inset before scaling it into the screen frame.
-    /// This keeps the shutdown/booting overlay inside the same rounded boundary as the live frame,
-    /// including when the device is rotated.
+    /// The screen's corner radius in view points. The chrome's radius is the body's outside edge,
+    /// so the bezel comes off first: an iPhone 17 Pro Max's 80 less its 18 is the 62 its device
+    /// type gives for the screen.
     private var screenCornerRadius: CGFloat {
         guard let chrome, hasChrome, screenSize.width > 0 else { return 0 }
         let upright = ChromeGeometry.contentSize(screen: screenSize, chrome: chrome)

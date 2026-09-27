@@ -222,7 +222,7 @@ private struct SettingsView: View {
                         Button("Remove", role: .destructive) { removeFavorite(favorite) }
                     }
                 }
-                Button("Add Favorite…", action: addFavorite)
+                Button("Add Favorite\u{2026}", action: addFavorite)
             }
 
             if actions.openLinks != nil {
@@ -286,8 +286,7 @@ private struct SettingsView: View {
         }
         .formStyle(.grouped)
         .toggleStyle(.switch)
-        // Form supplies the native scroll view. Keep the window resizable and let the form occupy
-        // the available height instead of growing the window indefinitely as settings are added.
+        // The form scrolls inside a resizable window rather than growing it with every setting.
         .scrollDisabled(false)
         .frame(minWidth: 420, idealWidth: 520, minHeight: 360, idealHeight: 620,
                alignment: .topLeading)
@@ -346,29 +345,44 @@ private struct SettingsView: View {
 @MainActor
 private enum LocationFavoritePrompt {
     static func ask() -> LocationFavorite? {
-        let alert = NSAlert(); alert.messageText = "Add Location Favorite"
-        alert.informativeText = "Enter a name and latitude, longitude."
-        // NSTextField() and NSStackView() start with a zero-sized frame on AppKit. If they are
-        // installed directly as an alert accessory, the alert collapses them to a tiny capsule
-        // (especially on compact/macOS alert styles). Give the accessory and its fields an explicit
-        // width and height so both inputs remain visible and keyboard-friendly.
-        let width: CGFloat = 320
-        let fieldHeight: CGFloat = 24
-        let name = NSTextField(frame: NSRect(x: 0, y: 0, width: width, height: fieldHeight))
+        let alert = NSAlert()
+        alert.messageText = "Add Location Favorite"
+        alert.informativeText = "A name, then latitude and longitude separated by a comma."
+        // An alert's accessory keeps the frame it is given, so the fields are sized up front.
+        let name = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
         name.placeholderString = "Name"
-        let coordinate = NSTextField(frame: NSRect(x: 0, y: 0, width: width, height: fieldHeight))
-        coordinate.placeholderString = "Latitude, longitude (e.g. 37.3349, -122.0090)"
-        let stack = NSStackView(frame: NSRect(x: 0, y: 0, width: width, height: fieldHeight * 2 + 8))
+        let coordinate = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        coordinate.placeholderString = "37.3349, -122.0090"
+        let stack = NSStackView(frame: NSRect(x: 0, y: 0, width: 320, height: 56))
         stack.orientation = .vertical
         stack.spacing = 8
         stack.alignment = .leading
         stack.addArrangedSubview(name)
         stack.addArrangedSubview(coordinate)
         alert.accessoryView = stack
-        alert.addButton(withTitle: "Add"); alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn,
-              !name.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let point = Coordinate(parsing: coordinate.stringValue) else { return nil }
-        return LocationFavorite(name: name.stringValue.trimmingCharacters(in: .whitespacesAndNewlines), latitude: point.latitude, longitude: point.longitude)
+        alert.addButton(withTitle: "Add")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+
+        let title = name.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else {
+            complain("The favorite needs a name.", "It is what the Location menu shows.")
+            return nil
+        }
+        guard let point = Coordinate(parsing: coordinate.stringValue) else {
+            complain(
+                "That is not a coordinate.",
+                "Latitude is between -90 and 90, longitude between -180 and 180."
+            )
+            return nil
+        }
+        return LocationFavorite(name: title, latitude: point.latitude, longitude: point.longitude)
+    }
+
+    private static func complain(_ message: String, _ detail: String) {
+        let complaint = NSAlert()
+        complaint.messageText = message
+        complaint.informativeText = detail
+        complaint.runModal()
     }
 }

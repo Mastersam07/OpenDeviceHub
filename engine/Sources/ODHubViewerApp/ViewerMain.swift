@@ -893,12 +893,3 @@ private func captureDirectory(for capture: URL, settings: ViewerSettings = Viewe
     return FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
         ?? URL(fileURLWithPath: NSTemporaryDirectory())
 }
-
-private func recordingDirectory(_ settings: ViewerSettings = ViewerSettings()) -> URL {
-    if let chosen = settings.recordingDirectory,
-       FileManager.default.fileExists(atPath: chosen.path(percentEncoded: false)) {
-        return chosen
-    }
-    return FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-        ?? URL(fileURLWithPath: NSTemporaryDirectory())
-}

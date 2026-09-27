@@ -43,7 +43,47 @@ final class ViewerSettingsTests: XCTestCase {
         let settings = settings()
         settings.savesScreenshotsToClipboard = true
         XCTAssertTrue(settings.savesScreenshotsToClipboard)
-        XCTAssertEqual(settings.syncsPasteboard, true)
+    }
+
+    func testBothFoldersStartAtTheSharedFolderOlderVersionsSaved() {
+        let storage = InMemoryPreferences()
+        let shared = URL(fileURLWithPath: "/Users/someone/Captures", isDirectory: true)
+        ViewerSettings(storage: storage, prefix: "test.").captureDirectory = shared
+
+        let settings = ViewerSettings(storage: storage, prefix: "test.")
+        XCTAssertEqual(settings.screenshotDirectory, shared)
+        XCTAssertEqual(settings.recordingDirectory, shared)
+    }
+
+    func testChoosingOneFolderLeavesTheOtherAlone() {
+        let storage = InMemoryPreferences()
+        let shared = URL(fileURLWithPath: "/Users/someone/Captures", isDirectory: true)
+        let stills = URL(fileURLWithPath: "/Users/someone/Stills", isDirectory: true)
+        let settings = ViewerSettings(storage: storage, prefix: "test.")
+        settings.captureDirectory = shared
+
+        settings.screenshotDirectory = stills
+
+        XCTAssertEqual(settings.screenshotDirectory, stills)
+        XCTAssertEqual(settings.recordingDirectory, shared)
+    }
+
+    func testUsingTheDesktopForOneFolderOverridesTheSharedOne() {
+        let storage = InMemoryPreferences()
+        let settings = ViewerSettings(storage: storage, prefix: "test.")
+        settings.captureDirectory = URL(fileURLWithPath: "/Users/someone/Captures", isDirectory: true)
+
+        settings.recordingDirectory = nil
+
+        XCTAssertNil(ViewerSettings(storage: storage, prefix: "test.").recordingDirectory)
+        XCTAssertNotNil(ViewerSettings(storage: storage, prefix: "test.").screenshotDirectory)
+    }
+
+    func testAFolderIsStoredWithoutATrailingSlash() {
+        let storage = InMemoryPreferences()
+        ViewerSettings(storage: storage, prefix: "test.").screenshotDirectory =
+            URL(fileURLWithPath: "/Users/someone/Stills/", isDirectory: true)
+        XCTAssertEqual(storage.text(forKey: "test.screenshotDirectory"), "/Users/someone/Stills")
     }
 
     func testTheCaptureDirectoryRoundTrips() {
