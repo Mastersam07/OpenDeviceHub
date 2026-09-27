@@ -52,7 +52,9 @@ final class SettingsWindowController: NSWindowController {
         let view = SettingsView(settings: settings, actions: actions)
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "Settings"
-        window.styleMask = [.titled, .closable]
+        window.styleMask = [.titled, .closable, .resizable]
+        window.minSize = NSSize(width: 420, height: 360)
+        window.setContentSize(NSSize(width: 520, height: 620))
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.center()
@@ -280,9 +282,11 @@ private struct SettingsView: View {
         }
         .formStyle(.grouped)
         .toggleStyle(.switch)
-        .scrollDisabled(true)
-        .frame(width: 520, alignment: .topLeading)
-        .fixedSize(horizontal: false, vertical: true)
+        // Form supplies the native scroll view. Keep the window resizable and let the form occupy
+        // the available height instead of growing the window indefinitely as settings are added.
+        .scrollDisabled(false)
+        .frame(minWidth: 420, idealWidth: 520, minHeight: 360, idealHeight: 620,
+               alignment: .topLeading)
     }
 
     private var rememberedDescription: String {
@@ -340,10 +344,23 @@ private enum LocationFavoritePrompt {
     static func ask() -> LocationFavorite? {
         let alert = NSAlert(); alert.messageText = "Add Location Favorite"
         alert.informativeText = "Enter a name and latitude, longitude."
-        let stack = NSStackView(); stack.orientation = .vertical; stack.spacing = 8
-        let name = NSTextField(); name.placeholderString = "Name"
-        let coordinate = NSTextField(); coordinate.placeholderString = "37.3349, -122.0090"
-        stack.addArrangedSubview(name); stack.addArrangedSubview(coordinate); alert.accessoryView = stack
+        // NSTextField() and NSStackView() start with a zero-sized frame on AppKit. If they are
+        // installed directly as an alert accessory, the alert collapses them to a tiny capsule
+        // (especially on compact/macOS alert styles). Give the accessory and its fields an explicit
+        // width and height so both inputs remain visible and keyboard-friendly.
+        let width: CGFloat = 320
+        let fieldHeight: CGFloat = 24
+        let name = NSTextField(frame: NSRect(x: 0, y: 0, width: width, height: fieldHeight))
+        name.placeholderString = "Name"
+        let coordinate = NSTextField(frame: NSRect(x: 0, y: 0, width: width, height: fieldHeight))
+        coordinate.placeholderString = "Latitude, longitude (e.g. 37.3349, -122.0090)"
+        let stack = NSStackView(frame: NSRect(x: 0, y: 0, width: width, height: fieldHeight * 2 + 8))
+        stack.orientation = .vertical
+        stack.spacing = 8
+        stack.alignment = .leading
+        stack.addArrangedSubview(name)
+        stack.addArrangedSubview(coordinate)
+        alert.accessoryView = stack
         alert.addButton(withTitle: "Add"); alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn,
               !name.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
