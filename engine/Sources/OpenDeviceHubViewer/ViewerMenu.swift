@@ -283,7 +283,7 @@ public enum ViewerMenu {
         }
         // Both are the manual halves of the sync, so they are redundant while it is on. Simulator.app
         // greys them for the same reason.
-        target.trackPasteboardItems(get: getItem, send: sendItem)
+        target.trackPasteboardItems(sync: syncItem, get: getItem, send: sendItem)
 
         editMenu.addItem(.separator())
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
@@ -524,7 +524,7 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private var matchesKeyboardLanguage = true
     private weak var getPasteboardItem: NSMenuItem?
     private weak var sendPasteboardItem: NSMenuItem?
-    private lazy var syncsPasteboardNow = actions.syncsPasteboard()
+    private weak var syncPasteboardItem: NSMenuItem?
     private weak var screenItem: NSMenuItem?
     private weak var cameraControlItem: NSMenuItem?
     private weak var deviceMenu: NSMenu?
@@ -560,6 +560,7 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
         cameraControlItem = item
         item.isHidden = !actions.hasCameraControl()
     }
+
     public func menuNeedsUpdate(_ menu: NSMenu) {
         if menu === deviceMenu {
             cameraControlItem?.isHidden = !actions.hasCameraControl()
@@ -715,17 +716,19 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
         actions.toggleKeyboardInput(sendsKeyboardInput)
     }
 
-    var syncsPasteboard: Bool { syncsPasteboardNow }
+    /// Read from the setting each time, because Settings changes it as well as this menu.
+    var syncsPasteboard: Bool { actions.syncsPasteboard() }
 
-    func trackPasteboardItems(get: NSMenuItem, send: NSMenuItem) {
+    func trackPasteboardItems(sync: NSMenuItem, get: NSMenuItem, send: NSMenuItem) {
+        syncPasteboardItem = sync
         getPasteboardItem = get
         sendPasteboardItem = send
     }
 
     @objc func automaticPasteboardSync(_ sender: NSMenuItem) {
-        syncsPasteboardNow.toggle()
-        sender.state = syncsPasteboardNow ? .on : .off
-        actions.toggleAutomaticPasteboardSync(syncsPasteboardNow)
+        let syncs = !syncsPasteboard
+        sender.state = syncs ? .on : .off
+        actions.toggleAutomaticPasteboardSync(syncs)
     }
 
     @objc func getPasteboard() { actions.getPasteboard() }
@@ -762,8 +765,12 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
 
     public func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item === stopRecordingItem { return actions.isRecording() }
+        if item === syncPasteboardItem {
+            item.state = syncsPasteboard ? .on : .off
+            return item.action != nil
+        }
         if item === getPasteboardItem || item === sendPasteboardItem {
-            return item.action != nil && !syncsPasteboardNow
+            return item.action != nil && !syncsPasteboard
         }
         return item.action != nil
     }

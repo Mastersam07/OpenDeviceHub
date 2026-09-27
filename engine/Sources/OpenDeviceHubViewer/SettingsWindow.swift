@@ -185,6 +185,10 @@ private struct SettingsView: View {
                     }
                 ))
                 .help("Copies made on either side are sent to the other side automatically.")
+                // Edit, Automatically Sync Pasteboard changes the same setting while this is open.
+                .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+                    syncsPasteboard = settings.syncsPasteboard
+                }
             }
 
             Section("Windows") {
