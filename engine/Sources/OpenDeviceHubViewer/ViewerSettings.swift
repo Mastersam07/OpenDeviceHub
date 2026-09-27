@@ -46,8 +46,8 @@ public struct ViewerSettings: Sendable {
         nonmutating set { setFlag("bootMostRecentOnStart", newValue) }
     }
 
-    /// Where screenshots and recordings are written. Empty means the Desktop, which is where they
-    /// went before this was a choice.
+    /// Legacy shared capture location retained for backwards-compatible migration. New settings
+    /// should use `screenshotDirectory` and `recordingDirectory` independently.
     public var captureDirectory: URL? {
         get {
             guard let path = storage.text(forKey: prefix + "captureDirectory"), !path.isEmpty else {
@@ -66,6 +66,20 @@ public struct ViewerSettings: Sendable {
             while path.count > 1, path.hasSuffix("/") { path.removeLast() }
             storage.setText(path, forKey: prefix + "captureDirectory")
         }
+    }
+
+    /// Where screenshots are written. Existing installs using `captureDirectory` are migrated
+    /// lazily by reading that value until a dedicated choice is made.
+    public var screenshotDirectory: URL? {
+        get { dedicatedDirectory(for: "screenshotDirectory") ?? captureDirectory }
+        nonmutating set { setDirectory(newValue, key: "screenshotDirectory") }
+    }
+
+    /// Where recordings are written. Existing installs using `captureDirectory` are migrated
+    /// lazily by reading that value until a dedicated choice is made.
+    public var recordingDirectory: URL? {
+        get { dedicatedDirectory(for: "recordingDirectory") ?? captureDirectory }
+        nonmutating set { setDirectory(newValue, key: "recordingDirectory") }
     }
 
     /// Stored as the port index, since a port's UUID is minted fresh on every boot.
@@ -122,6 +136,29 @@ public struct ViewerSettings: Sendable {
 
     private func setFlag(_ name: String, _ value: Bool) {
         storage.setText(value ? "true" : "false", forKey: prefix + name)
+    }
+
+    private func directory(for name: String) -> URL? {
+        guard let path = storage.text(forKey: prefix + name), !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    private func dedicatedDirectory(for name: String) -> URL?? {
+        guard let stored = storage.text(forKey: prefix + name) else { return nil }
+        guard !stored.isEmpty else { return .some(nil) }
+        return .some(URL(fileURLWithPath: stored, isDirectory: true))
+    }
+
+    private func setDirectory(_ value: URL?, key: String) {
+        guard let value else {
+            // Keep an explicit empty value so a migrated legacy capture directory can be
+            // deliberately cleared for just screenshots or just recordings.
+            storage.setText("", forKey: prefix + key)
+            return
+        }
+        var path = value.standardizedFileURL.path(percentEncoded: false)
+        while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        storage.setText(path, forKey: prefix + key)
     }
 }
 

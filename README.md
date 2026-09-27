@@ -66,8 +66,8 @@ simulators.
   two lists follow each other, so a device an installed runtime cannot run is never offered.
 - **Screenshots and recordings**: a capture appears beside the window first, where you can open,
   copy, save it elsewhere, reveal it in the Finder or throw it away. Left alone it files itself. The
-  folder is yours to choose. Settings can instead make Save Screen write the image to the Mac
-  clipboard without creating a file.
+  folder is yours to choose. Settings independently choose screenshot and recording folders, or can
+  make Save Screen write the image to the Mac clipboard without creating a screenshot file.
 - **The clipboard stays in step**: copy on the Mac and it is on the device; copy on the device and it
   is on the Mac when you switch to another app. Or do it by hand from Edit.
 - **Settings**: whether closing a window shuts the device down, whether launching opens the

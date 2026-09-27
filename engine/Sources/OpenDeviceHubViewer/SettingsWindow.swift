@@ -74,7 +74,8 @@ private struct SettingsView: View {
     @State private var syncsPasteboard: Bool
     @State private var savesScreenshotsToClipboard: Bool
     @State private var automaticUpdates: Bool
-    @State private var captureDirectory: URL?
+    @State private var screenshotDirectory: URL?
+    @State private var recordingDirectory: URL?
     @State private var rememberedWindows: Int
     @State private var favorites: [LocationFavorite]
     @ObservedObject private var links: DefaultDeviceApplication
@@ -87,7 +88,8 @@ private struct SettingsView: View {
         _syncsPasteboard = State(initialValue: settings.syncsPasteboard)
         _savesScreenshotsToClipboard = State(initialValue: settings.savesScreenshotsToClipboard)
         _automaticUpdates = State(initialValue: actions.automaticUpdates?() ?? false)
-        _captureDirectory = State(initialValue: settings.captureDirectory)
+        _screenshotDirectory = State(initialValue: settings.screenshotDirectory)
+        _recordingDirectory = State(initialValue: settings.recordingDirectory)
         _rememberedWindows = State(initialValue: actions.rememberedWindowCount())
         _favorites = State(initialValue: settings.locationFavorites)
         links = actions.openLinks ?? DefaultDeviceApplication()
@@ -115,7 +117,7 @@ private struct SettingsView: View {
                 .help("Simulators that are already running are always shown, either way.")
             }
 
-            Section("Screenshots and recordings") {
+            Section("Screenshots") {
                 Toggle("Save screenshots to the clipboard instead of files", isOn: Binding(
                     get: { savesScreenshotsToClipboard },
                     set: { value in
@@ -127,19 +129,42 @@ private struct SettingsView: View {
 
                 LabeledContent {
                     HStack(spacing: 8) {
-                        if captureDirectory != nil {
+                        if screenshotDirectory != nil {
                             Button("Use Desktop") {
-                                settings.captureDirectory = nil
-                                captureDirectory = nil
+                                settings.screenshotDirectory = nil
+                                screenshotDirectory = nil
                             }
                         }
-                        Button("Choose\u{2026}", action: chooseCaptureDirectory)
+                        Button("Choose\u{2026}", action: chooseScreenshotDirectory)
                     }
                     .disabled(savesScreenshotsToClipboard)
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Save to")
-                        Text(captureDirectory?.path(percentEncoded: false) ?? "Desktop")
+                        Text(screenshotDirectory?.path(percentEncoded: false) ?? "Desktop")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+            }
+
+            Section("Recordings") {
+                LabeledContent {
+                    HStack(spacing: 8) {
+                        if recordingDirectory != nil {
+                            Button("Use Desktop") {
+                                settings.recordingDirectory = nil
+                                recordingDirectory = nil
+                            }
+                        }
+                        Button("Choose\u{2026}", action: chooseRecordingDirectory)
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Save to")
+                        Text(recordingDirectory?.path(percentEncoded: false) ?? "Desktop")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -285,16 +310,28 @@ private struct SettingsView: View {
         settings.locationFavorites = favorites
     }
 
-    private func chooseCaptureDirectory() {
+    private func chooseScreenshotDirectory() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = "Choose"
-        panel.directoryURL = captureDirectory
+        panel.directoryURL = screenshotDirectory
         guard panel.runModal() == .OK, let chosen = panel.url else { return }
-        settings.captureDirectory = chosen
-        captureDirectory = chosen
+        settings.screenshotDirectory = chosen
+        screenshotDirectory = chosen
+    }
+
+    private func chooseRecordingDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose"
+        panel.directoryURL = recordingDirectory
+        guard panel.runModal() == .OK, let chosen = panel.url else { return }
+        settings.recordingDirectory = chosen
+        recordingDirectory = chosen
     }
 }
 

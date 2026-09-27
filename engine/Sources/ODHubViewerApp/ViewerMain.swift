@@ -104,8 +104,8 @@ struct ODHubViewer: ParsableCommand {
 
             let previews = CapturePreviewPresenter(report: { print($0) })
             let present: @MainActor ([URL]) -> Void = { urls in
-                let destination = recordingDirectory(settings)
                 for url in urls {
+                    let destination = captureDirectory(for: url, settings: settings)
                     previews.show(
                         PendingCapture(temporary: url, destination: destination),
                         beside: NSApp.keyWindow ?? manager.openUDIDs.first.flatMap(manager.controller(for:))?.window
@@ -866,13 +866,25 @@ enum CaptureStaging {
     }
 }
 
-private func recordingDirectory(_ settings: ViewerSettings = ViewerSettings()) -> URL {
-    if let chosen = settings.captureDirectory,
+private func captureDirectory(for capture: URL, settings: ViewerSettings = ViewerSettings()) -> URL {
+    let chosen = capture.pathExtension.lowercased() == "mov"
+        ? settings.recordingDirectory
+        : settings.screenshotDirectory
+    if let chosen,
        FileManager.default.fileExists(atPath: chosen.path(percentEncoded: false)) {
         return chosen
     }
     // A folder that has been moved or unplugged since it was chosen falls back rather than losing
     // the capture.
+    return FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+        ?? URL(fileURLWithPath: NSTemporaryDirectory())
+}
+
+private func recordingDirectory(_ settings: ViewerSettings = ViewerSettings()) -> URL {
+    if let chosen = settings.recordingDirectory,
+       FileManager.default.fileExists(atPath: chosen.path(percentEncoded: false)) {
+        return chosen
+    }
     return FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
         ?? URL(fileURLWithPath: NSTemporaryDirectory())
 }
