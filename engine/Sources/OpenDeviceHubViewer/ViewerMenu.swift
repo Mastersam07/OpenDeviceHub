@@ -40,6 +40,7 @@ public enum ViewerMenu {
         public var pressButton: (HardwareButton) -> Void
         public var rotate: (Bool) -> Void
         public var restart: () -> Void
+        public var shutdown: () -> Void
         public var erase: () -> Void
         public var stepTextSize: (SimctlService.ContentSizeStep) -> Void
         public var toggleIncreaseContrast: () -> Void
@@ -84,6 +85,7 @@ public enum ViewerMenu {
             pressButton: @escaping (HardwareButton) -> Void,
             rotate: @escaping (Bool) -> Void,
             restart: @escaping () -> Void,
+            shutdown: @escaping () -> Void = {},
             erase: @escaping () -> Void,
             stepTextSize: @escaping (SimctlService.ContentSizeStep) -> Void,
             toggleIncreaseContrast: @escaping () -> Void,
@@ -125,6 +127,7 @@ public enum ViewerMenu {
             self.pressButton = pressButton
             self.rotate = rotate
             self.restart = restart
+            self.shutdown = shutdown
             self.erase = erase
             self.stepTextSize = stepTextSize
             self.toggleIncreaseContrast = toggleIncreaseContrast
@@ -280,6 +283,7 @@ public enum ViewerMenu {
         let deviceItem = NSMenuItem()
         let deviceMenu = NSMenu(title: "Device")
         deviceMenu.addItem(target.item("Restart", #selector(MenuTarget.restart), "", []))
+        deviceMenu.addItem(target.item("Shut Down", #selector(MenuTarget.shutdown), "", []))
         deviceMenu.addItem(target.item("Erase All Content and Settings\u{2026}", #selector(MenuTarget.erase), "", []))
         deviceMenu.addItem(.separator())
         let rotateLeft = target.item("Rotate Left", #selector(MenuTarget.rotateLeft), String(UnicodeScalar(NSLeftArrowFunctionKey)!), [.command])
@@ -643,6 +647,7 @@ public final class MenuTarget: NSObject, NSMenuDelegate, NSMenuItemValidation {
     @objc func actionButton() { actions.pressButton(.actionButton) }
     @objc func appSwitcher() { actions.appSwitcher() }
     @objc func restart() { actions.restart() }
+    @objc func shutdown() { actions.shutdown() }
     @objc func erase() { actions.erase() }
     @objc func textSizeUp() { actions.stepTextSize(.increment) }
     @objc func textSizeDown() { actions.stepTextSize(.decrement) }

@@ -310,6 +310,11 @@ struct ODHubViewer: ParsableCommand {
                         runOnEveryDevice("restart", udid) { try SimctlService().restart(udid: $0) }
                     }
                 },
+                shutdown: {
+                    for udid in manager.openUDIDs {
+                        runOnEveryDevice("shutdown", udid) { try SimctlService().shutdown(udid: $0) }
+                    }
+                },
                 erase: {
                     // Destructive and not undoable, so it asks, names the device, and Erase is not
                     // the default button.
