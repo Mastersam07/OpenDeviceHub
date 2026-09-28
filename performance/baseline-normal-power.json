@@ -1,5 +1,5 @@
 {
-  "createdAt" : "2026-09-28T09:09:23Z",
+  "createdAt" : "2026-09-28T11:53:21Z",
   "environment" : {
     "buildConfiguration" : "release",
     "hardwareModel" : "Mac15,6",
@@ -8,48 +8,155 @@
     "xcode" : "Xcode 27.1 (27A9269)"
   },
   "schemaVersion" : 1,
+  "together" : {
+    "devices" : [
+      "iPhone 17 (iOS 27.0)",
+      "iPhone Duo (iOS 27.1)"
+    ],
+    "idleCPUEnergyMilliwatts" : 12.972761723841723,
+    "idleCPUPercent" : {
+      "median" : 9.572144208538406,
+      "p95" : 12.162444850751928,
+      "samples" : 10
+    },
+    "idleDrawsPerSecond" : 33.691864374922474,
+    "idleFramesPerSecond" : 2.308334731226467,
+    "idleGPUPercent" : 3.638691069104495,
+    "processMemoryMB" : 413.5949401855469,
+    "soak" : {
+      "clicks" : 227,
+      "endMB" : 413.5949401855469,
+      "folds" : 8,
+      "growthMBPerMinute" : 2.351137537762155,
+      "seconds" : 180,
+      "startMB" : 401.1105651855469
+    },
+    "windowsMemoryMB" : 363.6254348754883
+  },
   "windows" : [
     {
       "clickLatencyMs" : {
-        "median" : 11.968583333333333,
-        "p95" : 13.459375,
+        "median" : 8.787416666666665,
+        "p95" : 13.040416666666665,
         "samples" : 20
       },
       "device" : "iPhone 17 (iOS 27.0)",
+      "idleCPUEnergyMilliwatts" : 0.708254376266516,
       "idleCPUPercent" : {
-        "median" : 0.19903322942526908,
-        "p95" : 0.2747969613825266,
+        "median" : 0.2054317745774193,
+        "p95" : 0.7792023230559177,
         "samples" : 10
       },
-      "idleDrawsPerSecond" : 0,
-      "idleFramesPerSecond" : 0,
+      "idleDrawsPerSecond" : 0.09746648917987798,
+      "idleFramesPerSecond" : 0.09746648917987798,
+      "idleGPUPercent" : 0.005427460436577177,
       "name" : "phone",
-      "processMemoryMB" : 152.65716552734375,
-      "windowMemoryMB" : 48.56263732910156
+      "open" : {
+        "firstPictureMs" : 47.018209,
+        "orientationMs" : 410.716292,
+        "sessionsMs" : 26.218917,
+        "totalMs" : 670.460834,
+        "windowMs" : 186.507416
+      },
+      "processMemoryMB" : 152.50091552734375,
+      "reopen" : {
+        "addedByEachReopenMB" : [
+          5.671875,
+          4.4375,
+          4.578125
+        ],
+        "freedOnClose" : true,
+        "keptAfterCloseMB" : 26.875091552734375,
+        "opens" : [
+          {
+            "firstPictureMs" : 18.98425,
+            "orientationMs" : 338.607375,
+            "sessionsMs" : 28.813417,
+            "totalMs" : 402.951042,
+            "windowMs" : 16.546000000000003
+          },
+          {
+            "firstPictureMs" : 16.394459,
+            "orientationMs" : 321.07404099999997,
+            "sessionsMs" : 31.128209000000002,
+            "totalMs" : 380.868834,
+            "windowMs" : 12.272125
+          },
+          {
+            "firstPictureMs" : 16.304917,
+            "orientationMs" : 319.44795799999997,
+            "sessionsMs" : 24.152292,
+            "totalMs" : 375.04879199999993,
+            "windowMs" : 15.143625
+          }
+        ]
+      },
+      "windowMemoryMB" : 47.82823944091797
     },
     {
       "clickLatencyMs" : {
-        "median" : 14.076875,
-        "p95" : 16.38925,
+        "median" : 11.423833333333334,
+        "p95" : 14.965791666666666,
         "samples" : 20
       },
       "device" : "iPhone Duo (iOS 27.1)",
-      "foldCPUPercent" : 36.23484187234482,
+      "foldCPUPercent" : 33.88276299687477,
       "foldStepGapMs" : {
-        "median" : 18.287666,
-        "p95" : 20.769958000000003,
-        "samples" : 108
+        "median" : 18.637625,
+        "p95" : 24.799459,
+        "samples" : 104
       },
+      "idleCPUEnergyMilliwatts" : 20.23728821071902,
       "idleCPUPercent" : {
-        "median" : 9.649805164040677,
-        "p95" : 13.174145444260233,
+        "median" : 9.5980171669382,
+        "p95" : 12.037014510216425,
         "samples" : 10
       },
-      "idleDrawsPerSecond" : 35.885166285889795,
-      "idleFramesPerSecond" : 2.116683333735612,
+      "idleDrawsPerSecond" : 35.61601065391605,
+      "idleFramesPerSecond" : 2.213702319649478,
+      "idleGPUPercent" : 4.268911748829975,
       "name" : "foldable",
-      "processMemoryMB" : 357.2667922973633,
-      "windowMemoryMB" : 295.98462677001953
+      "open" : {
+        "firstPictureMs" : 46.669416,
+        "orientationMs" : 334.866417,
+        "sessionsMs" : 48.03337500000001,
+        "totalMs" : 1341.278208,
+        "windowMs" : 911.709
+      },
+      "processMemoryMB" : 371.9854965209961,
+      "reopen" : {
+        "addedByEachReopenMB" : [
+          -4.4530792236328125,
+          -25.375,
+          9.078147888183594
+        ],
+        "freedOnClose" : true,
+        "keptAfterCloseMB" : 89.57835388183594,
+        "opens" : [
+          {
+            "firstPictureMs" : 76.78133299999999,
+            "orientationMs" : 355.050792,
+            "sessionsMs" : 63.769625,
+            "totalMs" : 975.6773750000001,
+            "windowMs" : 480.075625
+          },
+          {
+            "firstPictureMs" : 87.002,
+            "orientationMs" : 355.940292,
+            "sessionsMs" : 36.425833,
+            "totalMs" : 954.561875,
+            "windowMs" : 475.19375
+          },
+          {
+            "firstPictureMs" : 81.960792,
+            "orientationMs" : 340.14175,
+            "sessionsMs" : 52.940417,
+            "totalMs" : 902.361084,
+            "windowMs" : 427.318125
+          }
+        ]
+      },
+      "windowMemoryMB" : 315.10960388183594
     }
   ]
 }
