@@ -1,5 +1,5 @@
 {
-  "createdAt" : "2026-09-28T05:45:24Z",
+  "createdAt" : "2026-09-28T07:38:43Z",
   "environment" : {
     "buildConfiguration" : "release",
     "hardwareModel" : "Mac15,6",
@@ -11,45 +11,45 @@
   "windows" : [
     {
       "clickLatencyMs" : {
-        "median" : 12.259333333333334,
-        "p95" : 19.268083333333333,
+        "median" : 13.091291666666667,
+        "p95" : 15.483583333333334,
         "samples" : 20
       },
       "device" : "iPhone 17 (iOS 27.0)",
       "idleCPUPercent" : {
-        "median" : 0.2005022855287288,
-        "p95" : 0.2525720731410715,
+        "median" : 0.23452933463056475,
+        "p95" : 0.3247799798450037,
         "samples" : 10
       },
       "idleDrawsPerSecond" : 0,
       "idleFramesPerSecond" : 0,
       "name" : "phone",
-      "processMemoryMB" : 152.43841552734375,
-      "windowMemoryMB" : 48.640785217285156
+      "processMemoryMB" : 152.17279052734375,
+      "windowMemoryMB" : 47.82826232910156
     },
     {
       "clickLatencyMs" : {
-        "median" : 12.488833333333334,
-        "p95" : 16.651708333333335,
+        "median" : 13.330625,
+        "p95" : 16.869375,
         "samples" : 20
       },
       "device" : "iPhone Duo (iOS 27.1)",
-      "foldCPUPercent" : 23.19616284802404,
+      "foldCPUPercent" : 23.654378541557307,
       "foldStepGapMs" : {
-        "median" : 32.523292000000005,
-        "p95" : 34.215083,
-        "samples" : 73
+        "median" : 32.90175,
+        "p95" : 34.264084,
+        "samples" : 70
       },
       "idleCPUPercent" : {
-        "median" : 17.592522514306282,
-        "p95" : 18.955358112325786,
+        "median" : 5.571381041923167,
+        "p95" : 8.18479697207644,
         "samples" : 10
       },
-      "idleDrawsPerSecond" : 60.001300476919354,
-      "idleFramesPerSecond" : 2.2077338687337456,
+      "idleDrawsPerSecond" : 18.98328772731046,
+      "idleFramesPerSecond" : 2.152743969076444,
       "name" : "foldable",
-      "processMemoryMB" : 359.1573944091797,
-      "windowMemoryMB" : 295.26585388183594
+      "processMemoryMB" : 357.6105422973633,
+      "windowMemoryMB" : 295.1877746582031
     }
   ]
 }
