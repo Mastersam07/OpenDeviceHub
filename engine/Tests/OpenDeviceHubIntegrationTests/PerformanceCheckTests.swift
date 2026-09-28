@@ -103,9 +103,9 @@ final class PerformanceCheckTests: XCTestCase {
         let window = try XCTUnwrap(controller.window)
         let screen = try XCTUnwrap(Self.find(DeviceScreenView.self, in: window))
         try await Task.sleep(for: .seconds(Self.settleSeconds))
-        let windowMemory = try Self.footprintMB() - before
 
         let idle = try await measureIdle([controller])
+        let windowMemory = idle.memory - before
         let box = screen.bounds
         let spots = Self.spots(around: CGPoint(x: box.midX, y: box.midY), size: box.size)
         let latency = try await measureClicks(controller, on: screen, spots: spots)
@@ -150,9 +150,9 @@ final class PerformanceCheckTests: XCTestCase {
         let window = try XCTUnwrap(controller.window)
         let model = try XCTUnwrap(Self.find(DuoModelView.self, in: window))
         try await Task.sleep(for: .seconds(Self.settleSeconds))
-        let windowMemory = try Self.footprintMB() - before
 
         let idle = try await measureIdle([controller])
+        let windowMemory = idle.memory - before
         let box = model.bounds
         let spots = Self.spots(around: CGPoint(x: box.midX, y: box.midY), size: box.size)
             .filter { model.screenPoint(at: $0) != nil }
@@ -240,8 +240,8 @@ final class PerformanceCheckTests: XCTestCase {
             }
         }
         try await Task.sleep(for: .seconds(Self.settleSeconds))
-        let windowsMemory = try Self.footprintMB() - processStart
         let idle = try await measureIdle(controllers)
+        let windowsMemory = idle.memory - processStart
         let soak = try await keepBusy(controllers, seconds: soakSeconds)
         return TogetherMeasurement(
             devices: devices.map { "\($0.name) (\($0.runtimeName))" },
@@ -366,14 +366,17 @@ final class PerformanceCheckTests: XCTestCase {
         let frames: Double
         let energy: Double
         let gpu: Double
+        let memory: Double
     }
 
-    /// The whole process's CPU, energy and GPU, which are the open windows': the test runner itself
-    /// sits idle while it waits.
+    /// The whole process's CPU, energy, GPU and memory, which are the open windows': the test runner
+    /// itself sits idle while it waits. Memory is the median of a reading each round, so one passing
+    /// spike does not decide it.
     private func measureIdle(_ controllers: [DeviceWindowController]) async throws -> Idle {
         func draws() -> Int { controllers.map(\.drawCount).reduce(0, +) }
         func frames() -> Int { controllers.map(\.framesReceived).reduce(0, +) }
         var cpu: [Double] = []
+        var memory: [Double] = []
         let drawsStart = draws()
         let framesStart = frames()
         let energyStart = try Self.cpuEnergyJoules()
@@ -384,6 +387,7 @@ final class PerformanceCheckTests: XCTestCase {
             let wallStart = ContinuousClock.now
             try await Task.sleep(for: .seconds(Self.idleRoundSeconds))
             cpu.append((Self.cpuSeconds() - cpuStart) / Self.seconds(ContinuousClock.now - wallStart) * 100)
+            memory.append(try Self.footprintMB())
         }
         let elapsed = Self.seconds(ContinuousClock.now - started)
         return Idle(
@@ -391,7 +395,8 @@ final class PerformanceCheckTests: XCTestCase {
             draws: Double(draws() - drawsStart) / elapsed,
             frames: Double(frames() - framesStart) / elapsed,
             energy: (try Self.cpuEnergyJoules() - energyStart) / elapsed * 1000,
-            gpu: (try Self.gpuSeconds() - gpuStart) / elapsed * 100
+            gpu: (try Self.gpuSeconds() - gpuStart) / elapsed * 100,
+            memory: Spread(memory).median
         )
     }
 
