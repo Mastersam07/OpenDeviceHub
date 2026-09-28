@@ -96,17 +96,25 @@ struct ODHubViewer: ParsableCommand {
                 displayReport: { try await adapter.displayReport($0) }
             )
             foldables.report = { print($0) }
+            let orientations = ScreenOrientationFollower(
+                read: { try await adapter.displayReport($0) },
+                panels: { (try? adapter.panels($0)) ?? [] }
+            )
+            orientations.onScreenChange = { foldables.nudge($0) }
             foldables.onMove = { udid, event in
                 guard let controller = manager.controller(for: udid) else { return }
                 switch event {
                 case .began(let target): controller.beginFold(to: target)
-                case .angle(let angle): controller.showHingeAngle(angle)
+                case .angle(let angle):
+                    controller.showHingeAngle(angle)
+                    orientations.hingeMoved(udid, to: angle)
                 case .ended: controller.endFold()
                 }
             }
             manager.onDeviceClosed = {
                 pasteboard.forget($0)
                 foldables.forget($0)
+                orientations.forget($0)
             }
 
             let previews = CapturePreviewPresenter(report: { print($0) })
@@ -132,9 +140,15 @@ struct ODHubViewer: ParsableCommand {
                         try adapter.setOrientation(orientation, udid: udid)
                     }
                     controller.setOrientation(orientation)
+                    orientations.turned(udid, to: orientation)
                 } catch {
                     print("rotate failed: \(error.localizedDescription)")
                 }
+            }
+            let rotate: @MainActor (Bool, String) -> Void = { left, udid in
+                guard let controller = manager.controller(for: udid) else { return }
+                let from = orientations.lastTurn(udid) ?? controller.currentOrientation
+                turn(left ? from.rotatedLeft : from.rotatedRight, udid)
             }
 
             // Opens unfolded unless told otherwise, which is where the device's own tooling starts.
@@ -146,12 +160,12 @@ struct ODHubViewer: ParsableCommand {
                 foldables.setAngle(angle, for: udid)
                 foldables.follow(
                     udid,
-                    nudges: controller.screenChanges,
                     onPanel: { [weak controller] panel in
                         controller?.setActivePanel(screenID: panel.displayID)
                     },
                     onHinge: { [weak controller] degrees in
                         controller?.showHingeAngle(degrees)
+                        orientations.hingeMoved(udid, to: degrees)
                     }
                 )
             }
@@ -164,12 +178,14 @@ struct ODHubViewer: ParsableCommand {
                     adapter: adapter,
                     manager: manager,
                     allowBoot: allowBoot,
-                    rotate: turn,
+                    rotate: rotate,
                     present: present
                 )
                 recent.remember(udid)
                 pasteboard.adopt(udid)
-                if let controller = manager.controller(for: udid), controller.foldsAtHinge {
+                guard let controller = manager.controller(for: udid) else { return }
+                orientations.follow(udid, controller: controller)
+                if controller.foldsAtHinge {
                     followFold(udid, controller, foldables.angle(for: udid))
                 }
             }
@@ -179,7 +195,9 @@ struct ODHubViewer: ParsableCommand {
             manager.onReattached = { udid in
                 pasteboard.forget(udid)
                 pasteboard.adopt(udid)
-                guard let controller = manager.controller(for: udid), controller.foldsAtHinge else { return }
+                guard let controller = manager.controller(for: udid) else { return }
+                orientations.follow(udid, controller: controller)
+                guard controller.foldsAtHinge else { return }
                 let angle = foldables.angle(for: udid)
                 foldables.forget(udid)
                 followFold(udid, controller, angle)
@@ -343,12 +361,8 @@ struct ODHubViewer: ParsableCommand {
                     manager.frontmostUDID.map { manager.hasCameraControl($0) } ?? false
                 },
                 rotate: { left in
-                    guard let udid = manager.frontmostUDID,
-                          let controller = manager.controller(for: udid) else { return }
-                    let next = left
-                        ? controller.currentOrientation.rotatedLeft
-                        : controller.currentOrientation.rotatedRight
-                    turn(next, udid)
+                    guard let udid = manager.frontmostUDID else { return }
+                    rotate(left, udid)
                 },
                 restart: {
                     guard let udid = manager.frontmostUDID else { return }
@@ -613,7 +627,7 @@ struct ODHubViewer: ParsableCommand {
         adapter: any SimulatorAdapter,
         manager: DeviceWindowManager,
         allowBoot: Bool,
-        rotate: @escaping @MainActor (DeviceOrientation, String) -> Void,
+        rotate: @escaping @MainActor (Bool, String) -> Void,
         present: @escaping @MainActor ([URL]) -> Void
     ) throws {
         guard var device = devices.first(where: {
@@ -787,7 +801,7 @@ private func installToolbar(
     manager: DeviceWindowManager,
     adapter: any SimulatorAdapter,
     saveScreenshotsToClipboard: @escaping @MainActor () -> Bool,
-    rotate: @escaping @MainActor (DeviceOrientation, String) -> Void,
+    rotate: @escaping @MainActor (Bool, String) -> Void,
     present: @escaping @MainActor ([URL]) -> Void
 ) {
     guard let controller = manager.controller(for: udid) else { return }
@@ -821,13 +835,8 @@ private func installToolbar(
         stopRecording: {
             present(manager.toggleRecording(into: CaptureStaging.directory()))
         },
-        rotate: { [weak controller] toLeft in
-            guard let controller else { return }
-            rotate(
-                toLeft ? controller.currentOrientation.rotatedLeft
-                       : controller.currentOrientation.rotatedRight,
-                udid
-            )
+        rotate: { toLeft in
+            rotate(toLeft, udid)
         }
     ))
 }
