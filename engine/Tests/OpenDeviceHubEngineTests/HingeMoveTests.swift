@@ -33,4 +33,13 @@ import Testing
         #expect(HingeMove(start: 0, target: 90).duration == 0.5)
         #expect(HingeMove(start: 180, target: 0).duration == 1)
     }
+
+    @Test func stepsOnTheNextTickWhateverTheWorkBetweenTook() {
+        #expect(HingeMove.nextStep(after: .zero) == .milliseconds(16))
+        #expect(HingeMove.nextStep(after: .milliseconds(6)) == .milliseconds(16), "work between steps shortens the wait")
+        #expect(HingeMove.nextStep(after: .milliseconds(16)) == .milliseconds(32))
+        #expect(HingeMove.nextStep(after: .milliseconds(22)) == .milliseconds(32))
+        #expect(HingeMove.nextStep(after: .milliseconds(55)) == .milliseconds(64), "a late step skips to the next tick, not a burst")
+        #expect(HingeMove.nextStep(after: .milliseconds(-3)) == .milliseconds(16))
+    }
 }

@@ -27,4 +27,11 @@ public struct HingeMove: Sendable, Hashable {
     }
 
     public static let stepInterval: Duration = .milliseconds(16)
+
+    /// When the next step is due, counted from the start of the move: the first tick after
+    /// `elapsed`, so time taken between steps shortens the wait instead of adding to it, and a late
+    /// step is followed by the next tick rather than a burst.
+    public static func nextStep(after elapsed: Duration) -> Duration {
+        stepInterval * (Int(max(elapsed, .zero) / stepInterval) + 1)
+    }
 }

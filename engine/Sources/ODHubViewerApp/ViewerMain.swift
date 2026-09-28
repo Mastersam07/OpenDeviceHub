@@ -637,7 +637,7 @@ struct ODHubViewer: ParsableCommand {
         }
         let panel = opened.unfolded
         let session = opened.session
-        let orientation = DevicectlService().orientation(udid: device.udid) ?? .portrait
+        let orientation = DevicectlService().orientation(udid: device.udid, foldable: opened.foldsAtHinge) ?? .portrait
 
         let controller = try manager.open(
             device: device,

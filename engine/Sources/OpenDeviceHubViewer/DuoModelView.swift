@@ -1,13 +1,19 @@
 import AppKit
 import IOSurface
 import Metal
+import MetalKit
 import OpenDeviceHubEngine
+import QuartzCore
 import SceneKit
 import simd
 
 /// A foldable drawn as the physical device, bent by the hinge, with the guest's screen on it.
+///
+/// Drawn by its own renderer once for each change. An `SCNView` drawing on demand draws about 16
+/// more times after every change, a new frame from the device included, which at 2 frames a second
+/// from the device was 35 draws and 9% of the CPU at rest (Xcode 27.1, 27A9269).
 @MainActor
-public final class DuoModelView: SCNView {
+public final class DuoModelView: MTKView {
     /// Times in the asset's closing clip. Its other flat-to-shut stretches also turn the hardware.
     enum Pose {
         static let open: TimeInterval = 260.0 / 24
@@ -83,6 +89,13 @@ public final class DuoModelView: SCNView {
 
     /// How many probe renders have been made, for a test that expects a move to make none.
     var probeRenders = 0
+    public private(set) var renderCount = 0
+    private let sceneRenderer: SCNRenderer
+    private let commandQueue: MTLCommandQueue
+    /// Drawing runs on a timer until then, for a lift that SceneKit animates.
+    private var animatingUntil: CFTimeInterval = 0
+    public var scene: SCNScene? { sceneRenderer.scene }
+    public var pointOfView: SCNNode? { sceneRenderer.pointOfView }
     private let cameraNode = SCNNode()
     private let innerScreen: SCNNode
     private let coverScreen: SCNNode
@@ -129,6 +142,9 @@ public final class DuoModelView: SCNView {
               let cover = Self.closest(to: CGSize(width: 11.230, height: 7.739), among: faces),
               inner !== cover else { return nil }
 
+        guard let queue = metalDevice.makeCommandQueue() else { return nil }
+        commandQueue = queue
+        sceneRenderer = SCNRenderer(device: metalDevice, options: nil)
         self.metalDevice = metalDevice
         self.nativeQuarterTurns = ((-nativeRotation / 90) % 4 + 4) % 4
         innerScreen = inner
@@ -137,8 +153,8 @@ public final class DuoModelView: SCNView {
         lifts = Self.lifts(for: hardwareButtons, in: scene.rootNode)
         activeScreen = showingCover ? cover : inner
         content = scene.rootNode
-        // No animation players: a player churn per pose blocks behind the render thread for most
-        // of a frame, while setting thirty transforms by hand is free.
+        // No animation players: under an SCNView a player churn per pose blocked behind its render
+        // thread for most of a frame, while setting thirty transforms by hand is free.
         tracks = Self.freeze(scene.rootNode).flatMap { PoseTrack.tracks(of: $0.animation, on: $0.node) }
         // A source hands out its clips once, so the twin comes from a source of its own.
         guard let twinSource = SCNSceneSource(url: asset, options: nil),
@@ -164,9 +180,7 @@ public final class DuoModelView: SCNView {
             tracks: twinTracks
         )
 
-        super.init(frame: .zero, options: [
-            SCNView.Option.preferredRenderingAPI.rawValue: SCNRenderingAPI.metal.rawValue,
-        ])
+        super.init(frame: .zero, device: metalDevice)
 
         let camera = SCNCamera()
         camera.fieldOfView = 31
@@ -178,25 +192,24 @@ public final class DuoModelView: SCNView {
         scene.rootNode.addChildNode(cameraNode)
         installLighting(in: scene)
 
-        self.scene = scene
-        pointOfView = cameraNode
-        backgroundColor = .clear
-        wantsLayer = true
+        sceneRenderer.scene = scene
+        sceneRenderer.pointOfView = cameraNode
+        // What the SCNView this replaced drew into (27A9269), so the device looks the same.
+        colorPixelFormat = .bgra8Unorm_srgb
+        depthStencilPixelFormat = .depth32Float
+        sampleCount = 4
+        clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         layer?.isOpaque = false
-        antialiasingMode = .multisampling4X
-        allowsCameraControl = false
-        rendersContinuously = true
-        // Asked for 30, SceneKit draws at 24 on a 120 Hz display, and the rate cannot be changed
-        // once the view exists; a fold needs 60 to look like one.
+        (layer as? CAMetalLayer)?.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
+        isPaused = true
+        enableSetNeedsDisplay = true
         preferredFramesPerSecond = 60
-        isPlaying = false
-        loops = false
 
         setHingeAngle(180)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
+    required init(coder: NSCoder) {
         fatalError("not supported")
     }
 
@@ -207,7 +220,7 @@ public final class DuoModelView: SCNView {
         settleLifts()
         if let move, let fraction = move.fraction(of: hingeAngle) {
             let correction = move.start + (move.end - move.start) * Float(fraction)
-            // The twin's bones, not this scene's: a read here waits behind the render thread.
+            // The twin's bones, not this scene's, which under an SCNView waited behind its render thread.
             place(
                 cameraNode, angle: hingeAngle, centre: twinCentre(at: hingeAngle),
                 correction: correction, distanceScale: move.scale(at: hingeAngle)
@@ -215,6 +228,7 @@ public final class DuoModelView: SCNView {
         } else {
             frameCamera()
         }
+        needsDisplay = true
     }
 
     /// Framed from both ends, measured on the twin now; a probe render costs more than a frame, so
@@ -283,6 +297,50 @@ public final class DuoModelView: SCNView {
         needsLayout = true
     }
 
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        needsDisplay = true
+    }
+
+    public override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        needsDisplay = true
+    }
+
+    public override func draw(_ dirtyRect: NSRect) {
+        let now = CACurrentMediaTime()
+        defer {
+            if !isPaused, now >= animatingUntil {
+                isPaused = true
+                enableSetNeedsDisplay = true
+            }
+        }
+        guard let pass = currentRenderPassDescriptor, let drawable = currentDrawable,
+              let buffer = commandQueue.makeCommandBuffer() else { return }
+        sceneRenderer.render(
+            atTime: now,
+            viewport: CGRect(origin: .zero, size: drawableSize),
+            commandBuffer: buffer,
+            passDescriptor: pass
+        )
+        buffer.present(drawable)
+        buffer.commit()
+        renderCount += 1
+    }
+
+    /// Drawn on a timer for as long as SceneKit animates, then on demand again.
+    private func animate(for duration: TimeInterval) {
+        animatingUntil = max(animatingUntil, CACurrentMediaTime() + duration)
+        enableSetNeedsDisplay = false
+        isPaused = false
+    }
+
+    /// The picture as it is drawn now, at the drawable's size, and empty before the view has one.
+    public func snapshot() -> NSImage {
+        guard drawableSize.width > 0, drawableSize.height > 0 else { return NSImage(size: .zero) }
+        return sceneRenderer.snapshot(atTime: CACurrentMediaTime(), with: drawableSize, antialiasingMode: .multisampling4X)
+    }
+
     /// The hardware turns too: the guest has already turned its picture inside the panel.
     public func setOrientation(_ orientation: DeviceOrientation) {
         let turns = ((orientation.degrees / 90) % 4 + 4) % 4
@@ -347,6 +405,7 @@ public final class DuoModelView: SCNView {
             material.diffuse.wrapT = .clamp
             material.lightingModel = .constant
         }
+        needsDisplay = true
     }
 
     /// Frozen players rather than the view's scene time, which the view advances itself.
@@ -448,6 +507,7 @@ public final class DuoModelView: SCNView {
         )
         silhouette = framing.silhouette
         projectButtons()
+        needsDisplay = true
     }
 
     /// Measurements belong to a window size and a way up; either changing throws them away.
@@ -873,17 +933,19 @@ public final class DuoModelView: SCNView {
         let amount = restLift(of: button) + rise
         let position = lift.outward * amount
         let scale = SIMD3<Float>(repeating: 1) + abs(lift.outward) * (amount / lift.depth)
-        // An explicit transaction commits behind the render thread, which costs most of a frame
-        // in a live window; a plain set costs nothing and the run loop commits it.
+        // Under an SCNView an explicit transaction committed behind its render thread, which cost
+        // most of a frame in a live window; a plain set costs nothing.
         if liftDuration > 0 {
             SCNTransaction.begin()
             SCNTransaction.animationDuration = liftDuration
             lift.node.simdPosition = position
             lift.node.simdScale = scale
             SCNTransaction.commit()
+            animate(for: liftDuration)
         } else {
             lift.node.simdPosition = position
             lift.node.simdScale = scale
+            needsDisplay = true
         }
         liftedReach = rise > 0 ? reach(of: button, lifted: amount) : nil
     }
@@ -916,6 +978,7 @@ public final class DuoModelView: SCNView {
         for material in node.geometry?.materials ?? [] {
             material.emission.contents = lit ? NSColor(white: 0.35, alpha: 1) : NSColor.black
         }
+        needsDisplay = true
     }
 
     func liftOffset(of button: HardwareButton) -> Float {
@@ -1269,4 +1332,3 @@ extension DuoModelView {
         return (SCNVector3(origin), SCNVector3(far))
     }
 }
-

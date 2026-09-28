@@ -38,6 +38,7 @@ fragment float4 odhFragment(VertexOut in [[stage_in]], texture2d<float> screen [
 /// `IOSurface`, so a frame is never copied through the CPU.
 public final class FrameRenderer: NSObject, MTKViewDelegate {
     public var onFrameDrawn: (() -> Void)?
+    public private(set) var drawCount = 0
 
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
@@ -141,6 +142,7 @@ public final class FrameRenderer: NSObject, MTKViewDelegate {
         buffer.present(drawable)
         buffer.commit()
 
+        drawCount += 1
         onFrameDrawn?()
     }
 

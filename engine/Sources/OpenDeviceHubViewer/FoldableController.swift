@@ -102,7 +102,10 @@ public final class FoldableController {
                 send(angle, to: control, for: udid, poke: false)
                 onMove?(udid, .angle(angle))
                 if progress >= 1 { break }
-                try? await Task.sleep(for: HingeMove.stepInterval)
+                try? await Task.sleep(
+                    until: started + HingeMove.nextStep(after: ContinuousClock.now - started),
+                    clock: .continuous
+                )
             }
             guard let self, !Task.isCancelled else { return }
             moves[udid] = nil
