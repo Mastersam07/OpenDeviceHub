@@ -283,7 +283,7 @@ final class PerformanceCheckTests: XCTestCase {
             { targeted.setTarget(screenID: $0) }
         }
         let sessionsOpened = ContinuousClock.now
-        let orientation = DevicectlService().orientation(udid: device.udid) ?? .portrait
+        let orientation = DevicectlService().orientation(udid: device.udid, foldable: foldsAtHinge) ?? .portrait
         let oriented = ContinuousClock.now
         let controller = try manager.open(
             device: device,

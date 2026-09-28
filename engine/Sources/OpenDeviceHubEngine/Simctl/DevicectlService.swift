@@ -24,10 +24,12 @@ public struct DevicectlService: Sendable {
     }
 
     /// On a foldable the first answer after a turn repeats the answer given before it, however long
-    /// ago the turn was (27A266a), so the question is asked twice and the second answer kept.
-    public func orientation(udid: String) -> DeviceOrientation? {
+    /// ago the turn was (27A266a, 27A9269), so a foldable is asked twice and the second answer kept.
+    /// An ordinary iPhone answers right the first time (27A9269), and each ask costs 150 to 400 ms.
+    public func orientation(udid: String, foldable: Bool) -> DeviceOrientation? {
         let arguments = Self.orientationArguments(udid: udid)
-        guard run(arguments) != nil, let output = run(arguments) else { return nil }
+        if foldable { guard run(arguments) != nil else { return nil } }
+        guard let output = run(arguments) else { return nil }
         return Self.parseOrientation(Data(output.utf8))
     }
 

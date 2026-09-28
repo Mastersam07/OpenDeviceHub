@@ -25,7 +25,7 @@ final class OpenSidewaysDriveTests: XCTestCase {
         defer { try? adapter.setOrientation(.portrait, udid: udid) }
         try await Task.sleep(for: .seconds(3))
 
-        let orientation = try XCTUnwrap(DevicectlService().orientation(udid: udid), "devicectl did not say how the device is turned")
+        let orientation = try XCTUnwrap(DevicectlService().orientation(udid: udid, foldable: false), "devicectl did not say how the device is turned")
         XCTAssertEqual(orientation, .landscapeLeft)
 
         let manager = DeviceWindowManager(shutdown: { _ in })
@@ -64,6 +64,29 @@ final class OpenSidewaysDriveTests: XCTestCase {
         try await checkQuadrants(screen, in: window, log: log, shown: "upright")
     }
 
+    /// One ask, straight after each turn, twice round, so a first answer that repeats the last one
+    /// would show.
+    func testAnOrdinaryIPhoneSaysHowItIsTurnedAtTheFirstAsk() async throws {
+        try IntegrationGate.requireEnabled()
+        let adapter = try AdapterFactory.make(for: XcodeLocator.locate())
+        guard let device = try adapter.devices().first(where: {
+            $0.state == .booted && $0.name.hasPrefix("iPhone") && ((try? adapter.panels($0.udid).count) ?? 0) < 2
+        }) else { throw XCTSkip("boot an ordinary iPhone to run this test") }
+        let udid = device.udid
+        try IntegrationHost.install(on: udid)
+        _ = try run(["simctl", "launch", udid, IntegrationHost.bundleID])
+        try await Task.sleep(for: .seconds(3))
+        defer { try? adapter.setOrientation(.portrait, udid: udid) }
+
+        for orientation in [DeviceOrientation.landscapeLeft, .landscapeRight, .portrait, .landscapeRight, .portrait, .landscapeLeft, .portrait] {
+            try adapter.setOrientation(orientation, udid: udid)
+            try await Task.sleep(for: .seconds(2))
+            let read = DevicectlService().orientation(udid: udid, foldable: false)
+            print("RESULT iPhone turned \(orientation.rawValue), first answer \(read?.rawValue ?? "nothing")")
+            XCTAssertEqual(read, orientation)
+        }
+    }
+
     func testAFoldableSaysHowItIsTurned() async throws {
         try IntegrationGate.requireEnabled()
         let adapter = try AdapterFactory.make(for: XcodeLocator.locate())
@@ -76,7 +99,7 @@ final class OpenSidewaysDriveTests: XCTestCase {
         for orientation in [DeviceOrientation.landscapeRight, .landscapeLeft, .portrait] {
             try control.setOrientation(orientation)
             try await Task.sleep(for: .seconds(3))
-            let read = DevicectlService().orientation(udid: device.udid)
+            let read = DevicectlService().orientation(udid: device.udid, foldable: true)
             print("RESULT foldable turned \(orientation.rawValue), read back \(read?.rawValue ?? "nothing")")
             XCTAssertEqual(read, orientation)
         }

@@ -37,13 +37,21 @@ final class DevicectlServiceTests: XCTestCase {
     func testKeepsTheSecondAnswerSinceAFoldableRepeatsItsLastOne() {
         let answers = Answers([report("portrait"), report("landscapeRight")])
         let service = DevicectlService { _ in answers.next() }
-        XCTAssertEqual(service.orientation(udid: "ABC"), .landscapeLeft)
+        XCTAssertEqual(service.orientation(udid: "ABC", foldable: true), .landscapeLeft)
         XCTAssertEqual(answers.asked, 2)
+    }
+
+    func testAsksAnOrdinaryDeviceOnce() {
+        let answers = Answers([report("landscapeRight"), report("portrait")])
+        let service = DevicectlService { _ in answers.next() }
+        XCTAssertEqual(service.orientation(udid: "ABC", foldable: false), .landscapeLeft)
+        XCTAssertEqual(answers.asked, 1)
     }
 
     func testNoAnswerWhenDevicectlCannotSeeTheDevice() {
         let service = DevicectlService { _ in nil }
-        XCTAssertNil(service.orientation(udid: "ABC"))
+        XCTAssertNil(service.orientation(udid: "ABC", foldable: true))
+        XCTAssertNil(service.orientation(udid: "ABC", foldable: false))
     }
 
     func testAnythingElseIsNoAnswer() {
