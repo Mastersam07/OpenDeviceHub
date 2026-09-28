@@ -51,21 +51,25 @@ unsigned build that reaches a release page is worse than a run that stops.
 1. Add the version's section to `CHANGELOG.md`. The release notes on GitHub and the notes inside the
    update feed both come from it, so they cannot drift apart.
 2. Update `VERSION`.
-3. Run the **Release** workflow from the Actions tab with `publish` left **false**. That is a dry
+3. Run `scripts/performance-check.sh` on the Mac the baseline in `performance/baseline.json` was
+   recorded on, with an iPhone and an iPhone Duo booted. It exits 1 if a window got slower, heavier
+   or less responsive than the baseline allows. Record a new baseline with `--record-baseline` only
+   when a change is meant to move the numbers, and commit it with that change.
+4. Run the **Release** workflow from the Actions tab with `publish` left **false**. That is a dry
    run: it builds, signs, notarizes, staples, packages, checksums and generates the feed, and
    creates no tag, no release and no commit anywhere. The artifacts are attached to the run under a
    short retention name so you can download and check them.
-4. Install the dry run's DMG and use it. `stapler validate` on the app and on the DMG, and
+5. Install the dry run's DMG and use it. `stapler validate` on the app and on the DMG, and
    `shasum -c SHA256SUMS` from a different directory.
-5. Run the workflow again with `publish` **true**. It creates the tag and a release marked as the
+6. Run the workflow again with `publish` **true**. It creates the tag and a release marked as the
    latest, carrying the DMG under its versioned name, the same DMG as `OpenDeviceHub.dmg`,
    `SHA256SUMS` and the signed `appcast.xml`. The README's download button and its Install link fetch
    `OpenDeviceHub.dmg` from the latest release, so they need no edit.
-6. **Only once that release page exists**, commit the release's `appcast.xml` to the feed
+7. **Only once that release page exists**, commit the release's `appcast.xml` to the feed
    repository. Installed copies read the feed from there, never from the release, which is why the
    feed URL can never move. A feed pointing at a download that is not there yet breaks updates for
    everyone who reads it in the meantime.
-7. Confirm an already installed older copy finds the update, verifies it and installs it, ending on
+8. Confirm an already installed older copy finds the update, verifies it and installs it, ending on
    the new version. Do this before announcing anything: a broken updater cannot be fixed by a later
    release.
 

@@ -1,0 +1,55 @@
+{
+  "createdAt" : "2026-09-28T05:45:24Z",
+  "environment" : {
+    "buildConfiguration" : "release",
+    "hardwareModel" : "Mac15,6",
+    "lowPowerMode" : true,
+    "macOS" : "27.0.0",
+    "xcode" : "Xcode 27.1 (27A9269)"
+  },
+  "schemaVersion" : 1,
+  "windows" : [
+    {
+      "clickLatencyMs" : {
+        "median" : 12.259333333333334,
+        "p95" : 19.268083333333333,
+        "samples" : 20
+      },
+      "device" : "iPhone 17 (iOS 27.0)",
+      "idleCPUPercent" : {
+        "median" : 0.2005022855287288,
+        "p95" : 0.2525720731410715,
+        "samples" : 10
+      },
+      "idleDrawsPerSecond" : 0,
+      "idleFramesPerSecond" : 0,
+      "name" : "phone",
+      "processMemoryMB" : 152.43841552734375,
+      "windowMemoryMB" : 48.640785217285156
+    },
+    {
+      "clickLatencyMs" : {
+        "median" : 12.488833333333334,
+        "p95" : 16.651708333333335,
+        "samples" : 20
+      },
+      "device" : "iPhone Duo (iOS 27.1)",
+      "foldCPUPercent" : 23.19616284802404,
+      "foldStepGapMs" : {
+        "median" : 32.523292000000005,
+        "p95" : 34.215083,
+        "samples" : 73
+      },
+      "idleCPUPercent" : {
+        "median" : 17.592522514306282,
+        "p95" : 18.955358112325786,
+        "samples" : 10
+      },
+      "idleDrawsPerSecond" : 60.001300476919354,
+      "idleFramesPerSecond" : 2.2077338687337456,
+      "name" : "foldable",
+      "processMemoryMB" : 359.1573944091797,
+      "windowMemoryMB" : 295.26585388183594
+    }
+  ]
+}
