@@ -7,7 +7,9 @@
 # baseline that measured it then fails the comparison. Keep the Mac otherwise quiet while it runs.
 #
 # A baseline only compares with a run on the same Mac model, macOS, Xcode, power mode and build
-# configuration.
+# configuration. Low Power Mode caps drawing at 60 a second, so there is one baseline for each:
+# performance/baseline-low-power.json and performance/baseline-normal-power.json, and the one that
+# matches the Mac right now is used unless --baseline names another.
 #
 # Usage: scripts/performance-check.sh [--baseline FILE] [--record-baseline | --measure-only]
 #   (default)          compare with the baseline and exit 1 on a regression
@@ -16,7 +18,11 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-baseline="${repo_root}/performance/baseline.json"
+if [ "$(pmset -g | awk '/lowpowermode/ {print $2}')" = "1" ]; then
+  baseline="${repo_root}/performance/baseline-low-power.json"
+else
+  baseline="${repo_root}/performance/baseline-normal-power.json"
+fi
 mode="compare"
 
 while [ $# -gt 0 ]; do
@@ -24,7 +30,7 @@ while [ $# -gt 0 ]; do
     --baseline) baseline="$2"; shift ;;
     --record-baseline) mode="record" ;;
     --measure-only) mode="measure" ;;
-    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option $1" >&2; exit 2 ;;
   esac
   shift

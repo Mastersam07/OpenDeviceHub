@@ -51,10 +51,12 @@ unsigned build that reaches a release page is worse than a run that stops.
 1. Add the version's section to `CHANGELOG.md`. The release notes on GitHub and the notes inside the
    update feed both come from it, so they cannot drift apart.
 2. Update `VERSION`.
-3. Run `scripts/performance-check.sh` on the Mac the baseline in `performance/baseline.json` was
-   recorded on, with an iPhone and an iPhone Duo booted. It exits 1 if a window got slower, heavier
-   or less responsive than the baseline allows. Record a new baseline with `--record-baseline` only
-   when a change is meant to move the numbers, and commit it with that change.
+3. Run `scripts/performance-check.sh` on the Mac the baselines in `performance/` were recorded on,
+   with an iPhone and an iPhone Duo booted and Low Power Mode off. It compares with
+   `baseline-normal-power.json`, or `baseline-low-power.json` when Low Power Mode is on, and exits 1
+   if a window got slower, heavier or less responsive than the baseline allows. Record a new
+   baseline with `--record-baseline` only when a change is meant to move the numbers, and commit it
+   with that change.
 4. Run the **Release** workflow from the Actions tab with `publish` left **false**. That is a dry
    run: it builds, signs, notarizes, staples, packages, checksums and generates the feed, and
    creates no tag, no release and no commit anywhere. The artifacts are attached to the run under a
