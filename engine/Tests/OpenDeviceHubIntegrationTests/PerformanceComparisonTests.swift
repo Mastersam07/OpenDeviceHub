@@ -81,6 +81,15 @@ final class PerformanceComparisonTests: XCTestCase {
         XCTAssertEqual(tolerance.limit(for: 20), 30, "further up the share decides")
     }
 
+    func testTheFoldablesReopensHaveTheirOwnWiderLimit() throws {
+        let findings = try PerformanceComparison.regressions(
+            current: report([window(kept: 40), window("phone", gap: nil, kept: 40)]),
+            baseline: report([window(kept: 0), window("phone", gap: nil, kept: 0)])
+        )
+        XCTAssertEqual(findings.map(\.window), ["phone"], "the model's memory swings; the phone's does not")
+        XCTAssertEqual(findings.first?.limit, 10)
+    }
+
     func testAReopenIsJudgedByItsMedians() {
         let reopen = Reopen(
             opens: [openTime(420), openTime(380), openTime(400)],
@@ -99,8 +108,8 @@ final class PerformanceComparisonTests: XCTestCase {
 
     func testMemoryKeptByEachReopenBeyondItsLimitIsReported() throws {
         let findings = try PerformanceComparison.regressions(
-            current: report([window(kept: 40)]),
-            baseline: report([window(kept: 2)])
+            current: report([window("phone", gap: nil, kept: 40)]),
+            baseline: report([window("phone", gap: nil, kept: 2)])
         )
         XCTAssertEqual(findings.map(\.metric), ["memory kept by each reopen (MB)"])
         XCTAssertEqual(findings.first?.limit, 12)

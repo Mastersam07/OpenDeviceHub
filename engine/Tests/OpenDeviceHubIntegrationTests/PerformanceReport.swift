@@ -204,6 +204,15 @@ enum PerformanceComparison {
         "memory growth (MB per minute)": Tolerance(relative: 0.5, absolute: 15),
     ]
 
+    /// Where one kind of window is noisier than the rest, keyed by window and then metric.
+    static let windowTolerances: [String: [String: Tolerance]] = [
+        "foldable": [
+            // The model's memory moves by up to 50 MB from one reopen to the next with nothing
+            // leaking (27A9269), while a whole window is about 300 MB.
+            "memory kept by each reopen (MB)": Tolerance(relative: 0.5, absolute: 60),
+        ],
+    ]
+
     static func metrics(of window: WindowMeasurement) -> [String: Double] {
         var values = [
             "idle CPU median (%)": window.idleCPUPercent.median,
@@ -278,7 +287,8 @@ enum PerformanceComparison {
     /// metric existed still checks the rest.
     private static func compare(_ window: String, _ before: [String: Double], _ after: [String: Double]) -> [Finding] {
         before.sorted(by: { $0.key < $1.key }).compactMap { metric, value in
-            guard let measured = after[metric], let tolerance = tolerances[metric] else { return nil }
+            guard let measured = after[metric],
+                  let tolerance = windowTolerances[window]?[metric] ?? tolerances[metric] else { return nil }
             let limit = tolerance.limit(for: value)
             guard measured > limit else { return nil }
             return Finding(window: window, metric: metric, baseline: value, current: measured, limit: limit)
