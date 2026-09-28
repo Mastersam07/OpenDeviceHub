@@ -2,6 +2,7 @@ import AppKit
 import IOSurface
 import Metal
 import OpenDeviceHubEngine
+import os
 import SceneKit
 import simd
 
@@ -83,6 +84,9 @@ public final class DuoModelView: SCNView {
 
     /// How many probe renders have been made, for a test that expects a move to make none.
     var probeRenders = 0
+    /// SceneKit calls back on its render thread, so the count is kept behind a lock.
+    private let renders = OSAllocatedUnfairLock(initialState: 0)
+    public var renderCount: Int { renders.withLock { $0 } }
     private let cameraNode = SCNNode()
     private let innerScreen: SCNNode
     private let coverScreen: SCNNode
@@ -191,6 +195,7 @@ public final class DuoModelView: SCNView {
         preferredFramesPerSecond = 60
         isPlaying = false
         loops = false
+        delegate = self
 
         setHingeAngle(180)
     }
@@ -1270,3 +1275,8 @@ extension DuoModelView {
     }
 }
 
+extension DuoModelView: SCNSceneRendererDelegate {
+    public nonisolated func renderer(_ renderer: any SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval) {
+        renders.withLock { $0 += 1 }
+    }
+}

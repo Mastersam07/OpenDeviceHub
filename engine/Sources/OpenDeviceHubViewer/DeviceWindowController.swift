@@ -578,6 +578,11 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     public var latencyReading: LatencyMeter.Reading? { latency.reading }
 
+    /// Frames the device has sent this window, and pictures the window has drawn, for measuring
+    /// what a window costs while nothing on screen changes.
+    public private(set) var framesReceived = 0
+    public var drawCount: Int { modelView?.renderCount ?? renderer.drawCount }
+
     private func updateTitle() {
         guard let window else { return }
         let base = baseTitle ?? window.title
@@ -891,6 +896,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
                 renderer.accept(frame)
                 recording.current?.append(frame.surface, from: screenID, turnedBy: turns)
                 await MainActor.run { [weak self] in
+                    self?.framesReceived += 1
                     // The flat view sits under the model and is not seen; drawing it costs the
                     // main thread a draw per frame.
                     if self?.modelView == nil { screenView.needsDisplay = true }
@@ -919,6 +925,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
                 if Task.isCancelled { return }
                 recording.current?.append(frame.surface, from: screenID, turnedBy: turns)
                 await MainActor.run { [weak self] in
+                    self?.framesReceived += 1
                     self?.modelView?.setScreen(frame.surface, onCover: true, nativeRotation: rotation)
                 }
             }
