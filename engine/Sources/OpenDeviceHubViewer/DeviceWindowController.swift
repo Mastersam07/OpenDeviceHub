@@ -798,7 +798,6 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
     private func installClickToTap() {
         let pixelSize = session.pixelSize
-        let screenView = screenView
 
         // The model's hit test already yields the guest's own coordinates; nothing is turned here.
         modelView?.onTouch = { [weak self] point, phase in
@@ -817,7 +816,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
             let orientation = self.orientation
             guard let primary = CoordinateMapper.normalize(
                 viewPoint: point,
-                viewSize: screenView.bounds.size,
+                viewSize: self.screenView.bounds.size,
                 pixelSize: orientation.displayedSize(portraitNative: pixelSize)
             ) else { return }
 
@@ -865,7 +864,7 @@ public final class DeviceWindowController: NSWindowController, NSWindowDelegate 
 
         screenView.onGesture = { [weak self] phase, spread, angle in
             guard let self else { return }
-            let size = screenView.bounds.size
+            let size = self.screenView.bounds.size
             guard size.width > 0, size.height > 0 else { return }
 
             let normalizedSpread = spread / min(size.width, size.height)
