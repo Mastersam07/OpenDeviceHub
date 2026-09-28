@@ -130,10 +130,8 @@ public final class FoldableController {
         followers[udid]?.watcher.poke()
     }
 
-    /// `nudges` are the panels' own change announcements; each makes the watcher look at once.
     public func follow(
         _ udid: String,
-        nudges: [AsyncStream<ScreenProperties>] = [],
         onPanel: @escaping @MainActor (DisplayReport.Display) -> Void,
         onHinge: @escaping @MainActor (Double) -> Void
     ) {
@@ -162,14 +160,12 @@ public final class FoldableController {
                 onPanel(panel)
             }
         }]
-        for nudge in nudges {
-            tasks.append(Task {
-                for await _ in nudge {
-                    watcher.poke()
-                }
-            })
-        }
         followers[udid] = Follower(watcher: watcher, hinge: hinge, tasks: tasks)
+    }
+
+    /// The device's screens announced a change, which on a fold comes before the report has one.
+    public func nudge(_ udid: String) {
+        followers[udid]?.watcher.poke()
     }
 
     public func activePanel(for udid: String) -> DisplayReport.Display? {
