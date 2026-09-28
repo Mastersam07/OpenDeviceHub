@@ -199,7 +199,9 @@ enum PerformanceComparison {
         "open to first picture (ms)": Tolerance(relative: 1, absolute: 300),
         "open again to first picture (ms)": Tolerance(relative: 0.3, absolute: 150),
         "memory kept by each reopen (MB)": Tolerance(relative: 0.5, absolute: 10),
-        "memory growth (MB per minute)": Tolerance(relative: 0.5, absolute: 5),
+        // Three busy minutes with nothing leaking read from -9 to 13 MB a minute over nine runs, as
+        // the model's memory dips and comes back by tens of MB.
+        "memory growth (MB per minute)": Tolerance(relative: 0.5, absolute: 15),
     ]
 
     static func metrics(of window: WindowMeasurement) -> [String: Double] {

@@ -212,7 +212,7 @@ final class PerformanceComparisonTests: XCTestCase {
 
     func testTheWindowsOpenedTogetherAreComparedUnderTheirOwnName() throws {
         let findings = try PerformanceComparison.regressions(
-            current: report([window()], together: together(cpu: 20, growth: 9)),
+            current: report([window()], together: together(cpu: 20, growth: 17)),
             baseline: report([window()], together: together())
         )
         XCTAssertEqual(findings.map(\.window), ["together", "together"])
