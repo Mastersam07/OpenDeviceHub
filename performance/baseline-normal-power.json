@@ -1,5 +1,5 @@
 {
-  "createdAt" : "2026-09-28T11:53:21Z",
+  "createdAt" : "2026-09-28T14:22:18Z",
   "environment" : {
     "buildConfiguration" : "release",
     "hardwareModel" : "Mac15,6",
@@ -13,150 +13,150 @@
       "iPhone 17 (iOS 27.0)",
       "iPhone Duo (iOS 27.1)"
     ],
-    "idleCPUEnergyMilliwatts" : 12.972761723841723,
+    "idleCPUEnergyMilliwatts" : 1.653480535325553,
     "idleCPUPercent" : {
-      "median" : 9.572144208538406,
-      "p95" : 12.162444850751928,
+      "median" : 1.2256303924930867,
+      "p95" : 1.6418494785014763,
       "samples" : 10
     },
-    "idleDrawsPerSecond" : 33.691864374922474,
-    "idleFramesPerSecond" : 2.308334731226467,
-    "idleGPUPercent" : 3.638691069104495,
-    "processMemoryMB" : 413.5949401855469,
+    "idleDrawsPerSecond" : 2.356308363298762,
+    "idleFramesPerSecond" : 2.356308363298762,
+    "idleGPUPercent" : 0.30492614919984484,
+    "processMemoryMB" : 402.1261215209961,
     "soak" : {
-      "clicks" : 227,
-      "endMB" : 413.5949401855469,
+      "clicks" : 228,
+      "endMB" : 402.1261215209961,
       "folds" : 8,
-      "growthMBPerMinute" : 2.351137537762155,
+      "growthMBPerMinute" : 2.3454191976695675,
       "seconds" : 180,
-      "startMB" : 401.1105651855469
+      "startMB" : 391.4698715209961
     },
-    "windowsMemoryMB" : 363.6254348754883
+    "windowsMemoryMB" : 380.3284912109375
   },
   "windows" : [
     {
       "clickLatencyMs" : {
-        "median" : 8.787416666666665,
-        "p95" : 13.040416666666665,
+        "median" : 12.212416666666666,
+        "p95" : 20.951125,
         "samples" : 20
       },
       "device" : "iPhone 17 (iOS 27.0)",
-      "idleCPUEnergyMilliwatts" : 0.708254376266516,
+      "idleCPUEnergyMilliwatts" : 1.7159928379051423,
       "idleCPUPercent" : {
-        "median" : 0.2054317745774193,
-        "p95" : 0.7792023230559177,
+        "median" : 0.2203408604497964,
+        "p95" : 0.874295276459982,
         "samples" : 10
       },
-      "idleDrawsPerSecond" : 0.09746648917987798,
-      "idleFramesPerSecond" : 0.09746648917987798,
-      "idleGPUPercent" : 0.005427460436577177,
+      "idleDrawsPerSecond" : 0.09745445393163028,
+      "idleFramesPerSecond" : 0.09745445393163028,
+      "idleGPUPercent" : 0.008464528414299162,
       "name" : "phone",
       "open" : {
-        "firstPictureMs" : 47.018209,
-        "orientationMs" : 410.716292,
-        "sessionsMs" : 26.218917,
-        "totalMs" : 670.460834,
-        "windowMs" : 186.507416
+        "firstPictureMs" : 75.851209,
+        "orientationMs" : 303.730458,
+        "sessionsMs" : 21.275917,
+        "totalMs" : 688.528167,
+        "windowMs" : 287.67058299999997
       },
-      "processMemoryMB" : 152.50091552734375,
+      "processMemoryMB" : 149.95404052734375,
       "reopen" : {
         "addedByEachReopenMB" : [
-          5.671875,
-          4.4375,
-          4.578125
+          3.5,
+          0.171875,
+          0
         ],
         "freedOnClose" : true,
-        "keptAfterCloseMB" : 26.875091552734375,
+        "keptAfterCloseMB" : 11.562591552734375,
         "opens" : [
           {
-            "firstPictureMs" : 18.98425,
-            "orientationMs" : 338.607375,
-            "sessionsMs" : 28.813417,
-            "totalMs" : 402.951042,
-            "windowMs" : 16.546000000000003
+            "firstPictureMs" : 17.954167,
+            "orientationMs" : 158.828875,
+            "sessionsMs" : 18.226499999999998,
+            "totalMs" : 213.850917,
+            "windowMs" : 18.841375
           },
           {
-            "firstPictureMs" : 16.394459,
-            "orientationMs" : 321.07404099999997,
-            "sessionsMs" : 31.128209000000002,
-            "totalMs" : 380.868834,
-            "windowMs" : 12.272125
+            "firstPictureMs" : 17.68375,
+            "orientationMs" : 166.909625,
+            "sessionsMs" : 31.184917,
+            "totalMs" : 230.490542,
+            "windowMs" : 14.71225
           },
           {
-            "firstPictureMs" : 16.304917,
-            "orientationMs" : 319.44795799999997,
-            "sessionsMs" : 24.152292,
-            "totalMs" : 375.04879199999993,
-            "windowMs" : 15.143625
+            "firstPictureMs" : 17.194417,
+            "orientationMs" : 177.183541,
+            "sessionsMs" : 32.812792,
+            "totalMs" : 239.63904200000002,
+            "windowMs" : 12.448292
           }
         ]
       },
-      "windowMemoryMB" : 47.82823944091797
+      "windowMemoryMB" : 36.23448944091797
     },
     {
       "clickLatencyMs" : {
-        "median" : 11.423833333333334,
-        "p95" : 14.965791666666666,
+        "median" : 9.792833333333334,
+        "p95" : 17.169291666666666,
         "samples" : 20
       },
       "device" : "iPhone Duo (iOS 27.1)",
-      "foldCPUPercent" : 33.88276299687477,
+      "foldCPUPercent" : 21.496221395481253,
       "foldStepGapMs" : {
-        "median" : 18.637625,
-        "p95" : 24.799459,
-        "samples" : 104
+        "median" : 16.396542,
+        "p95" : 19.593458000000002,
+        "samples" : 126
       },
-      "idleCPUEnergyMilliwatts" : 20.23728821071902,
+      "idleCPUEnergyMilliwatts" : 4.596634097579818,
       "idleCPUPercent" : {
-        "median" : 9.5980171669382,
-        "p95" : 12.037014510216425,
+        "median" : 0.6751292239530251,
+        "p95" : 1.126026700718238,
         "samples" : 10
       },
-      "idleDrawsPerSecond" : 35.61601065391605,
-      "idleFramesPerSecond" : 2.213702319649478,
-      "idleGPUPercent" : 4.268911748829975,
+      "idleDrawsPerSecond" : 2.210415008503586,
+      "idleFramesPerSecond" : 2.161294674981284,
+      "idleGPUPercent" : 0.2093037894564363,
       "name" : "foldable",
       "open" : {
-        "firstPictureMs" : 46.669416,
-        "orientationMs" : 334.866417,
-        "sessionsMs" : 48.03337500000001,
-        "totalMs" : 1341.278208,
-        "windowMs" : 911.709
+        "firstPictureMs" : 122.354041,
+        "orientationMs" : 693.304166,
+        "sessionsMs" : 174.235959,
+        "totalMs" : 2182.395,
+        "windowMs" : 1192.5008340000002
       },
-      "processMemoryMB" : 371.9854965209961,
+      "processMemoryMB" : 348.6104736328125,
       "reopen" : {
         "addedByEachReopenMB" : [
-          -4.4530792236328125,
-          -25.375,
-          9.078147888183594
+          32.390647888183594,
+          -49.140625,
+          48.21875
         ],
         "freedOnClose" : true,
-        "keptAfterCloseMB" : 89.57835388183594,
+        "keptAfterCloseMB" : 70.48458099365234,
         "opens" : [
           {
-            "firstPictureMs" : 76.78133299999999,
-            "orientationMs" : 355.050792,
-            "sessionsMs" : 63.769625,
-            "totalMs" : 975.6773750000001,
-            "windowMs" : 480.075625
+            "firstPictureMs" : 94.341583,
+            "orientationMs" : 386.609916,
+            "sessionsMs" : 76.84329199999999,
+            "totalMs" : 1182.4217079999999,
+            "windowMs" : 624.6269169999999
           },
           {
-            "firstPictureMs" : 87.002,
-            "orientationMs" : 355.940292,
-            "sessionsMs" : 36.425833,
-            "totalMs" : 954.561875,
-            "windowMs" : 475.19375
+            "firstPictureMs" : 77.06837499999999,
+            "orientationMs" : 333.732709,
+            "sessionsMs" : 59.454791,
+            "totalMs" : 875.5543749999999,
+            "windowMs" : 405.2985
           },
           {
-            "firstPictureMs" : 81.960792,
-            "orientationMs" : 340.14175,
-            "sessionsMs" : 52.940417,
-            "totalMs" : 902.361084,
-            "windowMs" : 427.318125
+            "firstPictureMs" : 79.98979200000001,
+            "orientationMs" : 382.287416,
+            "sessionsMs" : 39.989584,
+            "totalMs" : 948.8692089999998,
+            "windowMs" : 446.60241699999995
           }
         ]
       },
-      "windowMemoryMB" : 315.10960388183594
+      "windowMemoryMB" : 318.92205810546875
     }
   ]
 }
