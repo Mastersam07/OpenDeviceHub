@@ -17,6 +17,13 @@ public enum DeviceOrientation: String, Sendable, Hashable, CaseIterable, Codable
         }
     }
 
+    /// The orientation turned this many degrees clockwise, in any multiple of a quarter turn.
+    public init?(degrees: Int) {
+        let turned = (degrees % 360 + 360) % 360
+        guard let found = Self.allCases.first(where: { $0.degrees == turned }) else { return nil }
+        self = found
+    }
+
     public var isLandscape: Bool {
         self == .landscapeLeft || self == .landscapeRight
     }
