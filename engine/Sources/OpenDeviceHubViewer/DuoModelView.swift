@@ -189,7 +189,10 @@ public final class DuoModelView: SCNView {
         layer?.isOpaque = false
         antialiasingMode = .multisampling4X
         allowsCameraControl = false
-        rendersContinuously = true
+        // Drawn when the scene changes, so a still screen costs nothing. SceneKit keeps drawing for
+        // about a quarter of a second after each change, a new frame from the device included
+        // (Xcode 27.1, 27A9269).
+        rendersContinuously = false
         // Asked for 30, SceneKit draws at 24 on a 120 Hz display, and the rate cannot be changed
         // once the view exists; a fold needs 60 to look like one.
         preferredFramesPerSecond = 60
