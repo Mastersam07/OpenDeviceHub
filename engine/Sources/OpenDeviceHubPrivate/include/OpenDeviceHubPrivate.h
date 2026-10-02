@@ -54,6 +54,11 @@
 /// Sets the guest's keyboard language, for example "en-US". Verified present on Xcode 27 (27A266a).
 - (BOOL)setKeyboardLanguage:(NSString *_Nonnull)language
                       error:(NSError *_Nullable *_Nullable)error;
+/// Request and response are AXPTranslatorRequest and AXPTranslatorResponse from the dynamically
+/// loaded AccessibilityPlatformTranslation framework. Verified on Xcode 27 (27A266a).
+- (void)sendAccessibilityRequestAsync:(id _Nonnull)request
+                      completionQueue:(dispatch_queue_t _Nonnull)queue
+                    completionHandler:(void (^_Nonnull)(id _Nullable))handler;
 @end
 
 @protocol ODHSimDeviceSet <NSObject>
@@ -174,6 +179,38 @@
 - (void)pull;
 - (void)enableRemoteAutosync;
 - (void)disableRemoteAutosync;
+@end
+
+/// AccessibilityPlatformTranslation selectors and type encodings verified on macOS 27,
+/// Xcode 27 (27A266a).
+
+@protocol ODHAXPTranslatorClass <NSObject>
+- (nullable id)sharedInstance;
+@end
+
+@protocol ODHAXPTranslator <NSObject>
+- (void)setBridgeTokenDelegate:(id _Nullable)delegate;
+/// An `AXPTranslationObject` for the app in front on that display, or nil while nothing answers.
+- (nullable id)frontmostApplicationWithDisplayId:(unsigned int)displayId
+                             bridgeDelegateToken:(NSString *_Nonnull)token;
+/// Returns an AXPMacPlatformElement.
+- (nullable id)macPlatformElementFromTranslation:(id _Nonnull)translation;
+@end
+
+@protocol ODHAXPTranslationObject <NSObject>
+- (void)setBridgeDelegateToken:(NSString *_Nullable)token;
+@end
+
+@protocol ODHAXPMacPlatformElement <NSObject>
+@property (nonatomic, readonly, nullable) id translation;
+@property (nonatomic, readonly, nullable) NSArray *accessibilityChildren;
+@property (nonatomic, readonly, nullable) NSString *accessibilityRole;
+@property (nonatomic, readonly, nullable) NSString *accessibilityRoleDescription;
+@property (nonatomic, readonly, nullable) NSString *accessibilityLabel;
+@property (nonatomic, readonly, nullable) NSString *accessibilityTitle;
+@property (nonatomic, readonly, nullable) NSString *accessibilityIdentifier;
+@property (nonatomic, readonly, nullable) id accessibilityValue;
+@property (nonatomic, readonly) CGRect accessibilityFrame;
 @end
 
 @protocol ODHSimServiceContext <NSObject>

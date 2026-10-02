@@ -36,8 +36,8 @@ final class FrameworkCandidatePathTests: XCTestCase {
         XCTAssertTrue(paths[1].hasPrefix("/Applications/Xcode-27.app/Contents/Developer/"))
     }
 
-    func testEveryFrameworkOffersAtLeastTwoCandidates() {
-        for framework in PrivateFramework.allCases {
+    func testEveryXcodeFrameworkOffersAtLeastTwoCandidates() {
+        for framework in PrivateFramework.allCases where !framework.isInSharedCache {
             XCTAssertGreaterThanOrEqual(framework.candidatePaths(for: makeInstall()).count, 2)
         }
     }
@@ -54,6 +54,25 @@ final class CoreSimDeviceIOPathTests: XCTestCase {
 
     func testIsCoveredByAllCases() {
         XCTAssertTrue(PrivateFramework.allCases.contains(.coreSimDeviceIO))
+    }
+}
+
+final class AccessibilityPlatformTranslationPathTests: XCTestCase {
+    func testIsLoadedFromMacOSWhateverTheXcode() {
+        for install in [makeInstall(), makeInstall(appPath: "/Applications/Xcode-27.app")] {
+            XCTAssertEqual(PrivateFramework.accessibilityPlatformTranslation.candidatePaths(for: install), [
+                "/System/Library/PrivateFrameworks/AccessibilityPlatformTranslation.framework/AccessibilityPlatformTranslation",
+            ])
+        }
+    }
+
+    func testIsTheOnlyFrameworkInTheSharedCache() {
+        XCTAssertEqual(PrivateFramework.allCases.filter(\.isInSharedCache), [.accessibilityPlatformTranslation])
+    }
+
+    func testLoadsAlthoughItsPathIsNotOnDisk() throws {
+        let loaded = try FrameworkLoader.load(.accessibilityPlatformTranslation, from: makeInstall())
+        XCTAssertTrue(loaded.path.hasPrefix("/System/Library/PrivateFrameworks/"))
     }
 }
 
