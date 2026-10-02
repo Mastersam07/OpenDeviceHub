@@ -361,6 +361,25 @@ public final class CoreSimulatorAdapter: SimulatorAdapter, @unchecked Sendable {
         return try PasteboardBridge(port: port)
     }
 
+    public func accessibilityTree(_ udid: String) throws -> AccessibilityElement {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let device = try rawDevice(udid)
+        guard DeviceState.from(state: device.state, stateString: device.stateString ?? "") == .booted else {
+            throw EngineError.deviceNotBooted(udid: udid)
+        }
+        let selector = NSSelectorFromString("sendAccessibilityRequestAsync:completionQueue:completionHandler:")
+        guard (device as AnyObject).responds(to: selector) else {
+            throw EngineError.symbolNotFound(
+                name: "-[SimDevice \(NSStringFromSelector(selector))]",
+                framework: PrivateFramework.coreSimulator.rawValue
+            )
+        }
+        _ = try FrameworkLoader.load(.accessibilityPlatformTranslation, from: xcode)
+        return try AccessibilityTreeReader(device: device).read()
+    }
+
     public func setOrientation(_ orientation: DeviceOrientation, udid: String) throws {
         lock.lock()
         defer { lock.unlock() }

@@ -79,7 +79,8 @@ simulators.
 - **Debug helpers**: slow animations, shake, simulated memory warning, the system log and app data
   in the Finder, and a click to frame latency overlay.
 - **A command line tool**: `odhub` drives a simulator from a script: tap, swipe, pinch, type,
-  buttons, rotation. One menu item puts it on your `PATH`.
+  buttons, rotation. `odhub ui-tree` prints the accessibility tree of the app in front, each element
+  with the coordinates `tap` takes. One menu item puts it on your `PATH`.
 
 <details>
 <summary>Keyboard shortcuts</summary>
@@ -126,12 +127,11 @@ options.
 | `rotate` | `odhub rotate A1B2C3D4 landscapeLeft` |
 | `home-swipe` | `odhub home-swipe A1B2C3D4` |
 | `app-switcher` | `odhub app-switcher A1B2C3D4` |
+| `ui-tree` | `odhub ui-tree A1B2C3D4 --labelled` |
 
 </details>
 
 ## Current limitations
-- **The windows are invisible to accessibility**: VoiceOver, window managers and scripting tools see
-  the app and its menus but not its windows.
 - **A device taller than your display** keeps its bottom edge off screen, where the pointer cannot
   reach it. Use Fit.
 - **The compact layout below 340 points wide** is written and unit tested but has never been used by

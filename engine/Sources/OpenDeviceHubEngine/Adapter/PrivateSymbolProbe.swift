@@ -60,12 +60,21 @@ public enum PrivateSymbolProbe {
         (.classSymbol, "SimPasteboardInterfaceListener"),
     ]
 
+    public static let accessibilityPlatformTranslationSymbols: [(PrivateSymbolKind, String)] = [
+        (.classSymbol, "AXPTranslator"),
+        (.classSymbol, "AXPTranslationObject"),
+        (.classSymbol, "AXPMacPlatformElement"),
+        (.classSymbol, "AXPTranslatorResponse"),
+        (.protocolSymbol, "AXPTranslationTokenDelegateHelper"),
+    ]
+
     public static func symbols(for framework: PrivateFramework) -> [(PrivateSymbolKind, String)] {
         switch framework {
         case .coreSimulator: coreSimulatorSymbols
         case .coreSimDeviceIO: coreSimDeviceIOSymbols
         case .simulatorKit: simulatorKitSymbols
         case .simPasteboardPlus: simPasteboardPlusSymbols
+        case .accessibilityPlatformTranslation: accessibilityPlatformTranslationSymbols
         }
     }
 

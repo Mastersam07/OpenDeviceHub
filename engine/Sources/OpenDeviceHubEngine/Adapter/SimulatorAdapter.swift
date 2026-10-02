@@ -205,6 +205,8 @@ public protocol SimulatorAdapter: Sendable {
     func setKeyboardLanguage(_ language: String, udid: String) throws
     /// Opens the clipboard link to a booted device.
     func openPasteboard(_ udid: String) throws -> any PasteboardSession
+    /// Reads the accessibility tree of the app in front on a booted device.
+    func accessibilityTree(_ udid: String) throws -> AccessibilityElement
     /// Watches every device in the set, so a window learns that its device has gone or come back
     /// without asking.
     func watchDeviceStates() throws -> any DeviceNotifier
@@ -241,6 +243,10 @@ extension SimulatorAdapter {
     }
 
     public func forgetConnections(_ udid: String) {}
+
+    public func accessibilityTree(_ udid: String) throws -> AccessibilityElement {
+        throw EngineError.capabilityUnavailable(name: "the accessibility tree of \(udid)")
+    }
 
     public func displayReport(_ udid: String) async throws -> DisplayReport {
         let feature = try openCoreDevice(udid, service: CoreDeviceFeature.displayInfoService)

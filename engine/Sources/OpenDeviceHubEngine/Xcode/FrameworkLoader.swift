@@ -5,6 +5,12 @@ public enum PrivateFramework: String, Sendable, Hashable, CaseIterable {
     case coreSimDeviceIO = "CoreSimDeviceIO"
     case simulatorKit = "SimulatorKit"
     case simPasteboardPlus = "SimPasteboardPlus"
+    case accessibilityPlatformTranslation = "AccessibilityPlatformTranslation"
+
+    /// Shared-cache binaries can resolve through `dlopen` without existing on disk.
+    var isInSharedCache: Bool {
+        self == .accessibilityPlatformTranslation
+    }
 
     /// Probed in order. CoreSimulator lives outside Xcode; SimulatorKit moved from the developer
     /// directory into the app bundle's SharedFrameworks in Xcode 27.
@@ -35,6 +41,10 @@ public enum PrivateFramework: String, Sendable, Hashable, CaseIterable {
                     .appending(path: "Library/PrivateFrameworks/\(suffix)")
                     .path(percentEncoded: false),
             ]
+        case .accessibilityPlatformTranslation:
+            return [
+                "/System/Library/PrivateFrameworks/AccessibilityPlatformTranslation.framework/AccessibilityPlatformTranslation",
+            ]
         case .simulatorKit:
             return [
                 install.appRoot
@@ -62,7 +72,7 @@ public enum FrameworkLoader {
         var attempts: [String] = []
 
         for path in framework.candidatePaths(for: install) {
-            guard FileManager.default.fileExists(atPath: path) else {
+            guard framework.isInSharedCache || FileManager.default.fileExists(atPath: path) else {
                 attempts.append("\(path) (not present)")
                 continue
             }
